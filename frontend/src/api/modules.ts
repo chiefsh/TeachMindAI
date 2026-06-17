@@ -1,0 +1,131 @@
+import request from './index'
+import type {
+  Textbook, Chapter, Question, Courseware, HomeworkPaper,
+  Student, ExamResult, GradeReport, LLMConfig, TeacherSubject,
+  SchoolLevel, Grade, Subject, SubjectPrompt,
+} from '@/types'
+
+// ─── 工作台 ────────────────────────────────────────────────────────
+export const dashboardApi = {
+  getStats: () => request.get<{
+    textbook_count: number
+    question_count: number
+    courseware_count: number
+    student_count: number
+  }>('/dashboard/stats'),
+}
+
+// ─── 认证 ──────────────────────────────────────────────────────────
+export const authApi = {
+  login: (data: { username: string; password: string }) => request.post('/auth/login', data),
+  register: (data: object) => request.post('/auth/register', data),
+  logout: () => request.post('/auth/logout'),
+  me: () => request.get('/auth/me'),
+}
+
+// ─── 学段/年级/科目 ────────────────────────────────────────────────
+export const educationApi = {
+  getSchoolLevels: () => request.get<SchoolLevel[]>('/education/school-levels'),
+  getGrades: (school_level_id?: number) => request.get<Grade[]>('/education/grades', { params: { school_level_id } }),
+  getSubjects: (school_level_id?: number) => request.get<Subject[]>('/education/subjects', { params: { school_level_id } }),
+  getMySubjects: () => request.get<TeacherSubject[]>('/education/my-subjects'),
+  addMySubject: (data: { grade_id: number; subject_id: number }) => request.post('/education/my-subjects', data),
+  removeMySubject: (id: number) => request.delete(`/education/my-subjects/${id}`),
+}
+
+// ─── 课本 ──────────────────────────────────────────────────────────
+export const textbookApi = {
+  list: (params?: { subject_id?: number; grade_id?: number }) => request.get<Textbook[]>('/textbooks', { params }),
+  upload: (formData: FormData) => request.post<Textbook>('/textbooks', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }),
+  getPreviewUrl: (id: number) => request.get<{ url: string; file_type: string }>(`/textbooks/${id}/preview-url`),
+  getChapters: (id: number) => request.get<Chapter[]>(`/textbooks/${id}/chapters`),
+  reparse: (id: number) => request.post<Textbook>(`/textbooks/${id}/reparse`),
+  listImages: (id: number) => request.get<{ id: number; page_number: number; url: string }[]>(`/textbooks/${id}/images`),
+  resolveImages: (ids: number[]) => request.post<Record<string, string>>('/textbooks/images/resolve', { ids }),
+  delete: (id: number) => request.delete(`/textbooks/${id}`),
+}
+
+// ─── 题库 ──────────────────────────────────────────────────────────
+export const questionApi = {
+  list: (params?: object) => request.get<{ total: number; items: Question[] }>('/questions', { params }),
+  create: (data: object) => request.post<Question>('/questions', data),
+  manual: (data: { text: string; subject_id: number; grade_id: number; use_ai: boolean }) =>
+    request.post<{ count: number; items: Question[] }>('/questions/manual', data),
+  importFile: (formData: FormData) => request.post('/questions/import-file', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }),
+  delete: (id: number) => request.delete(`/questions/${id}`),
+}
+
+// ─── 课件 ──────────────────────────────────────────────────────────
+export const coursewareApi = {
+  list: (params?: { grade_id?: number; subject_id?: number }) => request.get<Courseware[]>('/coursewares', { params }),
+  create: (data: object) => request.post<Courseware>('/coursewares', data),
+  get: (id: number) => request.get<Courseware>(`/coursewares/${id}`),
+  getStatus: (id: number) => request.get(`/coursewares/${id}/status`),
+  regenerate: (id: number) => request.post<Courseware>(`/coursewares/${id}/regenerate`),
+  exportFile: (id: number, format: 'pptx' | 'docx' | 'pdf') =>
+    request.get<Blob>(`/coursewares/${id}/export`, { params: { format }, responseType: 'blob' }),
+  delete: (id: number) => request.delete(`/coursewares/${id}`),
+}
+
+// ─── 作业/考试 ─────────────────────────────────────────────────────
+export const homeworkApi = {
+  list: (params?: { grade_id?: number; subject_id?: number }) => request.get<HomeworkPaper[]>('/homework', { params }),
+  create: (data: object) => request.post<HomeworkPaper>('/homework', data),
+  get: (id: number) => request.get<HomeworkPaper>(`/homework/${id}`),
+  exportFile: (id: number, format: 'docx' | 'pdf') =>
+    request.get<Blob>(`/homework/${id}/export`, { params: { format }, responseType: 'blob' }),
+  delete: (id: number) => request.delete(`/homework/${id}`),
+}
+
+// ─── 学生成绩 ──────────────────────────────────────────────────────
+export const studentApi = {
+  list: (params?: object) => request.get<Student[]>('/students', { params }),
+  create: (data: object) => request.post<Student>('/students', data),
+  batchImport: (formData: FormData) => request.post('/students/batch-import', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }),
+  imageImport: (formData: FormData) => request.post('/students/image-import', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }),
+  addResults: (data: object[]) => request.post<ExamResult[]>('/students/results', data),
+  manualGrades: (data: {
+    grade_id: number; subject_id: number; exam_name: string; full_score: number
+    rows: { name: string; student_no: string; score: number | null }[]
+  }) => request.post<{ count: number }>('/students/manual-grades', data),
+  getResults: (params?: object) => request.get<ExamResult[]>('/students/results', { params }),
+  getExamNames: (params?: { grade_id?: number; subject_id?: number }) =>
+    request.get<string[]>('/students/exam-names', { params }),
+  // 成绩分析报告（统计/AI）历史
+  createAnalysis: (data: {
+    grade_id?: number | null; subject_id: number; exam_name: string
+    report_type: 'stats' | 'ai'; custom_prompt?: string | null
+  }) => request.post<GradeReport>('/students/analysis', data),
+  listAnalysis: (params: { report_type: 'stats' | 'ai'; grade_id?: number; subject_id?: number }) =>
+    request.get<GradeReport[]>('/students/analysis', { params }),
+  getAnalysis: (id: number) => request.get<GradeReport>(`/students/analysis/${id}`),
+  deleteAnalysis: (id: number) => request.delete(`/students/analysis/${id}`),
+  regenerateAnalysis: (id: number, custom_prompt?: string | null) =>
+    request.post<GradeReport>(`/students/analysis/${id}/regenerate`, { custom_prompt }),
+}
+
+// ─── 设置 ──────────────────────────────────────────────────────────
+export const settingsApi = {
+  getProviders: () => request.get('/settings/providers'),
+  fetchModels: (data: { provider: string; api_key?: string; base_url?: string }) =>
+    request.post<{ models: string[]; source: string; error?: string }>('/settings/fetch-models', data),
+  listConfigs: () => request.get<LLMConfig[]>('/settings/llm-configs'),
+  createConfig: (data: object) => request.post<LLMConfig>('/settings/llm-configs', data),
+  updateConfig: (id: number, data: object) => request.patch<LLMConfig>(`/settings/llm-configs/${id}`, data),
+  deleteConfig: (id: number) => request.delete(`/settings/llm-configs/${id}`),
+  testConfig: (id: number) => request.post(`/settings/llm-configs/${id}/test`),
+  // 科目课件提示词
+  listSubjectPrompts: () => request.get<SubjectPrompt[]>('/settings/subject-prompts'),
+  updateSubjectPrompt: (subjectName: string, data: { prompt: string; interactive_guidance?: string | null }) =>
+    request.put<SubjectPrompt>(`/settings/subject-prompts/${encodeURIComponent(subjectName)}`, data),
+  resetSubjectPrompt: (subjectName: string) =>
+    request.delete<SubjectPrompt>(`/settings/subject-prompts/${encodeURIComponent(subjectName)}`),
+}

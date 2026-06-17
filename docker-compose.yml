@@ -1,0 +1,113 @@
+version: "3.9"
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: edu_mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: edu_root_pass
+      MYSQL_DATABASE: edu_platform
+      MYSQL_USER: edu_user
+      MYSQL_PASSWORD: edu_pass
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+
+  redis:
+    image: redis:7-alpine
+    container_name: edu_redis
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+
+  rabbitmq:
+    image: rabbitmq:3.12-management-alpine
+    container_name: edu_rabbitmq
+    restart: always
+    environment:
+      RABBITMQ_DEFAULT_USER: edu_user
+      RABBITMQ_DEFAULT_PASS: edu_pass
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+
+  minio:
+    image: minio/minio:latest
+    container_name: edu_minio
+    restart: always
+    environment:
+      MINIO_ROOT_USER: edu_minio_user
+      MINIO_ROOT_PASSWORD: edu_minio_pass
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+
+  backend:
+    build: ./backend
+    container_name: edu_backend
+    restart: always
+    environment:
+      DATABASE_URL: mysql+aiomysql://edu_user:edu_pass@mysql:3306/edu_platform
+      REDIS_URL: redis://redis:6379/0
+      RABBITMQ_URL: amqp://edu_user:edu_pass@rabbitmq:5672/
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: edu_minio_user
+      MINIO_SECRET_KEY: edu_minio_pass
+      SECRET_KEY: your-secret-key-change-in-production
+      ENVIRONMENT: development
+    ports:
+      - "8000:8000"
+    depends_on:
+      - mysql
+      - redis
+      - rabbitmq
+      - minio
+    volumes:
+      - ./backend:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  celery_worker:
+    build: ./backend
+    container_name: edu_celery
+    restart: always
+    environment:
+      DATABASE_URL: mysql+aiomysql://edu_user:edu_pass@mysql:3306/edu_platform
+      REDIS_URL: redis://redis:6379/0
+      RABBITMQ_URL: amqp://edu_user:edu_pass@rabbitmq:5672/
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: edu_minio_user
+      MINIO_SECRET_KEY: edu_minio_pass
+      SECRET_KEY: your-secret-key-change-in-production
+    depends_on:
+      - rabbitmq
+      - mysql
+      - redis
+    volumes:
+      - ./backend:/app
+    command: celery -A app.tasks.celery_app worker --loglevel=info -Q ai_tasks,file_tasks
+
+  frontend:
+    build: ./frontend
+    container_name: edu_frontend
+    restart: always
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+
+volumes:
+  mysql_data:
+  redis_data:
+  rabbitmq_data:
+  minio_data:

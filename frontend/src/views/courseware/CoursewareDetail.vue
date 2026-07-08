@@ -9,12 +9,16 @@
           <el-tag v-if="cw?.is_interactive" size="small" type="warning">互动课件</el-tag>
         </div>
       </div>
-      <!-- 导出 -->
-      <el-button-group v-if="cw?.gen_status === 'done' && slides.length">
-        <el-button :loading="exporting === 'pptx'" :icon="Download" @click="doExport('pptx')">导出 PPT</el-button>
-        <el-button :loading="exporting === 'docx'" :icon="Document" @click="doExport('docx')">导出 Word</el-button>
-        <el-button :loading="exporting === 'pdf'" :icon="Tickets" @click="doExport('pdf')">导出 PDF</el-button>
-      </el-button-group>
+      <!-- 操作 -->
+      <div v-if="cw?.gen_status === 'done' && slides.length" class="flex items-center gap-2">
+        <el-button type="primary" :icon="VideoPlay" @click="openPresent">演示模式</el-button>
+        <el-button :icon="Connection" @click="openInteraction">课堂互动</el-button>
+        <el-button-group>
+          <el-button :loading="exporting === 'pptx'" :icon="Download" @click="doExport('pptx')">导出 PPT</el-button>
+          <el-button :loading="exporting === 'docx'" :icon="Document" @click="doExport('docx')">导出 Word</el-button>
+          <el-button :loading="exporting === 'pdf'" :icon="Tickets" @click="doExport('pdf')">导出 PDF</el-button>
+        </el-button-group>
+      </div>
     </div>
 
     <!-- 生成中状态 -->
@@ -113,7 +117,8 @@
                 <el-button size="small" text :icon="FullScreen" @click="openFullscreen(currentSlide.html)">全屏</el-button>
               </div>
               <iframe
-                :srcdoc="wrapInteractiveHtml(currentSlide.html)"
+                v-if="currentBlobUrl"
+                :src="currentBlobUrl"
                 sandbox="allow-scripts"
                 class="w-full h-[460px] rounded-lg border border-slate-200 bg-white"
               ></iframe>
@@ -140,23 +145,140 @@
     <!-- 互动全屏预览 -->
     <el-dialog v-model="showFs" title="互动预览" width="92%" top="4vh" :destroy-on-close="true">
       <iframe
-        :srcdoc="fsHtml"
+        v-if="fsBlobUrl"
+        :src="fsBlobUrl"
         sandbox="allow-scripts"
         class="w-full rounded-lg border border-slate-200 bg-white"
         style="height:78vh"
       ></iframe>
     </el-dialog>
+
+    <!-- 演示模式（reveal.js） -->
+    <el-dialog v-model="showPresent" title="" width="96%" top="2vh" :destroy-on-close="true" class="present-dialog">
+      <template #header>
+        <div class="flex items-center gap-3">
+          <span class="font-semibold">演示模式</span>
+          <span class="text-xs text-slate-400 flex-1">方向键/空格翻页 · 按 F 全屏 · 按 S 打开演讲者视图（含讲稿）</span>
+          <el-button size="small" :icon="Printer" @click="printDeck">导出 PDF（演示版）</el-button>
+        </div>
+      </template>
+      <iframe
+        v-if="deckBlobUrl"
+        :src="deckBlobUrl"
+        sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+        class="w-full rounded-lg border border-slate-200 bg-white"
+        style="height:84vh"
+      ></iframe>
+    </el-dialog>
+
+    <!-- 课堂互动 -->
+    <el-dialog v-model="showInteraction" title="课堂互动" width="90%" top="4vh" :destroy-on-close="true">
+      <el-tabs v-model="interactionTab">
+        <!-- 分享作答 -->
+        <el-tab-pane label="分享作答" name="share">
+          <div class="flex items-center justify-between mb-3">
+            <p class="text-sm text-slate-500">为本课件开启互动会话，把链接发给学生，学生用手机/平板打开即可作答。</p>
+            <el-button type="primary" :icon="Plus" :loading="creatingSession" @click="createSession">新建互动会话</el-button>
+          </div>
+          <el-table :data="sessions" size="small" empty-text="暂无互动会话">
+            <el-table-column label="名称" prop="title" min-width="160" show-overflow-tooltip />
+            <el-table-column label="状态" width="90">
+              <template #default="{ row }">
+                <el-tag size="small" :type="row.is_open ? 'success' : 'info'">{{ row.is_open ? '进行中' : '已关闭' }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="参与" width="80">
+              <template #default="{ row }">{{ row.student_count }} 人</template>
+            </el-table-column>
+            <el-table-column label="作答数" width="80" prop="record_count" />
+            <el-table-column label="操作" width="320">
+              <template #default="{ row }">
+                <el-button size="small" :icon="CopyDocument" @click="copyLink(row)">复制链接</el-button>
+                <el-button size="small" :icon="DataAnalysis" @click="openBoard(row)">数据看板</el-button>
+                <el-button size="small" @click="toggleSession(row)">{{ row.is_open ? '关闭' : '开启' }}</el-button>
+                <el-button size="small" type="danger" :icon="Delete" @click="removeSession(row)" />
+              </template>
+            </el-table-column>
+          </el-table>
+          <div v-if="shareLink" class="mt-4 p-3 bg-slate-50 rounded-lg border border-slate-200 flex gap-4 items-center">
+            <img v-if="shareQr" :src="shareQr" alt="二维码" class="w-32 h-32 rounded-lg border border-slate-200 bg-white" />
+            <div class="flex-1">
+              <p class="text-xs text-slate-500 mb-1">学生扫码或打开链接即可作答</p>
+              <div class="flex items-center gap-2">
+                <el-input :model-value="shareLink" readonly size="small" />
+                <el-button size="small" type="primary" @click="copyText(shareLink)">复制</el-button>
+              </div>
+            </div>
+          </div>
+        </el-tab-pane>
+
+        <!-- 数据看板 -->
+        <el-tab-pane label="数据看板" name="board">
+          <div v-if="!board" class="text-center text-slate-400 py-10">请在「分享作答」中选择一个会话查看数据看板</div>
+          <div v-else>
+            <div class="flex gap-4 mb-4">
+              <div class="card flex-1 text-center py-3">
+                <p class="text-2xl font-bold text-primary-600">{{ board.summary.student_count }}</p>
+                <p class="text-xs text-slate-400">参与学生</p>
+              </div>
+              <div class="card flex-1 text-center py-3">
+                <p class="text-2xl font-bold text-emerald-600">{{ board.summary.total_records }}</p>
+                <p class="text-xs text-slate-400">作答次数</p>
+              </div>
+              <div class="card flex-1 text-center py-3">
+                <p class="text-2xl font-bold text-amber-600">{{ overallRate }}%</p>
+                <p class="text-xs text-slate-400">整体正确率</p>
+              </div>
+              <el-button class="self-center" :icon="Refresh" @click="refreshBoard">刷新</el-button>
+            </div>
+
+            <p class="text-sm font-semibold text-slate-700 mb-2">题目正确率</p>
+            <el-table :data="board.questions" size="small" class="mb-5" empty-text="暂无作答数据">
+              <el-table-column label="位置" width="70">
+                <template #default="{ row }">第 {{ row.slide_index + 1 }} 页</template>
+              </el-table-column>
+              <el-table-column label="题目/操作" prop="question" min-width="200" show-overflow-tooltip />
+              <el-table-column label="作答" width="70" prop="attempts" />
+              <el-table-column label="正确率" width="160">
+                <template #default="{ row }">
+                  <div class="flex items-center gap-2">
+                    <el-progress :percentage="row.correct_rate" :stroke-width="10" class="flex-1"
+                      :color="rateColor(row.correct_rate)" />
+                  </div>
+                </template>
+              </el-table-column>
+            </el-table>
+
+            <p class="text-sm font-semibold text-slate-700 mb-2">学生表现</p>
+            <el-table :data="board.students" size="small" max-height="240" empty-text="暂无作答数据">
+              <el-table-column label="姓名" prop="name" min-width="120" />
+              <el-table-column label="作答" width="80" prop="attempts" />
+              <el-table-column label="正确" width="80" prop="correct" />
+              <el-table-column label="正确率" width="100">
+                <template #default="{ row }">{{ row.correct_rate }}%</template>
+              </el-table-column>
+            </el-table>
+          </div>
+        </el-tab-pane>
+      </el-tabs>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
-import { coursewareApi, textbookApi } from '@/api/modules'
-import { ArrowLeft, ArrowRight, Loading, CircleClose, Download, Document, Tickets, FullScreen } from '@element-plus/icons-vue'
-import { wrapInteractiveHtml } from '@/utils/coursewareFrame'
-import type { Courseware } from '@/types'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { coursewareApi, textbookApi, interactionApi } from '@/api/modules'
+import {
+  ArrowLeft, ArrowRight, Loading, CircleClose, Download, Document, Tickets, FullScreen,
+  VideoPlay, Connection, Plus, CopyDocument, DataAnalysis, Delete, Refresh, Printer,
+} from '@element-plus/icons-vue'
+import QRCode from 'qrcode'
+import { createIframeBlob } from '@/utils/coursewareFrame'
+import { buildRevealDeck } from '@/utils/revealDeck'
+import { renderMarkdown } from '@/utils/markdown'
+import type { Courseware, CoursewareSession, SessionBoard } from '@/types'
 
 const route = useRoute()
 const router = useRouter()
@@ -165,18 +287,180 @@ const activeSlide = ref(0)
 const exporting = ref<string>('')
 const imageMap = ref<Record<string, string>>({})
 const showFs = ref(false)
-const fsHtml = ref('')
 let pollTimer: ReturnType<typeof setInterval> | null = null
 
+// ──────────────────────────────────────────────────
+// Blob URL 统一管理：避免 srcdoc 内嵌 script 标签被浏览器解析器截断的 bug
+// ──────────────────────────────────────────────────
+const _blobUrls: string[] = []
+function makeBlobUrl(html: string): string {
+  const url = createIframeBlob(html)
+  _blobUrls.push(url)
+  return url
+}
+
+// 当前 slide 的互动 iframe blob url（由 watch 维护，见下方）
+const currentBlobUrl = ref('')
+
+// 全屏预览
+const fsBlobUrl = ref('')
+
+// 演示模式
+const showPresent = ref(false)
+const deckBlobUrl = ref('')
+function openPresent() {
+  if (deckBlobUrl.value) { URL.revokeObjectURL(deckBlobUrl.value) }
+  deckBlobUrl.value = makeBlobUrl(buildRevealDeck(cw.value?.content, imageMap.value))
+  showPresent.value = true
+}
+
+function printDeck() {
+  const html = buildRevealDeck(cw.value?.content, imageMap.value, { print: true })
+  const w = window.open('', '_blank')
+  if (!w) { ElMessage.warning('请允许弹出窗口以导出 PDF'); return }
+  w.document.open()
+  w.document.write(html)
+  w.document.close()
+}
+
+// 课堂互动
+const showInteraction = ref(false)
+const interactionTab = ref('share')
+const sessions = ref<CoursewareSession[]>([])
+const creatingSession = ref(false)
+const shareLink = ref('')
+const shareQr = ref('')
+const board = ref<SessionBoard | null>(null)
+const currentBoardSession = ref<number | null>(null)
+
+function sessionUrl(token: string) {
+  return `${window.location.origin}/s/${token}`
+}
+
+async function setShare(token: string) {
+  shareLink.value = sessionUrl(token)
+  try {
+    shareQr.value = await QRCode.toDataURL(shareLink.value, { width: 256, margin: 1 })
+  } catch { shareQr.value = '' }
+}
+
+async function openInteraction() {
+  showInteraction.value = true
+  interactionTab.value = 'share'
+  shareLink.value = ''
+  shareQr.value = ''
+  await loadSessions()
+}
+
+async function loadSessions() {
+  if (!cw.value) return
+  try { sessions.value = await interactionApi.listSessions(cw.value.id) as any } catch { /* ignore */ }
+}
+
+async function createSession() {
+  if (!cw.value) return
+  creatingSession.value = true
+  try {
+    const s = await interactionApi.createSession(cw.value.id) as any as CoursewareSession
+    await loadSessions()
+    await setShare(s.token)
+    ElMessage.success('已创建互动会话')
+  } catch { /* handled */ } finally { creatingSession.value = false }
+}
+
+async function copyText(text: string) {
+  try {
+    await navigator.clipboard.writeText(text)
+    ElMessage.success('已复制到剪贴板')
+  } catch {
+    ElMessage.warning('复制失败，请手动复制')
+  }
+}
+async function copyLink(row: CoursewareSession) {
+  await setShare(row.token)
+  copyText(shareLink.value)
+}
+
+async function toggleSession(row: CoursewareSession) {
+  try {
+    await interactionApi.toggleSession(row.id, !row.is_open)
+    await loadSessions()
+  } catch { /* handled */ }
+}
+
+async function removeSession(row: CoursewareSession) {
+  try {
+    await ElMessageBox.confirm('确定删除该互动会话及其作答数据？', '提示', { type: 'warning' })
+  } catch { return }
+  try {
+    await interactionApi.deleteSession(row.id)
+    if (currentBoardSession.value === row.id) { board.value = null; currentBoardSession.value = null }
+    await loadSessions()
+    ElMessage.success('已删除')
+  } catch { /* handled */ }
+}
+
+async function openBoard(row: CoursewareSession) {
+  currentBoardSession.value = row.id
+  interactionTab.value = 'board'
+  await refreshBoard()
+}
+
+async function refreshBoard() {
+  if (!currentBoardSession.value) return
+  try { board.value = await interactionApi.board(currentBoardSession.value) as any } catch { /* handled */ }
+}
+
+const overallRate = computed(() => {
+  const qs = board.value?.questions || []
+  const attempts = qs.reduce((a, q) => a + q.attempts, 0)
+  const correct = qs.reduce((a, q) => a + q.correct, 0)
+  return attempts ? Math.round((correct / attempts) * 1000) / 10 : 0
+})
+function rateColor(rate: number) {
+  if (rate >= 80) return '#16a34a'
+  if (rate >= 60) return '#f59e0b'
+  return '#dc2626'
+}
+
 function openFullscreen(html: string) {
-  fsHtml.value = wrapInteractiveHtml(html)
+  if (fsBlobUrl.value) { URL.revokeObjectURL(fsBlobUrl.value) }
+  fsBlobUrl.value = createIframeBlob(html)
   showFs.value = true
 }
 
-const slides = computed<any[]>(() => (cw.value?.content as any)?.slides || [])
-const meta = computed<any>(() => (cw.value?.content as any)?.meta || {})
+// 兜底：旧数据可能把整段 JSON 当成单页正文存了下来，这里尝试还原为结构化内容
+const normalizedContent = computed<any>(() => {
+  const c: any = cw.value?.content || {}
+  const ss: any[] = c.slides || []
+  if (ss.length === 1 && typeof ss[0]?.content === 'string') {
+    let txt = ss[0].content.trim()
+    if (txt.startsWith('```')) {
+      txt = txt.replace(/^```[a-zA-Z]*\n?/, '').replace(/```$/, '').trim()
+    }
+    if (txt.startsWith('{') && txt.includes('"slides"')) {
+      try {
+        const parsed = JSON.parse(txt)
+        if (parsed?.slides?.length) return parsed
+      } catch { /* 无法解析则维持原样 */ }
+    }
+  }
+  return c
+})
+const slides = computed<any[]>(() => normalizedContent.value?.slides || [])
+const meta = computed<any>(() => normalizedContent.value?.meta || {})
 const hasMeta = computed(() => !!(meta.value.objectives?.length || meta.value.key_points?.length || meta.value.difficulties?.length))
 const currentSlide = computed(() => slides.value[activeSlide.value] || null)
+
+// 当 currentSlide.html 变化（切换 slide / 课件加载完成），刷新 Blob URL
+watch(
+  () => currentSlide.value?.html,
+  (html) => {
+    if (currentBlobUrl.value) { URL.revokeObjectURL(currentBlobUrl.value); currentBlobUrl.value = '' }
+    if (html) currentBlobUrl.value = createIframeBlob(html)
+  },
+  { immediate: true }
+)
 
 const TYPE_LABELS: Record<string, string> = {
   title: '封面', objectives: '教学目标', intro: '情境导入', content: '新知讲解',
@@ -188,7 +472,7 @@ function slideTypeTag(t: string): any {
   return ({
     title: 'primary', objectives: 'success', summary: 'success', homework: 'info',
     example: 'warning', interactive: 'warning', quiz: 'warning', exercise: 'info',
-  } as Record<string, string>)[t] || ''
+  } as Record<string, string>)[t] || 'info'
 }
 
 function slideImages(slide: any): string[] {
@@ -209,37 +493,6 @@ async function resolveImages() {
   try {
     imageMap.value = (await textbookApi.resolveImages([...new Set(ids)])) as any
   } catch { /* 图片解析失败忽略 */ }
-}
-
-// 极简 markdown 渲染（标题/加粗/斜体/行内代码/无序列表）
-function renderMarkdown(src: string): string {
-  const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-  const lines = (src || '').split('\n')
-  const html: string[] = []
-  let inList = false
-  const inline = (t: string) => esc(t)
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    .replace(/`(.+?)`/g, '<code>$1</code>')
-  for (const raw of lines) {
-    const line = raw.trim()
-    if (!line) { if (inList) { html.push('</ul>'); inList = false } continue }
-    const h = line.match(/^(#{1,4})\s+(.*)$/)
-    const li = line.match(/^[-*]\s+(.*)$/)
-    if (h) {
-      if (inList) { html.push('</ul>'); inList = false }
-      const lvl = h[1].length + 2
-      html.push(`<h${lvl}>${inline(h[2])}</h${lvl}>`)
-    } else if (li) {
-      if (!inList) { html.push('<ul>'); inList = true }
-      html.push(`<li>${inline(li[1])}</li>`)
-    } else {
-      if (inList) { html.push('</ul>'); inList = false }
-      html.push(`<p>${inline(line)}</p>`)
-    }
-  }
-  if (inList) html.push('</ul>')
-  return html.join('')
 }
 
 async function doExport(fmt: 'pptx' | 'docx' | 'pdf') {
@@ -275,7 +528,14 @@ function statusLabel(s?: string) {
 }
 
 onMounted(load)
-onUnmounted(() => { if (pollTimer) clearInterval(pollTimer) })
+onUnmounted(() => {
+  if (pollTimer) clearInterval(pollTimer)
+  // 释放所有 Blob URL，防止内存泄漏
+  ;[currentBlobUrl, fsBlobUrl, deckBlobUrl].forEach(r => {
+    if (r.value) { URL.revokeObjectURL(r.value); r.value = '' }
+  })
+  _blobUrls.forEach(u => URL.revokeObjectURL(u))
+})
 </script>
 
 <style scoped>

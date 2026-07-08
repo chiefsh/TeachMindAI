@@ -42,23 +42,40 @@ COMPONENT_CATALOG = """【互动组件目录】（每个互动页选 1 个最贴
 12. simulation 过程模拟：用 CSS/JS 动画演示一个动态过程（如电路、化学反应、物理运动）。
 """
 
+# 教学法约束：避免“为互动而互动”，把互动用在刀刃上
+PEDAGOGY_RULES = """【互动节点克制原则（重要）】
+1. 一节课只在 1~3 个关键节点安排互动页（通常是：情境导入 / 例题精讲 / 随堂练习其中的若干处），其余环节用讲解正文、板书式小结、教师讲稿承载，不要每页都做互动。
+2. 互动要服务教学主线：让学生“真正动手做”（点击/拖拽/输入并获得即时反馈），而不是装饰性动画。能用一句话讲清的知识点，不要硬做成互动。
+3. 互动总时长建议控制在 10~15 分钟，单个互动聚焦一个明确的学习目标。
+4. 把互动放在 type 为 intro / example / interactive / activity 的幻灯片上；title / objectives / summary / homework 等页不要放互动。"""
+
+# 学生作答数据回收：互动页通过 window.CW 把作答结果回传给上层页面
+REPORT_SPEC = """【作答数据回收（必须接入）】
+页面已注入全局对象 window.CW，当学生完成一次作答/判断对错时，调用它把结果回传，便于教师看板统计：
+- window.CW.report({ component:'组件类型', question:'题目或操作描述', answer:'学生的回答', correct:true/false, duration_ms:用时毫秒 })
+- 便捷写法：判对时 window.CW.correct('题目', '学生答案')；判错时 window.CW.wrong('题目', '学生答案')。
+要求：每个可判定对错的互动，在给出即时反馈的同时调用一次上报；若组件不涉及对错（如纯演示/拖拽探索），可只上报 {component, question, answer} 不传 correct。调用要做容错（window.CW 可能不存在时忽略）。"""
+
 INTERACTIVE_RULES = """【互动 HTML 硬性要求】
 1. 每个 html 字段是一个自包含片段：以 <div class="stage"> 开头，可含 <style> 与 <script>，不要写 <html>/<head>/<body>。
 2. 只用原生 HTML/CSS/JS + 已声明的 KaTeX/Chart.js，代码必须完整可运行、无语法错误。
 3. 互动要真实可操作（可点击/拖拽/输入并有即时反馈），不要只是静态图。
 4. 文案、数据、题目必须紧扣本页课本知识点，使用中文。
-5. 视觉上沿用注入的 .card/.btn 等 class，风格简洁现代、留白充足。"""
+5. 视觉上沿用注入的 .card/.btn 等 class，风格简洁现代、留白充足。
+6. 按【作答数据回收】要求调用 window.CW 上报学生作答结果。"""
 
 
 def build_interactive_prompt(subject_interactive_hint: str = "") -> str:
     """组装互动课件部分的提示词。subject_interactive_hint 为科目级的互动建议。"""
     parts = [
         "\n\n========== 互动课件设计规范 ==========",
+        PEDAGOGY_RULES,
         DESIGN_SYSTEM_SPEC,
         LIBS_SPEC,
         COMPONENT_CATALOG,
     ]
     if subject_interactive_hint:
         parts.append(f"【本科目优先采用的互动形式】\n{subject_interactive_hint}")
+    parts.append(REPORT_SPEC)
     parts.append(INTERACTIVE_RULES)
     return "\n\n".join(parts)

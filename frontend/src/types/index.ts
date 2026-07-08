@@ -93,3 +93,36 @@ export interface SubjectPrompt {
   subject_name: string; prompt: string
   interactive_guidance?: string | null; is_custom: boolean
 }
+
+export interface CoursewareSession {
+  id: number; courseware_id: number; token: string; title: string
+  is_open: boolean; record_count: number; student_count: number
+}
+
+export interface PublicSession {
+  token: string; title: string; is_open: boolean
+  content?: { meta?: Record<string, any>; slides?: any[] } | null
+}
+
+export interface SessionBoardQuestion {
+  slide_index: number; question: string; component?: string | null
+  attempts: number; correct: number; correct_rate: number
+}
+
+export interface SessionBoardStudent {
+  name: string; attempts: number; correct: number; correct_rate: number
+}
+
+export interface SessionBoardRecord {
+  id: number; student_name: string; slide_index: number
+  component?: string | null; question?: string | null; answer?: string | null
+  is_correct?: boolean | null; duration_ms?: number | null; created_at?: string | null
+}
+
+export interface SessionBoard {
+  session: CoursewareSession
+  summary: { total_records: number; student_count: number; question_count: number }
+  questions: SessionBoardQuestion[]
+  students: SessionBoardStudent[]
+  records: SessionBoardRecord[]
+}

@@ -55,6 +55,22 @@ const HEAD_LIBS = `
 <script defer src="https://cdn.jsdelivr.net/npm/chart.js@${CHARTJS_VERSION}/dist/chart.umd.min.js"></script>
 `
 
+// 作答数据回收桥接：互动页通过 window.CW.report/correct/wrong 把结果回传给上层页面
+const CW_BRIDGE = `
+<script>
+(function(){
+  function send(payload){
+    try { parent.postMessage({ __cw: true, type: 'interaction', payload: payload || {} }, '*'); } catch(e){}
+  }
+  window.CW = {
+    report: function(data){ send(data || {}); },
+    correct: function(question, answer){ send({ question: question, answer: answer, correct: true }); },
+    wrong: function(question, answer){ send({ question: question, answer: answer, correct: false }); }
+  };
+})();
+</script>
+`
+
 // 公式自动渲染：等库加载完成后执行
 const BOOT = `
 <script>
@@ -75,16 +91,22 @@ window.addEventListener('load', function(){
 </script>
 `
 
-/** 把模型生成的 html 片段包装成可在 iframe 中渲染的完整文档。 */
+/** 把模型生成的 html 片段包装成可在 iframe 中渲染的完整文档字符串。
+ *
+ *  注意：调用方应通过 createIframeBlob() 生成 Blob URL 后赋给 iframe.src，
+ *  以避免 srcdoc 模式下 </script> 被 HTML 解析器提前截断的问题。
+ *  若调用方坚持使用 srcdoc，也可直接使用返回字符串，但 Chrome 以外的浏览器
+ *  可能出现 SyntaxError。
+ */
 export function wrapInteractiveHtml(fragment: string): string {
   const body = (fragment || '').trim()
-  // 若模型误返回了完整 html 文档，原样返回，避免重复包裹
   if (/<html[\s>]/i.test(body)) return body
   return `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+${CW_BRIDGE}
 ${HEAD_LIBS}
 <style>${DESIGN_SYSTEM}</style>
 </head>
@@ -93,4 +115,11 @@ ${body}
 ${BOOT}
 </body>
 </html>`
+}
+
+/** 生成 Blob URL（调用方负责在组件卸载时 revokeObjectURL）。 */
+export function createIframeBlob(fragment: string): string {
+  const html = wrapInteractiveHtml(fragment)
+  const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
+  return URL.createObjectURL(blob)
 }

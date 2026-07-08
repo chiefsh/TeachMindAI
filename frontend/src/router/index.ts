@@ -7,6 +7,7 @@ const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/login', component: () => import('@/views/LoginView.vue'), meta: { public: true } },
+    { path: '/s/:token', name: 'SessionPlay', component: () => import('@/views/public/SessionPlay.vue'), meta: { public: true } },
     {
       path: '/',
       component: () => import('@/components/layout/MainLayout.vue'),

@@ -7,7 +7,7 @@ from app.core.database import engine, Base
 from app.core.redis_client import close_redis
 from app.core.minio_client import init_buckets
 from app.core.seed import seed_education_data, seed_subject_prompts
-from app.api.v1 import auth, education, textbook, question, courseware, homework, student, settings, ws, dashboard
+from app.api.v1 import auth, education, textbook, question, courseware, homework, student, settings, ws, dashboard, interaction
 
 
 @asynccontextmanager
@@ -59,6 +59,7 @@ app.include_router(homework.router, prefix="/api/v1")
 app.include_router(student.router, prefix="/api/v1")
 app.include_router(settings.router, prefix="/api/v1")
 app.include_router(dashboard.router, prefix="/api/v1")
+app.include_router(interaction.router, prefix="/api/v1")
 app.include_router(ws.router, prefix="/api/v1")
 
 

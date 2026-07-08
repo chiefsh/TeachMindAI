@@ -3,6 +3,7 @@ import type {
   Textbook, Chapter, Question, Courseware, HomeworkPaper,
   Student, ExamResult, GradeReport, LLMConfig, TeacherSubject,
   SchoolLevel, Grade, Subject, SubjectPrompt,
+  CoursewareSession, SessionBoard, PublicSession,
 } from '@/types'
 
 // ─── 工作台 ────────────────────────────────────────────────────────
@@ -69,6 +70,28 @@ export const coursewareApi = {
   exportFile: (id: number, format: 'pptx' | 'docx' | 'pdf') =>
     request.get<Blob>(`/coursewares/${id}/export`, { params: { format }, responseType: 'blob' }),
   delete: (id: number) => request.delete(`/coursewares/${id}`),
+}
+
+// ─── 课堂互动会话 ──────────────────────────────────────────────────
+export const interactionApi = {
+  listSessions: (cwId: number) =>
+    request.get<CoursewareSession[]>(`/coursewares/${cwId}/sessions`),
+  createSession: (cwId: number, title?: string) =>
+    request.post<CoursewareSession>(`/coursewares/${cwId}/sessions`, { title }),
+  toggleSession: (sessionId: number, isOpen: boolean) =>
+    request.patch<CoursewareSession>(`/sessions/${sessionId}`, null, { params: { is_open: isOpen } }),
+  deleteSession: (sessionId: number) => request.delete(`/sessions/${sessionId}`),
+  board: (sessionId: number) => request.get<SessionBoard>(`/sessions/${sessionId}/board`),
+}
+
+// ─── 学生公开作答（免登录） ────────────────────────────────────────
+export const publicApi = {
+  getSession: (token: string) => request.get<PublicSession>(`/public/sessions/${token}`),
+  submitRecord: (token: string, data: {
+    student_name: string; slide_index: number; component?: string | null
+    question?: string | null; answer?: string | null
+    is_correct?: boolean | null; duration_ms?: number | null
+  }) => request.post(`/public/sessions/${token}/records`, data),
 }
 
 // ─── 作业/考试 ─────────────────────────────────────────────────────

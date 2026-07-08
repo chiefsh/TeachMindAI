@@ -31,9 +31,12 @@ async def parse_textbook_file(textbook_id: int):
         try:
             file_bytes = get_file_bytes("textbooks", tb.file_path)
             chapters: list[dict] = []
+            parsed_pdf: dict | None = None
 
             if tb.file_type == "pdf":
-                chapters = _parse_pdf(file_bytes, tb)
+                from app.services import liteparse_service
+                parsed_pdf = liteparse_service.parse_pdf(file_bytes)
+                chapters = _parse_pdf(parsed_pdf, file_bytes, tb)
             elif tb.file_type in ("docx", "doc"):
                 chapters = _parse_docx(file_bytes)
             elif tb.file_type == "txt":
@@ -58,18 +61,25 @@ async def parse_textbook_file(textbook_id: int):
 
             # 提取课本插图（仅 PDF），供课件引用
             if tb.file_type == "pdf":
+                pages_with_images: set[int] = set()
                 try:
-                    _extract_and_store_pdf_images(db, tb, file_bytes)
+                    pages_with_images = _extract_and_store_pdf_images(db, tb, file_bytes)
                 except Exception as e:
                     logger.warning("课本 %s 图片提取失败：%s", tb.id, e)
+                # 对扫描/图多文字少且无内嵌图的页面，渲染整页截图入库
+                if settings.TEXTBOOK_PAGE_SCREENSHOT and parsed_pdf:
+                    try:
+                        _store_pdf_page_screenshots(db, tb, file_bytes, parsed_pdf, pages_with_images)
+                    except Exception as e:
+                        logger.warning("课本 %s 整页截图失败：%s", tb.id, e)
 
             # 内容全空时给出明确提示（多为扫描版 PDF 且 OCR 不可用）
             has_content = any((ch.get("content") or "").strip() for ch in chapters)
             if not has_content:
                 tb.parse_error = (
-                    "未提取到文字内容：该文档可能为扫描件（无文字层），"
-                    "需要 OCR。请确认运行环境已安装 tesseract-ocr 及中文包 "
-                    "(tesseract-ocr-chi-sim)。"
+                    "未提取到文字内容：该文档可能为扫描件（无文字层）。"
+                    "liteparse 已尝试 OCR，请确认运行环境安装了 tesseract 中文包 "
+                    "(tesseract-ocr-chi-sim)，或正确设置 TESSDATA_PREFIX / OCR_TESSDATA_PATH。"
                 )
                 logger.warning("课本 %s 解析后内容为空：%s", tb.id, tb.parse_error)
 
@@ -81,49 +91,40 @@ async def parse_textbook_file(textbook_id: int):
             await db.commit()
 
 
-def _ocr_pdf_page(page) -> str:
-    """对扫描型 PDF 页面做 OCR（无文字层时兜底）。失败返回空串并记录原因。"""
-    try:
-        import pytesseract
-        from PIL import Image
-        pix = page.get_pixmap(dpi=200)
-        img = Image.open(io.BytesIO(pix.tobytes("png")))
-        return pytesseract.image_to_string(img, lang="chi_sim+eng").strip()
-    except Exception as e:
-        # 常见：未安装 tesseract 二进制 / 缺少中文语言包
-        logger.warning("OCR 失败（可能未安装 tesseract）：%s", e)
-        return ""
-
-
-def _page_text(page) -> str:
-    """取页面文字，优先文字层，为空则 OCR。"""
-    text = (page.get_text() or "").strip()
-    if not text:
-        text = _ocr_pdf_page(page)
-    return text
-
-
 def _derive_title(text: str, fallback: str) -> str:
     """用正文首行作为章节标题，更直观。"""
     for line in text.splitlines():
-        line = line.strip()
+        line = line.strip().lstrip("#").strip()  # 去掉 markdown 标题符号
         if line:
             return line[:60]
     return fallback
 
 
-def _parse_pdf(data: bytes, tb: Textbook) -> list[dict]:
-    import fitz  # PyMuPDF
-    doc = fitz.open(stream=data, filetype="pdf")
-    tb.total_pages = len(doc)
-    chapters = []
-    toc = doc.get_toc()  # [[level, title, page], ...]
+def _read_pdf_toc(data: bytes) -> list:
+    """仅读取 PDF 书签目录（轻量），用于还原章节结构。失败返回空列表。"""
+    try:
+        import fitz  # PyMuPDF
+        doc = fitz.open(stream=data, filetype="pdf")
+        return doc.get_toc()  # [[level, title, page], ...]
+    except Exception as e:
+        logger.warning("读取 PDF 书签失败：%s", e)
+        return []
+
+
+def _parse_pdf(parsed: dict, data: bytes, tb: Textbook) -> list[dict]:
+    """基于 liteparse 解析结果构建章节；章节结构沿用 PDF 书签目录。"""
+    page_texts = [pg["text"] for pg in parsed["pages"]]
+    tb.total_pages = parsed["total_pages"] or len(page_texts)
+
+    toc = _read_pdf_toc(data)
+    chapters: list[dict] = []
     if toc:
         for i, (level, title, page) in enumerate(toc):
-            end_page = toc[i + 1][2] - 1 if i + 1 < len(toc) else len(doc)
+            end_page = toc[i + 1][2] - 1 if i + 1 < len(toc) else len(page_texts)
             content = ""
             for p in range(page - 1, min(end_page, page + 5)):
-                content += _page_text(doc[p]) + "\n"
+                if 0 <= p < len(page_texts):
+                    content += page_texts[p] + "\n"
             chapters.append({
                 "title": title, "level": level,
                 "page_start": page, "page_end": end_page,
@@ -131,8 +132,7 @@ def _parse_pdf(data: bytes, tb: Textbook) -> list[dict]:
                 "sort": i,
             })
     else:
-        for i, page in enumerate(doc):
-            text = _page_text(page)
+        for i, text in enumerate(page_texts):
             chapters.append({
                 "title": _derive_title(text, f"第 {i+1} 页"), "level": 1,
                 "page_start": i + 1, "page_end": i + 1,
@@ -142,11 +142,12 @@ def _parse_pdf(data: bytes, tb: Textbook) -> list[dict]:
     return chapters
 
 
-def _extract_and_store_pdf_images(db, tb: Textbook, data: bytes, max_images: int = 80):
-    """提取 PDF 内嵌图片，上传 MinIO 并写入 textbook_images 表。"""
+def _extract_and_store_pdf_images(db, tb: Textbook, data: bytes, max_images: int = 80) -> set[int]:
+    """提取 PDF 内嵌图片，上传 MinIO 并写入 textbook_images 表。返回已配图的页码集合。"""
     import fitz
     doc = fitz.open(stream=data, filetype="pdf")
     seen: set[int] = set()
+    pages_with_images: set[int] = set()
     count = 0
     for pno in range(len(doc)):
         for img in doc[pno].get_images(full=True):
@@ -177,8 +178,50 @@ def _extract_and_store_pdf_images(db, tb: Textbook, data: bytes, max_images: int
                 content_type=f"image/{ext}",
                 sort_order=count,
             ))
+            pages_with_images.add(pno + 1)
             count += 1
-    logger.info("课本 %s 提取图片 %d 张", tb.id, count)
+    logger.info("课本 %s 提取内嵌图片 %d 张", tb.id, count)
+    return pages_with_images
+
+
+def _store_pdf_page_screenshots(
+    db, tb: Textbook, data: bytes, parsed: dict, pages_with_images: set[int],
+):
+    """对扫描/图多文字少且无内嵌图的页面渲染整页截图入库，作为课件配图补充。"""
+    from app.services import liteparse_service
+
+    threshold = settings.TEXTBOOK_SCAN_TEXT_THRESHOLD
+    max_shots = settings.TEXTBOOK_PAGE_SCREENSHOT_MAX
+
+    candidates: list[int] = []
+    for pg in parsed.get("pages") or []:
+        num = pg.get("page_num")
+        if not isinstance(num, int):
+            continue
+        if num in pages_with_images:
+            continue  # 该页已有内嵌图，无需整页截图
+        if len((pg.get("text") or "").strip()) >= threshold:
+            continue  # 文字充足的普通页，不截图，避免冗余
+        candidates.append(num)
+
+    if not candidates:
+        return
+    candidates = candidates[:max_shots]
+
+    shots = liteparse_service.screenshot_pdf(data, page_numbers=candidates)
+    count = 0
+    for num, png in shots:
+        object_name = f"images/{tb.id}/page_{num}_{uuid.uuid4()}.png"
+        upload_file(settings.MINIO_BUCKET_TEXTBOOKS, object_name, png, "image/png")
+        db.add(TextbookImage(
+            textbook_id=tb.id,
+            page_number=num,
+            object_name=object_name,
+            content_type="image/png",
+            sort_order=1000 + count,  # 排在内嵌图之后
+        ))
+        count += 1
+    logger.info("课本 %s 整页截图 %d 张", tb.id, count)
 
 
 def _parse_docx(data: bytes) -> list[dict]:
@@ -286,9 +329,9 @@ async def parse_question_file(
 
 
 def _extract_pdf_text(data: bytes) -> str:
-    import fitz
-    doc = fitz.open(stream=data, filetype="pdf")
-    return "\n".join(_page_text(page) for page in doc)
+    from app.services import liteparse_service
+    parsed = liteparse_service.parse_pdf(data)
+    return parsed["full_text"] or parsed["markdown"]
 
 
 def _extract_docx_text(data: bytes) -> str:

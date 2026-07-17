@@ -18,52 +18,85 @@
       <el-tab-pane label="AI 分析报告" name="ai" />
     </el-tabs>
 
-    <!-- 成绩列表 -->
-    <div v-if="activeTab === 'list'" class="mt-4">
+    <!-- 成绩列表（按考试名称聚合） -->
+    <div v-if="activeTab === 'list'" class="mt-4 space-y-4">
+      <!-- 高分线 / 低分线设置 -->
+      <div class="card flex flex-wrap items-center gap-4 !py-3">
+        <div class="flex items-center gap-2">
+          <span class="text-sm text-slate-500">高分线（得分 ≥）</span>
+          <el-input-number v-model="highLine" :min="0" :max="1000" size="small" style="width:120px" @change="onLineChange" />
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="text-sm text-slate-500">低分线（得分 &lt;）</span>
+          <el-input-number v-model="lowLine" :min="0" :max="1000" size="small" style="width:120px" @change="onLineChange" />
+        </div>
+        <el-button size="small" link type="info" @click="resetLines">恢复默认</el-button>
+        <span class="text-xs text-slate-400 flex-1 text-right">按「科目 · 考试名称」汇总，点击行查看每位学生成绩</span>
+      </div>
+
       <div class="card !p-0 overflow-hidden">
-        <el-table :data="results" v-loading="loading" max-height="550">
-          <el-table-column label="姓名" width="100">
-            <template #default="{ row }">
-              <span class="text-sm text-slate-700">{{ row.student_name || '—' }}</span>
-            </template>
-          </el-table-column>
-          <el-table-column label="学号" width="100">
-            <template #default="{ row }">
-              <span class="text-xs text-slate-500">{{ row.student_no || row.student_id }}</span>
-            </template>
-          </el-table-column>
-          <el-table-column label="年级" width="100">
-            <template #default="{ row }">
-              <span class="text-sm text-slate-600">{{ edu.gradeName(row.grade_id) || '—' }}</span>
-            </template>
-          </el-table-column>
-          <el-table-column label="科目" width="90">
+        <el-table :data="summaries" v-loading="loading" max-height="550" @row-click="openDetail" class="cursor-pointer">
+          <el-table-column label="科目" width="110">
             <template #default="{ row }">
               <span class="text-sm text-slate-600">{{ edu.subjectName(row.subject_id) || '—' }}</span>
             </template>
           </el-table-column>
-          <el-table-column label="考试名称" min-width="160">
-            <template #default="{ row }"><span class="text-sm">{{ row.exam_name }}</span></template>
+          <el-table-column label="考试名称" min-width="180">
+            <template #default="{ row }"><span class="text-sm font-medium text-slate-700">{{ row.exam_name }}</span></template>
           </el-table-column>
-          <el-table-column label="得分" width="90" align="center">
-            <template #default="{ row }">
-              <span :class="`font-bold ${scoreColor(row.score, row.full_score)}`">{{ row.score }}</span>
-              <span class="text-xs text-slate-400">/{{ row.full_score }}</span>
-            </template>
+          <el-table-column label="人数" width="80" align="center">
+            <template #default="{ row }"><span class="text-sm">{{ row.count }}</span></template>
           </el-table-column>
-          <el-table-column label="录入方式" width="100">
-            <template #default="{ row }">
-              <el-tag size="small" :type="entryTag(row.entry_method)">{{ entryLabel(row.entry_method) }}</el-tag>
-            </template>
+          <el-table-column label="最高分" width="90" align="center">
+            <template #default="{ row }"><span class="text-sm font-semibold text-green-600">{{ row.max_score }}</span></template>
           </el-table-column>
-          <el-table-column label="时间" width="110">
+          <el-table-column label="最低分" width="90" align="center">
+            <template #default="{ row }"><span class="text-sm font-semibold text-red-500">{{ row.min_score }}</span></template>
+          </el-table-column>
+          <el-table-column label="平均分" width="90" align="center">
+            <template #default="{ row }"><span class="text-sm font-semibold text-primary-600">{{ row.avg_score }}</span></template>
+          </el-table-column>
+          <el-table-column label="高分人数" width="100" align="center">
+            <template #default="{ row }"><span class="text-sm text-green-600">{{ row.high_count }}</span></template>
+          </el-table-column>
+          <el-table-column label="低分人数" width="100" align="center">
+            <template #default="{ row }"><span class="text-sm text-red-500">{{ row.low_count }}</span></template>
+          </el-table-column>
+          <el-table-column label="操作" width="90" align="center">
             <template #default="{ row }">
-              <span class="text-xs text-slate-400">{{ formatDate(row.created_at) }}</span>
+              <el-button size="small" link type="primary" @click.stop="openDetail(row)">详情</el-button>
             </template>
           </el-table-column>
         </el-table>
       </div>
     </div>
+
+    <!-- 单场考试成绩明细弹窗 -->
+    <el-dialog v-model="showDetail" :title="detailTitle" width="720px" top="6vh">
+      <el-table :data="detailRows" v-loading="detailLoading" max-height="520">
+        <el-table-column type="index" label="#" width="56" align="center" />
+        <el-table-column label="姓名" width="120">
+          <template #default="{ row }"><span class="text-sm text-slate-700">{{ row.student_name || '—' }}</span></template>
+        </el-table-column>
+        <el-table-column label="学号" width="120">
+          <template #default="{ row }"><span class="text-xs text-slate-500">{{ row.student_no || row.student_id }}</span></template>
+        </el-table-column>
+        <el-table-column label="得分" width="110" align="center">
+          <template #default="{ row }">
+            <span :class="`font-bold ${scoreColor(row.score, row.full_score)}`">{{ row.score }}</span>
+            <span class="text-xs text-slate-400">/{{ row.full_score }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="录入方式" width="100">
+          <template #default="{ row }">
+            <el-tag size="small" :type="entryTag(row.entry_method)">{{ entryLabel(row.entry_method) }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="时间" min-width="120">
+          <template #default="{ row }"><span class="text-xs text-slate-400">{{ formatDate(row.created_at) }}</span></template>
+        </el-table-column>
+      </el-table>
+    </el-dialog>
 
     <!-- 统计分析 -->
     <div v-if="activeTab === 'stats'" class="mt-4 space-y-4">
@@ -268,6 +301,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
+import { watchDebounced } from '@vueuse/core'
 import { studentApi } from '@/api/modules'
 import { useEducationStore } from '@/stores/education'
 import { renderMarkdown } from '@/utils/markdown'
@@ -278,14 +312,27 @@ import { BarChart } from 'echarts/charts'
 import { GridComponent, TooltipComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 import VChart from 'vue-echarts'
-import type { ExamResult, GradeReport } from '@/types'
+import type { ExamResult, ExamSummary, GradeReport } from '@/types'
 import dayjs from 'dayjs'
 
 use([BarChart, GridComponent, TooltipComponent, CanvasRenderer])
 
+const DEFAULT_HIGH = 85
+const DEFAULT_LOW = 60
+
 const edu = useEducationStore()
-const results = ref<ExamResult[]>([])
+const summaries = ref<ExamSummary[]>([])
 const loading = ref(false)
+
+// 高分线 / 低分线（后端按教师持久化，未设置则使用默认值）
+const highLine = ref<number>(DEFAULT_HIGH)
+const lowLine = ref<number>(DEFAULT_LOW)
+
+// 单场考试成绩明细弹窗
+const showDetail = ref(false)
+const detailLoading = ref(false)
+const detailRows = ref<ExamResult[]>([])
+const detailTitle = ref('')
 const activeTab = ref('list')
 const showImport = ref(false)
 const showManual = ref(false)
@@ -373,7 +420,7 @@ async function submitManual() {
     showManual.value = false
     manualRows.value = blankRows(8)
     manualForm.exam_name = ''
-    await loadResults()
+    await loadSummary()
   } finally { manualSaving.value = false }
 }
 
@@ -391,15 +438,55 @@ const chartOption = computed(() => ({
   series: [{ type: 'bar', data: Object.values(stats.value?.score_distribution || {}), itemStyle: { color: '#4f46e5', borderRadius: [4, 4, 0, 0] } }],
 }))
 
-async function loadResults() {
+async function loadSummary() {
   loading.value = true
   try {
-    results.value = (await studentApi.getResults({
+    summaries.value = (await studentApi.getResultsSummary({
       grade_id: edu.selectedGradeId || undefined,
       subject_id: edu.selectedSubjectId || undefined,
+      high_line: highLine.value,
+      low_line: lowLine.value,
     })) as any
   }
   finally { loading.value = false }
+}
+
+async function loadLineConfig() {
+  try {
+    const cfg: any = await studentApi.getGradeLineConfig()
+    if (cfg) {
+      highLine.value = cfg.high_line ?? DEFAULT_HIGH
+      lowLine.value = cfg.low_line ?? DEFAULT_LOW
+    }
+  } catch { /* 读取失败时用默认值 */ }
+}
+async function onLineChange() {
+  try {
+    await studentApi.saveGradeLineConfig({ high_line: highLine.value, low_line: lowLine.value })
+  } catch { /* 保存失败不阻塞展示 */ }
+  loadSummary()
+}
+function resetLines() {
+  highLine.value = DEFAULT_HIGH
+  lowLine.value = DEFAULT_LOW
+  onLineChange()
+}
+
+// 点击某场考试 → 加载该考试每位学生的具体成绩
+async function openDetail(row: ExamSummary) {
+  detailTitle.value = `${edu.subjectName(row.subject_id) || ''} · ${row.exam_name} · 成绩明细`
+  showDetail.value = true
+  detailLoading.value = true
+  detailRows.value = []
+  try {
+    detailRows.value = (await studentApi.getResults({
+      grade_id: row.grade_id || edu.selectedGradeId || undefined,
+      subject_id: row.subject_id,
+      exam_name: row.exam_name,
+    })) as any
+    detailRows.value.sort((a, b) => b.score - a.score)
+  }
+  finally { detailLoading.value = false }
 }
 
 // ─── 统计分析 ───────────────────────────────
@@ -528,20 +615,21 @@ watch(activeTab, (tab) => {
   if (tab === 'ai') { loadAiHistory(); loadExamNames() }
 })
 
-// 顶部全局年级/科目变化时，所有数据（成绩列表/统计/AI报告/考试名称）都同步刷新
-watch(() => [edu.selectedGradeId, edu.selectedSubjectId], () => {
+// 顶部全局年级/科目变化：防抖 + 按当前 tab 按需拉取，避免连打 3~4 个接口
+watchDebounced(() => [edu.selectedGradeId, edu.selectedSubjectId], () => {
   statsForm.exam_name = ''
   aiForm.exam_name = ''
   stats.value = null
   aiCurrent.value = null
-  loadResults()
+  loadSummary()
   loadExamNames()
   if (activeTab.value === 'stats') loadStatsHistory()
   if (activeTab.value === 'ai') loadAiHistory()
-})
+}, { debounce: 250 })
 
-onMounted(() => {
-  loadResults()
+onMounted(async () => {
+  await loadLineConfig()
+  loadSummary()
   loadExamNames()
 })
 onUnmounted(() => { if (aiPollTimer) clearInterval(aiPollTimer) })

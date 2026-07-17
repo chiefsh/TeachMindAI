@@ -26,9 +26,9 @@ class Question(Base, TimestampMixin):
     __tablename__ = "questions"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    teacher_id: Mapped[int] = mapped_column(Integer, ForeignKey("teachers.id"), nullable=False)
-    subject_id: Mapped[int] = mapped_column(Integer, ForeignKey("subjects.id"), nullable=False)
-    grade_id: Mapped[int] = mapped_column(Integer, ForeignKey("grades.id"), nullable=False)
+    teacher_id: Mapped[int] = mapped_column(Integer, ForeignKey("teachers.id"), nullable=False, index=True)
+    subject_id: Mapped[int] = mapped_column(Integer, ForeignKey("subjects.id"), nullable=False, index=True)
+    grade_id: Mapped[int] = mapped_column(Integer, ForeignKey("grades.id"), nullable=False, index=True)
     question_type: Mapped[QuestionType] = mapped_column(SAEnum(QuestionType), nullable=False)
     difficulty: Mapped[DifficultyLevel] = mapped_column(
         SAEnum(DifficultyLevel), default=DifficultyLevel.medium

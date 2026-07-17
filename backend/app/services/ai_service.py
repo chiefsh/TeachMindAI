@@ -147,23 +147,82 @@ async def do_generate_courseware(courseware_id: int):
             subject_block = ""
             subject_interactive = ""
             if cw.textbook_id:
-                chapters_result = await db.execute(
-                    select(TextbookChapter).where(TextbookChapter.textbook_id == cw.textbook_id).limit(40)
-                )
-                chapters = chapters_result.scalars().all()
+                # 依据教师选择的「章节多选」或「页码范围」筛选课本内容
+                chapter_ids = None
+                if isinstance(cw.chapter_range, dict):
+                    ids = cw.chapter_range.get("chapter_ids")
+                    if isinstance(ids, list) and ids:
+                        chapter_ids = [int(x) for x in ids]
+                page_start = page_end = None
+                if isinstance(cw.page_range, dict):
+                    page_start = cw.page_range.get("start")
+                    page_end = cw.page_range.get("end")
+
+                # 选中父章节时，展开其所有后代节点，纳入其下各节内容
+                if chapter_ids:
+                    rows = (await db.execute(
+                        select(TextbookChapter.id, TextbookChapter.parent_id)
+                        .where(TextbookChapter.textbook_id == cw.textbook_id)
+                    )).all()
+                    children_map: dict[int | None, list[int]] = {}
+                    for cid, pid in rows:
+                        children_map.setdefault(pid, []).append(cid)
+                    expanded: set[int] = set()
+                    stack = list(chapter_ids)
+                    while stack:
+                        cid = stack.pop()
+                        if cid in expanded:
+                            continue
+                        expanded.add(cid)
+                        stack.extend(children_map.get(cid, []))
+                    chapter_ids = list(expanded)
+
+                ch_q = select(TextbookChapter).where(TextbookChapter.textbook_id == cw.textbook_id)
+                if chapter_ids:
+                    ch_q = ch_q.where(TextbookChapter.id.in_(chapter_ids))
+                elif page_start and page_end:
+                    # 章节页码范围与 [start, end] 有交集即纳入
+                    ch_q = ch_q.where(
+                        TextbookChapter.page_start <= page_end,
+                        TextbookChapter.page_end >= page_start,
+                    )
+                ch_q = ch_q.order_by(TextbookChapter.sort_order).limit(200)
+                chapters = (await db.execute(ch_q)).scalars().all()
+
+                # 若按条件未命中（例如页码/章节无匹配），回退到前 40 条，避免空内容
+                if not chapters:
+                    chapters = (await db.execute(
+                        select(TextbookChapter)
+                        .where(TextbookChapter.textbook_id == cw.textbook_id)
+                        .order_by(TextbookChapter.sort_order)
+                        .limit(40)
+                    )).scalars().all()
+
                 chapter_content = "\n\n".join(
                     f"## {c.title}\n{c.content or ''}" for c in chapters
                 )
 
+                # 依据所选章节/页码，确定图片可用页码范围
+                img_lo, img_hi = page_start, page_end
+                if chapter_ids and chapters:
+                    ch_pages = [c.page_start for c in chapters if c.page_start] + \
+                               [c.page_end for c in chapters if c.page_end]
+                    if ch_pages:
+                        img_lo, img_hi = min(ch_pages), max(ch_pages)
+
                 # 可用课本插图清单（供模型引用）
                 from app.models.textbook import TextbookImage
-                img_result = await db.execute(
+                img_q = (
                     select(TextbookImage)
                     .where(TextbookImage.textbook_id == cw.textbook_id)
-                    .order_by(TextbookImage.sort_order)
-                    .limit(40)
                 )
-                imgs = img_result.scalars().all()
+                if img_lo and img_hi:
+                    img_q = img_q.where(
+                        TextbookImage.page_number >= img_lo,
+                        TextbookImage.page_number <= img_hi,
+                    )
+                img_q = img_q.order_by(TextbookImage.sort_order).limit(40)
+                imgs = (await db.execute(img_q)).scalars().all()
                 if imgs:
                     image_catalog = "\n".join(
                         f"- 图#{img.id}（位于课本第 {img.page_number} 页）" for img in imgs
@@ -715,6 +774,8 @@ async def _generate_lesson_content(
     })
     idx += 1
 
+    # 先拼讲解页骨架；互动 HTML 有限并发生成，缩短墙钟时间
+    interactive_jobs: list[tuple[int, int, dict]] = []  # (slide_list_index, point_i, point)
     for point_i, p in enumerate(points, 1):
         bullets = p.get("core_concepts") or []
         if not bullets and p.get("plain_explanation"):
@@ -747,32 +808,38 @@ async def _generate_lesson_content(
             "content": "请完成下面互动任务，系统会即时反馈并说明原因。",
             "notes": "先让学生独立操作，再进行讲评。重点解释“为什么对/错”。",
         }
-        if cw.is_interactive:
-            html = ""
-            # ① 优先尝试理科 skill 确定性生成整页交互 HTML（命中即用，纯增益）
-            try:
-                from app.services import skill_service
-                html = await skill_service.maybe_generate_skill_html(cfg, p, subject_name)
-            except Exception as e:
-                logger.warning("课件 %s 知识点 %s skill 生成失败，回退 LLM：%s", cw.id, p.get("name"), e)
-            # ② 未命中 skill → 回退到 LLM 生成互动 HTML 片段
-            if not html:
-                try:
-                    html = await _generate_interactive_html_for_point(
-                        cfg=cfg,
-                        cw=cw,
-                        point=p,
-                        point_idx=point_i,
-                        subject_name=subject_name,
-                        image_catalog=image_catalog,
-                        interactive_hint=interactive_hint,
-                    )
-                except Exception as e:
-                    logger.warning("课件 %s 知识点 %s 互动页生成失败：%s", cw.id, p.get("name"), e)
-            if html:
-                interactive_slide["html"] = html
         slides.append(interactive_slide)
+        if cw.is_interactive:
+            interactive_jobs.append((len(slides) - 1, point_i, p))
         idx += 1
+
+    if interactive_jobs:
+        import asyncio
+        from app.services import skill_service
+        sem = asyncio.Semaphore(3)
+
+        async def _gen_html(point_i: int, p: dict) -> str:
+            async with sem:
+                html = ""
+                try:
+                    html = await skill_service.maybe_generate_skill_html(cfg, p, subject_name)
+                except Exception as e:
+                    logger.warning("课件 %s 知识点 %s skill 生成失败，回退 LLM：%s", cw.id, p.get("name"), e)
+                if not html:
+                    try:
+                        html = await _generate_interactive_html_for_point(
+                            cfg=cfg, cw=cw, point=p, point_idx=point_i,
+                            subject_name=subject_name, image_catalog=image_catalog,
+                            interactive_hint=interactive_hint,
+                        )
+                    except Exception as e:
+                        logger.warning("课件 %s 知识点 %s 互动页生成失败：%s", cw.id, p.get("name"), e)
+                return html or ""
+
+        htmls = await asyncio.gather(*[_gen_html(pi, p) for _, pi, p in interactive_jobs])
+        for (slide_i, _, _), html in zip(interactive_jobs, htmls):
+            if html:
+                slides[slide_i]["html"] = html
 
     slides.append({
         "index": idx,
@@ -1023,3 +1090,199 @@ async def do_analyze_grades(report_id: int):
             report.content = {"error": str(e)}
         finally:
             await db.commit()
+
+
+# ─── 试题分析 ─────────────────────────────────────────────────────
+
+async def _publish_progress(task_id: str | None, payload: dict):
+    """通过 Redis pub/sub 推送任务进度，供 WebSocket 转发给前端。"""
+    if not task_id:
+        return
+    try:
+        from app.core.redis_client import get_redis
+        redis = await get_redis()
+        await redis.publish(f"task_progress:{task_id}", json.dumps(payload, ensure_ascii=False))
+    except Exception as e:
+        logger.warning("推送进度失败 task=%s：%s", task_id, e)
+
+
+async def parse_questions_from_image(cfg, data: bytes) -> list[dict]:
+    """用大模型 Vision 从图片中识别并结构化题目。"""
+    import base64
+    from app.core.proxy import sanitize_proxy_env
+    sanitize_proxy_env()
+    import litellm
+    api_key = decrypt_api_key(cfg.api_key_encrypted) if cfg.api_key_encrypted else None
+    b64 = base64.b64encode(data).decode()
+    prompt = (
+        "请识别图片中的所有题目并结构化为 JSON（只输出 JSON）：\n"
+        '{"questions":[{"question_type":"single_choice/multi_choice/fill_blank/true_false/short_answer/essay/calculation",'
+        '"difficulty":"easy/medium/hard/very_hard","content":"题干",'
+        '"options":{"A":"..","B":".."}或null,"answer":"答案(若有)"}]}'
+    )
+    resp = await litellm.acompletion(
+        messages=[{"role": "user", "content": [
+            {"type": "text", "text": prompt},
+            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}},
+        ]}],
+        max_tokens=max(cfg.max_tokens or 0, 4096),
+        **build_litellm_kwargs(cfg, api_key),
+    )
+    raw = _resp_content(resp)
+    obj = _parse_json_object(raw)
+    return (obj or {}).get("questions", []) or []
+
+
+async def analyze_one_question(cfg, q: dict, subject_name: str = "") -> dict:
+    """对单道题做面向学生的图解式解析，返回结构化 dict。
+
+    结构：{思路, steps:[{title,detail,formula}], 知识点:[...], 易错点, 答案}
+    """
+    subj = f"（{subject_name}）" if subject_name else ""
+    opts = q.get("options") or {}
+    opt_text = ""
+    if opts:
+        opt_text = "\n选项：" + "；".join(f"{k}. {v}" for k, v in opts.items())
+    known = f"\n参考答案：{q.get('answer')}" if q.get("answer") else ""
+
+    system_prompt = f"""你是一位善于讲题的{subj}名师，目标是让学生"看懂并学会"这道题，讲解要直观、通俗、由浅入深。
+请输出 JSON（只输出 JSON，不要多余文字）：
+{{
+  "思路": "一句话点破解题突破口",
+  "steps": [{{"title": "步骤标题", "detail": "详细讲解，通俗易懂", "formula": "可选，关键公式用 LaTeX，如 $x^2$"}}],
+  "知识点": ["涉及的核心知识点"],
+  "易错点": "学生常见错误提醒",
+  "答案": "最终答案"
+}}
+要求：分步讲解要完整、逻辑清晰；数学/物理/化学要给出关键公式（LaTeX）；语言面向学生。"""
+    user = f"题目：{q.get('content', '')}{opt_text}{known}"
+
+    resp = await _call_llm(
+        cfg,
+        [{"role": "system", "content": system_prompt}, {"role": "user", "content": user}],
+        max_tokens=max(cfg.max_tokens or 0, 3000),
+    )
+    raw = _resp_content(resp)
+    obj = _parse_json_object(raw) or {}
+    # 归一化：steps 兜底
+    if not obj.get("steps") and raw.strip():
+        obj.setdefault("steps", [{"title": "解析", "detail": raw.strip()[:2000], "formula": ""}])
+    return obj
+
+
+async def _generate_question_diagram_html(cfg, q: dict, analysis: dict, subject_name: str = "") -> str:
+    """尽力为题目生成一段自包含的「图解」HTML 片段（内联 SVG / KaTeX / Chart.js）。
+
+    失败或无法图解时返回空串——前端会退化为纯文字分步解析。
+    """
+    subj = f"（{subject_name}）" if subject_name else ""
+    steps_txt = "；".join(s.get("title", "") for s in (analysis.get("steps") or []))
+    system_prompt = f"""你是{subj}教学动画工程师。请针对给定题目和解题思路，生成一段**自包含的 HTML 片段**，用**图解**方式帮助学生直观理解这道题（例如：几何图形用内联 <svg> 绘制、函数/数据用 Chart.js(window.Chart)、公式用 $...$，可加简单标注/高亮）。
+要求：
+- 只输出被 ```html 代码块包裹的 HTML 片段（以 <div class="stage"> 开头），不要输出 <html>/<head>/<body>。
+- 允许使用已注入的 KaTeX（$...$、$$...$$）与 Chart.js（全局 window.Chart）。
+- 图示要与本题强相关、简洁清晰；不要长篇文字（文字解析已单独展示）。
+- 若本题不适合图解，返回一个含关键结论的简洁卡片即可。"""
+    user = (
+        f"题目：{q.get('content', '')}\n"
+        f"解题思路：{analysis.get('思路', '')}\n"
+        f"关键步骤：{steps_txt}\n"
+        f"最终答案：{analysis.get('答案', q.get('answer', ''))}"
+    )
+    try:
+        resp = await _call_llm(
+            cfg,
+            [{"role": "system", "content": system_prompt}, {"role": "user", "content": user}],
+            max_tokens=max(cfg.max_tokens or 0, 3000),
+        )
+        raw = _resp_content(resp)
+        return _extract_html_from_response(raw)
+    except Exception as e:
+        logger.warning("题目图解生成失败：%s", e)
+        return ""
+
+
+async def do_analyze_questions(set_id: int, question_ids: list[int], task_id: str | None = None):
+    """对批次中被勾选的题目做 AI 图解解析（有限并发），并通过 Redis 推送实时进度。"""
+    import asyncio
+    from app.models.question_analysis import AnalysisSet, AnalysisQuestion
+
+    async with AsyncSessionLocal() as db:
+        aset = (await db.execute(
+            select(AnalysisSet).where(AnalysisSet.id == set_id)
+        )).scalar_one_or_none()
+        if not aset:
+            raise ValueError(f"试题批次 {set_id} 不存在，稍后重试")
+
+        cfg = await _get_default_llm(aset.teacher_id, db)
+
+        subject_name = ""
+        subj = (await db.execute(select(Subject).where(Subject.id == aset.subject_id))).scalar_one_or_none()
+        if subj:
+            subject_name = subj.name
+
+        q_rows = (await db.execute(
+            select(AnalysisQuestion).where(
+                AnalysisQuestion.set_id == set_id,
+                AnalysisQuestion.id.in_(question_ids),
+            ).order_by(AnalysisQuestion.seq)
+        )).scalars().all()
+
+        for q in q_rows:
+            q.selected = True
+            q.analysis_status = ParseStatus.processing
+        await db.commit()
+
+        total = len(q_rows)
+        await _publish_progress(task_id, {"stage": "start", "total": total, "current": 0})
+
+        if not cfg:
+            for q in q_rows:
+                q.analysis_status = ParseStatus.failed
+            await db.commit()
+            await _publish_progress(task_id, {"stage": "error", "message": "未配置默认大模型"})
+            return
+
+        # 快照题面，LLM 调用不共享 AsyncSession（会话非线程安全）
+        jobs = [
+            (q.id, q.seq, {"content": q.content, "options": q.options, "answer": q.answer})
+            for q in q_rows
+        ]
+        by_id = {q.id: q for q in q_rows}
+        sem = asyncio.Semaphore(3)
+        write_lock = asyncio.Lock()
+        done_count = 0
+
+        async def _run_one(qid: int, seq: int, qd: dict):
+            async with sem:
+                await _publish_progress(task_id, {
+                    "stage": "processing", "current": done_count, "total": total,
+                    "question_id": qid, "seq": seq,
+                })
+                try:
+                    analysis = await analyze_one_question(cfg, qd, subject_name)
+                    html = await _generate_question_diagram_html(cfg, qd, analysis, subject_name)
+                    return qid, seq, analysis, html or None, None
+                except Exception as e:
+                    logger.exception("题目 %s 解析失败：%s", qid, e)
+                    return qid, seq, None, None, e
+
+        tasks = [asyncio.create_task(_run_one(qid, seq, qd)) for qid, seq, qd in jobs]
+        for fut in asyncio.as_completed(tasks):
+            qid, seq, analysis, html, err = await fut
+            async with write_lock:
+                q = by_id[qid]
+                if err is None:
+                    q.analysis_content = analysis
+                    q.analysis_html = html
+                    q.analysis_status = ParseStatus.done
+                else:
+                    q.analysis_status = ParseStatus.failed
+                done_count += 1
+                await db.commit()
+                await _publish_progress(task_id, {
+                    "stage": "done_one", "current": done_count, "total": total,
+                    "question_id": qid, "seq": seq, "status": q.analysis_status.value,
+                })
+
+        await _publish_progress(task_id, {"stage": "completed", "total": total, "current": total})

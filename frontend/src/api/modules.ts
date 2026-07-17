@@ -1,9 +1,10 @@
 import request from './index'
 import type {
   Textbook, Chapter, Question, Courseware, HomeworkPaper,
-  Student, ExamResult, GradeReport, LLMConfig, TeacherSubject,
+  Student, ExamResult, ExamSummary, GradeReport, LLMConfig, TeacherSubject,
   SchoolLevel, Grade, Subject, SubjectPrompt,
   CoursewareSession, SessionBoard, PublicSession,
+  AnalysisSet,
 } from '@/types'
 
 // ─── 工作台 ────────────────────────────────────────────────────────
@@ -120,8 +121,15 @@ export const studentApi = {
     rows: { name: string; student_no: string; score: number | null }[]
   }) => request.post<{ count: number }>('/students/manual-grades', data),
   getResults: (params?: object) => request.get<ExamResult[]>('/students/results', { params }),
+  getResultsSummary: (params?: {
+    grade_id?: number; subject_id?: number; high_line?: number; low_line?: number
+  }) => request.get<ExamSummary[]>('/students/results/summary', { params }),
   getExamNames: (params?: { grade_id?: number; subject_id?: number }) =>
     request.get<string[]>('/students/exam-names', { params }),
+  getGradeLineConfig: () =>
+    request.get<{ high_line: number; low_line: number }>('/students/grade-line-config'),
+  saveGradeLineConfig: (data: { high_line: number; low_line: number }) =>
+    request.put<{ high_line: number; low_line: number }>('/students/grade-line-config', data),
   // 成绩分析报告（统计/AI）历史
   createAnalysis: (data: {
     grade_id?: number | null; subject_id: number; exam_name: string
@@ -133,6 +141,30 @@ export const studentApi = {
   deleteAnalysis: (id: number) => request.delete(`/students/analysis/${id}`),
   regenerateAnalysis: (id: number, custom_prompt?: string | null) =>
     request.post<GradeReport>(`/students/analysis/${id}/regenerate`, { custom_prompt }),
+}
+
+// ─── 试题分析 ──────────────────────────────────────────────────────
+export const analysisApi = {
+  list: (params?: { grade_id?: number; subject_id?: number }) =>
+    request.get<AnalysisSet[]>('/question-analysis', { params }),
+  importManual: (data: { text: string; grade_id: number; subject_id: number; name?: string }) =>
+    request.post<AnalysisSet>('/question-analysis/import-manual', data),
+  importFile: (formData: FormData) =>
+    request.post<AnalysisSet>('/question-analysis/import-file', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }),
+  get: (id: number) => request.get<AnalysisSet>(`/question-analysis/${id}`),
+  getStatus: (id: number) => request.get<{
+    parse_status: string; question_count: number
+    analysis: { pending: number; processing: number; done: number; failed: number }
+  }>(`/question-analysis/${id}/status`),
+  analyze: (id: number, question_ids: number[]) =>
+    request.post<{ task_id: string; count: number }>(`/question-analysis/${id}/analyze`, { question_ids }),
+  saveToBank: (id: number, question_ids: number[]) =>
+    request.post<{ count: number }>(`/question-analysis/${id}/save-to-bank`, { question_ids }),
+  exportFile: (id: number, format: 'docx' | 'pdf') =>
+    request.get<Blob>(`/question-analysis/${id}/export`, { params: { format }, responseType: 'blob' }),
+  delete: (id: number) => request.delete(`/question-analysis/${id}`),
 }
 
 // ─── 设置 ──────────────────────────────────────────────────────────

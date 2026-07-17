@@ -128,7 +128,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, watch } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
+import { watchDebounced } from '@vueuse/core'
 import { textbookApi } from '@/api/modules'
 import { useEducationStore } from '@/stores/education'
 import { ElMessage } from 'element-plus'
@@ -177,7 +178,7 @@ async function load() {
 }
 
 // 顶部全局年级/科目变化时自动刷新
-watch(() => [edu.selectedGradeId, edu.selectedSubjectId], load)
+watchDebounced(() => [edu.selectedGradeId, edu.selectedSubjectId], load, { debounce: 250 })
 
 async function handleUpload() {
   await uploadFormRef.value?.validate()

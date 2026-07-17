@@ -161,7 +161,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, computed, watch } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
+import { watchDebounced } from '@vueuse/core'
 import { homeworkApi, coursewareApi } from '@/api/modules'
 import { useEducationStore } from '@/stores/education'
 import { ElMessage } from 'element-plus'
@@ -222,7 +223,7 @@ async function loadCoursewares() {
 }
 
 // 顶部全局年级/科目变化时同步刷新试卷与可选课件
-watch(() => [edu.selectedGradeId, edu.selectedSubjectId], () => { load(); loadCoursewares() })
+watchDebounced(() => [edu.selectedGradeId, edu.selectedSubjectId], () => { load(); loadCoursewares() }, { debounce: 250 })
 
 async function handleCreate() {
   await formRef.value?.validate()

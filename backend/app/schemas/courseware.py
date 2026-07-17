@@ -7,8 +7,8 @@ from app.models.courseware import CoursewareType
 class CoursewareCreate(BaseModel):
     textbook_id: int | None = None
     title: str
-    chapter_range: dict | None = None   # {"start_id": 1, "end_id": 5}
-    page_range: dict | None = None      # {"start": 1, "end": 30}
+    chapter_range: dict | None = None   # 按章节：{"chapter_ids": [12, 15, 18]}
+    page_range: dict | None = None      # 按页码：{"start": 1, "end": 30}
     courseware_type: CoursewareType = CoursewareType.standard
     custom_prompt: str | None = None
     is_interactive: bool = False

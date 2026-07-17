@@ -154,20 +154,22 @@
     </el-dialog>
 
     <!-- 演示模式（reveal.js） -->
-    <el-dialog v-model="showPresent" title="" width="96%" top="2vh" :destroy-on-close="true" class="present-dialog">
+    <el-dialog v-model="showPresent" title="" width="98%" top="1vh" :destroy-on-close="true" class="present-dialog">
       <template #header>
         <div class="flex items-center gap-3">
           <span class="font-semibold">演示模式</span>
-          <span class="text-xs text-slate-400 flex-1">方向键/空格翻页 · 按 F 全屏 · 按 S 打开演讲者视图（含讲稿）</span>
+          <span class="text-xs text-slate-400 flex-1">方向键/空格翻页 · 按 F 全屏 · 按 S 打开演讲者视图（含讲稿） · 内容超长可在页内滚动</span>
+          <el-button size="small" :icon="FullScreen" @click="fullscreenDeck">全屏演示</el-button>
           <el-button size="small" :icon="Printer" @click="printDeck">导出 PDF（演示版）</el-button>
         </div>
       </template>
       <iframe
         v-if="deckBlobUrl"
+        ref="deckIframe"
         :src="deckBlobUrl"
         sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"
         class="w-full rounded-lg border border-slate-200 bg-white"
-        style="height:84vh"
+        style="height:90vh"
       ></iframe>
     </el-dialog>
 
@@ -308,10 +310,18 @@ const fsBlobUrl = ref('')
 // 演示模式
 const showPresent = ref(false)
 const deckBlobUrl = ref('')
+const deckIframe = ref<HTMLIFrameElement | null>(null)
 function openPresent() {
   if (deckBlobUrl.value) { URL.revokeObjectURL(deckBlobUrl.value) }
   deckBlobUrl.value = makeBlobUrl(buildRevealDeck(cw.value?.content, imageMap.value))
   showPresent.value = true
+}
+
+function fullscreenDeck() {
+  const el = deckIframe.value as any
+  if (!el) return
+  const req = el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen
+  if (req) req.call(el)
 }
 
 function printDeck() {
@@ -516,11 +526,30 @@ async function doExport(fmt: 'pptx' | 'docx' | 'pdf') {
 async function load() {
   cw.value = (await coursewareApi.get(Number(route.params.id))) as any
   if (cw.value?.gen_status === 'processing' || cw.value?.gen_status === 'pending') {
-    if (!pollTimer) pollTimer = setInterval(load, 5000)
+    startStatusPoll()
   } else {
-    if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
+    stopStatusPoll()
     if (cw.value?.gen_status === 'done') resolveImages()
   }
+}
+
+/** 生成中只轮询轻量 status，完成后再拉一次完整详情，避免反复传输 slides/html */
+function startStatusPoll() {
+  if (pollTimer) return
+  pollTimer = setInterval(async () => {
+    try {
+      const st = await coursewareApi.getStatus(Number(route.params.id)) as any
+      if (st.gen_status === 'done' || st.gen_status === 'failed') {
+        stopStatusPoll()
+        await load()
+      } else if (cw.value) {
+        cw.value.gen_status = st.gen_status
+      }
+    } catch { /* 下次再试 */ }
+  }, 4000)
+}
+function stopStatusPoll() {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
 }
 
 function statusLabel(s?: string) {
@@ -529,7 +558,7 @@ function statusLabel(s?: string) {
 
 onMounted(load)
 onUnmounted(() => {
-  if (pollTimer) clearInterval(pollTimer)
+  stopStatusPoll()
   // 释放所有 Blob URL，防止内存泄漏
   ;[currentBlobUrl, fsBlobUrl, deckBlobUrl].forEach(r => {
     if (r.value) { URL.revokeObjectURL(r.value); r.value = '' }

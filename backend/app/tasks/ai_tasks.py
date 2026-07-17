@@ -5,6 +5,7 @@ from app.services.ai_service import (
     do_generate_homework,
     do_ocr_grades,
     do_analyze_grades,
+    do_analyze_questions,
 )
 import asyncio
 
@@ -48,3 +49,9 @@ def analyze_grades_task(self, report_id: int):
         _run(do_analyze_grades(report_id))
     except Exception as exc:
         raise self.retry(exc=exc, countdown=20)
+
+
+@celery_app.task(name="app.tasks.ai_tasks.analyze_questions_task", bind=True)
+def analyze_questions_task(self, set_id: int, question_ids: list[int]):
+    # 不做自动重试：解析为逐题幂等写库，重试会重复推送进度
+    return _run(do_analyze_questions(set_id, question_ids, self.request.id))

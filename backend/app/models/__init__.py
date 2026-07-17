@@ -7,6 +7,8 @@ from app.models.courseware import Courseware
 from app.models.homework import HomeworkPaper, HomeworkQuestion
 from app.models.student import Student, ExamResult, GradeReport
 from app.models.llm_config import LLMConfig
+from app.models.teacher_setting import TeacherSetting
+from app.models.question_analysis import AnalysisSet, AnalysisQuestion
 
 __all__ = [
     "TimestampMixin", "Teacher",
@@ -17,4 +19,6 @@ __all__ = [
     "HomeworkPaper", "HomeworkQuestion",
     "Student", "ExamResult", "GradeReport",
     "LLMConfig",
+    "TeacherSetting",
+    "AnalysisSet", "AnalysisQuestion",
 ]

@@ -1,17 +1,28 @@
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import ElementPlus from 'element-plus'
-import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 import 'element-plus/dist/index.css'
 import './assets/main.css'
+
+// 仅注册实际用到的图标，避免全量 @element-plus/icons-vue 拖慢首屏
+import {
+  Reading, HomeFilled, Collection, EditPen, VideoPlay, Tickets,
+  DataAnalysis, TrendCharts, Setting, SwitchButton,
+  Connection, CopyDocument, Printer,
+} from '@element-plus/icons-vue'
 
 import App from './App.vue'
 import router from './router'
 
 const app = createApp(App)
 
-// 注册 Element Plus 图标
-for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
+// 侧栏等通过字符串名引用的图标必须全局注册；页面内显式 import 的图标无需再挂全局
+const icons = {
+  Reading, HomeFilled, Collection, EditPen, VideoPlay, Tickets,
+  DataAnalysis, TrendCharts, Setting, SwitchButton,
+  Connection, CopyDocument, Printer,
+}
+for (const [key, component] of Object.entries(icons)) {
   app.component(key, component)
 }
 

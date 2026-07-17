@@ -131,7 +131,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, watch } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
+import { watchDebounced } from '@vueuse/core'
 import { questionApi } from '@/api/modules'
 import { useEducationStore } from '@/stores/education'
 import { ElMessage } from 'element-plus'
@@ -177,7 +178,7 @@ async function load() {
 }
 
 // 顶部全局年级/科目变化时回到第一页并刷新
-watch(() => [edu.selectedGradeId, edu.selectedSubjectId], () => { filter.page = 1; load() })
+watchDebounced(() => [edu.selectedGradeId, edu.selectedSubjectId], () => { filter.page = 1; load() }, { debounce: 250 })
 
 function openCreate() {
   createForm.grade_id = edu.selectedGradeId || null

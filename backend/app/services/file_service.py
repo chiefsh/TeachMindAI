@@ -46,18 +46,26 @@ async def parse_textbook_file(textbook_id: int):
             else:
                 chapters = [{"title": tb.title, "content": "", "level": 1, "sort": 0}]
 
+            # 按 level 构建父子树：栈中保存 (level, chapter_id)，
+            # flush 后拿到自增 id 再回填 parent_id
+            level_stack: list[tuple[int, int]] = []
             for i, ch in enumerate(chapters):
+                lvl = ch.get("level", 1) or 1
                 chapter = TextbookChapter(
                     textbook_id=tb.id,
-                    parent_id=ch.get("parent_id"),
                     title=ch["title"],
                     content=ch.get("content", ""),
                     page_start=ch.get("page_start"),
                     page_end=ch.get("page_end"),
                     sort_order=i,
-                    level=ch.get("level", 1),
+                    level=lvl,
                 )
                 db.add(chapter)
+                await db.flush()
+                while level_stack and level_stack[-1][0] >= lvl:
+                    level_stack.pop()
+                chapter.parent_id = level_stack[-1][1] if level_stack else None
+                level_stack.append((lvl, chapter.id))
 
             # 提取课本插图（仅 PDF），供课件引用
             if tb.file_type == "pdf":
@@ -111,8 +119,125 @@ def _read_pdf_toc(data: bytes) -> list:
         return []
 
 
+_HEADING_RE = re.compile(
+    r"^(第\s*[一二三四五六七八九十百零两\d]+\s*[章节篇课单元回讲]"
+    r"|Chapter\s*\d+|Unit\s*\d+|Lesson\s*\d+"
+    r"|[\d]+(?:\.\d+){0,3}[\s、.．]+\S)",
+    re.IGNORECASE,
+)
+
+
+def _detect_pdf_headings_by_font(data: bytes) -> list[dict]:
+    """基于字号启发式识别章节标题（适用于有文字层的 PDF）。
+
+    思路：统计全书正文主字号（按字符数加权的众数），明显大于正文的短行判为标题，
+    再按不同标题字号从大到小映射为 1~3 级。返回 [{title, level, page(0基)}]。
+    """
+    from collections import Counter
+    try:
+        import fitz
+        doc = fitz.open(stream=data, filetype="pdf")
+    except Exception as e:
+        logger.warning("字号标题识别打开 PDF 失败：%s", e)
+        return []
+
+    size_counter: Counter = Counter()
+    lines: list[dict] = []
+    for pno in range(len(doc)):
+        try:
+            blocks = doc[pno].get_text("dict").get("blocks", [])
+        except Exception:
+            continue
+        for block in blocks:
+            for line in block.get("lines", []):
+                spans = line.get("spans", [])
+                text = "".join(s.get("text", "") for s in spans).strip()
+                if not text:
+                    continue
+                max_size = max((s.get("size", 0) or 0 for s in spans), default=0)
+                flags = max((s.get("flags", 0) or 0 for s in spans), default=0)
+                for s in spans:
+                    size_counter[round(s.get("size", 0) or 0)] += len(s.get("text", "") or "")
+                lines.append({
+                    "page": pno, "text": text,
+                    "size": round(max_size), "bold": bool(flags & 16),
+                })
+
+    if not lines or not size_counter:
+        return []
+    body = size_counter.most_common(1)[0][0] or 0
+
+    cand: list[dict] = []
+    for ln in lines:
+        t = ln["text"]
+        if len(t) > 40:
+            continue
+        if re.fullmatch(r"[\d\s.\-—_]+", t):  # 纯页码/数字/分隔线
+            continue
+        rx = bool(_HEADING_RE.match(t))
+        big = ln["size"] >= body + 1 and ln["size"] >= body * 1.12
+        # 以标点结尾且非编号标题的，多为正文句子，排除
+        if t[-1] in "。！？，、,.;；：:" and not rx:
+            continue
+        if big or (rx and (ln["bold"] or ln["size"] >= body)):
+            cand.append(ln)
+
+    if len(cand) < 2:
+        return []
+
+    sizes = sorted({c["size"] for c in cand}, reverse=True)
+    size_to_level = {s: min(i + 1, 3) for i, s in enumerate(sizes)}
+    return [
+        {"title": c["text"][:60], "level": size_to_level[c["size"]], "page": c["page"]}
+        for c in cand
+    ]
+
+
+def _detect_headings_by_regex(page_texts: list[str]) -> list[dict]:
+    """基于正则识别章节标题（适用于扫描/OCR 得到的纯文本，无字号信息）。"""
+    section_re = re.compile(r"^第\s*[一二三四五六七八九十百零两\d]+\s*[节课讲]")
+    result: list[dict] = []
+    for pno, text in enumerate(page_texts):
+        for line in (text or "").splitlines():
+            line = line.strip()
+            if not line or len(line) > 40:
+                continue
+            if _HEADING_RE.match(line):
+                level = 2 if section_re.match(line) else 1
+                result.append({"title": line[:60], "level": level, "page": pno})
+    return result
+
+
+def _build_chapters_from_headings(headings: list[dict], page_texts: list[str]) -> list[dict]:
+    """依据识别出的标题序列切分正文，生成带层级/页码的章节列表。"""
+    chapters: list[dict] = []
+    n = len(headings)
+    total = len(page_texts)
+    for i, h in enumerate(headings):
+        start_page = h["page"]
+        end_page = headings[i + 1]["page"] if i + 1 < n else total - 1
+        content = "\n".join(page_texts[start_page:min(end_page + 1, total)])
+        # 起点对齐到本标题；终点截到下一标题，减少相邻章节内容重叠
+        si = content.find(h["title"])
+        if si > 0:
+            content = content[si:]
+        if i + 1 < n:
+            ei = content.find(headings[i + 1]["title"], len(h["title"]))
+            if ei > 0:
+                content = content[:ei]
+        chapters.append({
+            "title": h["title"], "level": h["level"],
+            "page_start": start_page + 1, "page_end": end_page + 1,
+            "content": content[:5000], "sort": i,
+        })
+    return chapters
+
+
 def _parse_pdf(parsed: dict, data: bytes, tb: Textbook) -> list[dict]:
-    """基于 liteparse 解析结果构建章节；章节结构沿用 PDF 书签目录。"""
+    """基于 liteparse 解析结果构建章节。
+
+    优先级：PDF 书签目录 → 字号启发式标题 → 正则标题(扫描件) → 逐页兜底。
+    """
     page_texts = [pg["text"] for pg in parsed["pages"]]
     tb.total_pages = parsed["total_pages"] or len(page_texts)
 
@@ -122,23 +247,37 @@ def _parse_pdf(parsed: dict, data: bytes, tb: Textbook) -> list[dict]:
         for i, (level, title, page) in enumerate(toc):
             end_page = toc[i + 1][2] - 1 if i + 1 < len(toc) else len(page_texts)
             content = ""
-            for p in range(page - 1, min(end_page, page + 5)):
+            # 读取本节全部页面（父节点若与子节同页起始可能为空，由生成时聚合子节补齐），
+            # 累计够 5000 字即停止，避免长节被固定页数截断
+            for p in range(page - 1, max(end_page, page)):
                 if 0 <= p < len(page_texts):
                     content += page_texts[p] + "\n"
+                    if len(content) >= 5000:
+                        break
             chapters.append({
                 "title": title, "level": level,
                 "page_start": page, "page_end": end_page,
                 "content": content[:5000],
                 "sort": i,
             })
-    else:
-        for i, text in enumerate(page_texts):
-            chapters.append({
-                "title": _derive_title(text, f"第 {i+1} 页"), "level": 1,
-                "page_start": i + 1, "page_end": i + 1,
-                "content": text[:3000],
-                "sort": i,
-            })
+        return chapters
+
+    # 无书签：启发式识别真实章节结构
+    headings = _detect_pdf_headings_by_font(data)
+    if len(headings) < 2:
+        headings = _detect_headings_by_regex(page_texts)
+    if len(headings) >= 2:
+        logger.info("课本 %s 无书签，启发式识别到 %d 个章节标题", tb.id, len(headings))
+        return _build_chapters_from_headings(headings, page_texts)
+
+    # 兜底：逐页作为章节
+    for i, text in enumerate(page_texts):
+        chapters.append({
+            "title": _derive_title(text, f"第 {i+1} 页"), "level": 1,
+            "page_start": i + 1, "page_end": i + 1,
+            "content": text[:3000],
+            "sort": i,
+        })
     return chapters
 
 
@@ -411,6 +550,118 @@ async def _parse_question_image(teacher_id, subject_id, grade_id, data, source):
         pass
 
 
+# ─── 试题分析：文件解析 ───────────────────────────────────────────
+
+def _fallback_split_dicts(text: str) -> list[dict]:
+    """无 LLM 或 LLM 失败时的兜底：按题号拆分为题目 dict 列表。"""
+    parts = re.split(r"\n(?=\s*\d+\s*[.、．)])", text)
+    items: list[dict] = []
+    for p in parts:
+        c = p.strip()
+        if len(c) >= 4:
+            items.append({"content": c})
+    if not items and text.strip():
+        items = [{"content": text.strip()}]
+    return items
+
+
+def _coerce_qtype(val) -> QuestionType:
+    try:
+        return QuestionType(val)
+    except Exception:
+        return QuestionType.short_answer
+
+
+def _coerce_difficulty(val) -> DifficultyLevel:
+    try:
+        return DifficultyLevel(val)
+    except Exception:
+        return DifficultyLevel.medium
+
+
+async def parse_analysis_file(set_id: int, task_id: str | None = None):
+    """解析「试题分析」导入的文件，拆题（默认调用 LLM）并写入 analysis_questions。"""
+    from app.models.question_analysis import AnalysisSet, AnalysisQuestion
+    from app.services.ai_service import _publish_progress
+
+    async with AsyncSessionLocal() as db:
+        aset = (await db.execute(
+            select(AnalysisSet).where(AnalysisSet.id == set_id)
+        )).scalar_one_or_none()
+        if not aset:
+            return
+
+        # 优先用 Celery 传入的 task_id（避免 API 回写前 worker 已启动导致进度丢通道）
+        task_id = task_id or aset.task_id
+        if task_id and not aset.task_id:
+            aset.task_id = task_id
+        aset.parse_status = ParseStatus.processing
+        await db.commit()
+        await _publish_progress(task_id, {"stage": "parse_start", "message": "正在提取试题内容..."})
+
+        try:
+            from app.services.ai_service import (
+                _get_default_llm, parse_questions_from_text, parse_questions_from_image,
+            )
+            cfg = await _get_default_llm(aset.teacher_id, db)
+            file_bytes = get_file_bytes(settings.MINIO_BUCKET_QUESTIONS, aset.source_file_path)
+            ext = (aset.source_file_path or "").rsplit(".", 1)[-1].lower()
+
+            parsed: list[dict] = []
+            if ext in ("jpg", "jpeg", "png", "webp"):
+                await _publish_progress(task_id, {"stage": "parse_llm", "message": "正在用 AI 识别图片中的题目..."})
+                if cfg:
+                    parsed = await parse_questions_from_image(cfg, file_bytes)
+            else:
+                if ext == "pdf":
+                    text = _extract_pdf_text(file_bytes)
+                elif ext in ("docx", "doc"):
+                    text = _extract_docx_text(file_bytes)
+                elif ext == "txt":
+                    text = file_bytes.decode("utf-8", errors="ignore")
+                else:
+                    text = ""
+                if cfg and text.strip():
+                    await _publish_progress(task_id, {"stage": "parse_llm", "message": "正在用 AI 拆分题目..."})
+                    try:
+                        parsed = await parse_questions_from_text(cfg, text)
+                    except Exception:
+                        parsed = []
+                if not parsed and text.strip():
+                    parsed = _fallback_split_dicts(text)
+
+            seq = 0
+            for item in parsed:
+                content = (item.get("content") or "").strip()
+                if not content:
+                    continue
+                seq += 1
+                db.add(AnalysisQuestion(
+                    set_id=aset.id,
+                    teacher_id=aset.teacher_id,
+                    seq=seq,
+                    content=content[:8000],
+                    options=item.get("options") or None,
+                    answer=(item.get("answer") or None),
+                    question_type=_coerce_qtype(item.get("question_type")),
+                    difficulty=_coerce_difficulty(item.get("difficulty")),
+                ))
+
+            if seq == 0:
+                aset.parse_error = "未能识别出有效题目，请检查文件内容或稍后重试。"
+            aset.parse_status = ParseStatus.done
+            await _publish_progress(task_id, {
+                "stage": "parse_completed", "question_count": seq,
+                "message": f"已拆出 {seq} 道题" if seq else "未识别到题目",
+            })
+        except Exception as e:
+            aset.parse_status = ParseStatus.failed
+            aset.parse_error = str(e)
+            await _publish_progress(task_id, {"stage": "parse_error", "message": str(e)})
+        finally:
+            await db.commit()
+
+
 # ─── 成绩导入 ─────────────────────────────────────────────────────
 
 async def import_grades_from_file(teacher_id: int, filename: str, file_data: bytes):
@@ -429,14 +680,27 @@ async def import_grades_from_file(teacher_id: int, filename: str, file_data: byt
 
     from app.models.student import Student, ExamResult, EntryMethod
     async with AsyncSessionLocal() as db:
+        # 预收集学号，一次查出已有学生，避免逐行 N+1
+        nos: list[str] = []
+        for _, row in df.iterrows():
+            no = str(row.get("student_no", "")).strip()
+            if no:
+                nos.append(no)
+        student_map: dict[str, Student] = {}
+        if nos:
+            existing = (await db.execute(
+                select(Student).where(
+                    Student.teacher_id == teacher_id,
+                    Student.student_no.in_(list(set(nos))),
+                )
+            )).scalars().all()
+            student_map = {s.student_no: s for s in existing}
+
         for _, row in df.iterrows():
             student_no = str(row.get("student_no", "")).strip()
             if not student_no:
                 continue
-            result = await db.execute(
-                select(Student).where(Student.teacher_id == teacher_id, Student.student_no == student_no)
-            )
-            student = result.scalar_one_or_none()
+            student = student_map.get(student_no)
             if not student:
                 student = Student(
                     teacher_id=teacher_id,
@@ -447,8 +711,9 @@ async def import_grades_from_file(teacher_id: int, filename: str, file_data: byt
                 )
                 db.add(student)
                 await db.flush()
+                student_map[student_no] = student
 
-            er = ExamResult(
+            db.add(ExamResult(
                 student_id=student.id,
                 teacher_id=teacher_id,
                 subject_id=int(row.get("subject_id", 1)),
@@ -456,6 +721,5 @@ async def import_grades_from_file(teacher_id: int, filename: str, file_data: byt
                 score=float(row.get("score", 0)),
                 full_score=float(row.get("full_score", 100)),
                 entry_method=EntryMethod.document,
-            )
-            db.add(er)
+            ))
         await db.commit()

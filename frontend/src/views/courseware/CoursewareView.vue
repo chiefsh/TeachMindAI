@@ -71,11 +71,26 @@
           <el-input v-model="form.title" placeholder="如：第一章 春 — 精讲课件" />
         </el-form-item>
         <el-form-item label="关联课本">
-          <el-select v-model="form.textbook_id" placeholder="选择课本（可选）" style="width:100%" clearable>
+          <el-select v-model="form.textbook_id" placeholder="选择课本（可选）" style="width:100%" clearable @change="onTextbookChange">
             <el-option v-for="tb in textbooks" :key="tb.id" :label="tb.title" :value="tb.id" />
           </el-select>
         </el-form-item>
-        <el-form-item v-if="form.textbook_id" label="页码范围">
+        <el-form-item v-if="form.textbook_id" label="生成范围">
+          <el-radio-group v-model="form.gen_mode">
+            <el-radio value="chapter">按章节</el-radio>
+            <el-radio value="page">按页码</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item v-if="form.textbook_id && form.gen_mode === 'chapter'" label="选择章节">
+          <el-select
+            v-model="form.chapter_ids" multiple filterable collapse-tags collapse-tags-tooltip
+            placeholder="可多选章节" style="width:100%" :loading="chaptersLoading"
+            no-data-text="该课本暂无解析出的章节"
+          >
+            <el-option v-for="c in chapterOptions" :key="c.id" :label="c.label" :value="c.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item v-if="form.textbook_id && form.gen_mode === 'page'" label="页码范围">
           <div class="flex items-center gap-2">
             <el-input-number v-model="form.page_start" :min="1" placeholder="起始页" style="width:120px" />
             <span class="text-slate-400">至</span>
@@ -114,13 +129,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, watch } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
+import { watchDebounced } from '@vueuse/core'
 import { useRouter } from 'vue-router'
 import { coursewareApi, textbookApi } from '@/api/modules'
 import { useEducationStore } from '@/stores/education'
 import { ElMessage } from 'element-plus'
 import { MagicStick, View, Delete, VideoPlay, RefreshRight } from '@element-plus/icons-vue'
-import type { Courseware, Textbook } from '@/types'
+import type { Courseware, Textbook, Chapter } from '@/types'
 import dayjs from 'dayjs'
 
 const router = useRouter()
@@ -132,12 +148,43 @@ const showCreate = ref(false)
 const creating = ref(false)
 const regeneratingId = ref<number | null>(null)
 const formRef = ref()
+const chapterOptions = ref<{ id: number; label: string }[]>([])
+const chaptersLoading = ref(false)
 const form = reactive({
   title: '', textbook_id: null as number | null, courseware_type: 'standard',
+  gen_mode: 'chapter' as 'chapter' | 'page',
+  chapter_ids: [] as number[],
   page_start: null as number | null, page_end: null as number | null,
   custom_prompt: '', interactive_features: [] as string[], is_interactive: false,
 })
 const rules = { title: [{ required: true, message: '请填写课件标题' }] }
+
+// 章节树可能含子节点，扁平化为「层级缩进 + 页码」的下拉项
+function flattenChapters(list: Chapter[], depth = 0): { id: number; label: string }[] {
+  const out: { id: number; label: string }[] = []
+  for (const c of list || []) {
+    const indent = '　'.repeat(depth)
+    const pages = c.page_start ? `（P${c.page_start}${c.page_end && c.page_end !== c.page_start ? '-' + c.page_end : ''}）` : ''
+    out.push({ id: c.id, label: `${indent}${c.title}${pages}` })
+    if (c.children?.length) out.push(...flattenChapters(c.children, depth + 1))
+  }
+  return out
+}
+
+async function onTextbookChange() {
+  form.chapter_ids = []
+  form.page_start = null
+  form.page_end = null
+  chapterOptions.value = []
+  if (!form.textbook_id) return
+  chaptersLoading.value = true
+  try {
+    const data = (await textbookApi.getChapters(form.textbook_id)) as Chapter[]
+    chapterOptions.value = flattenChapters(data)
+  } finally {
+    chaptersLoading.value = false
+  }
+}
 
 async function load() {
   loading.value = true
@@ -157,10 +204,22 @@ async function loadTextbooks() {
   })) as any
 }
 
-function openCreate() { showCreate.value = true }
+function openCreate() {
+  form.title = ''
+  form.textbook_id = null
+  form.courseware_type = 'standard'
+  form.gen_mode = 'chapter'
+  form.chapter_ids = []
+  form.page_start = null
+  form.page_end = null
+  form.custom_prompt = ''
+  form.interactive_features = []
+  chapterOptions.value = []
+  showCreate.value = true
+}
 
 // 顶部全局年级/科目变化时同步刷新课件与可选课本
-watch(() => [edu.selectedGradeId, edu.selectedSubjectId], () => { load(); loadTextbooks() })
+watchDebounced(() => [edu.selectedGradeId, edu.selectedSubjectId], () => { load(); loadTextbooks() }, { debounce: 250 })
 
 async function handleCreate() {
   await formRef.value?.validate()
@@ -173,8 +232,12 @@ async function handleCreate() {
       custom_prompt: form.custom_prompt,
       is_interactive: form.courseware_type === 'interactive',
     }
-    if (form.page_start && form.page_end) {
-      payload.page_range = { start: form.page_start, end: form.page_end }
+    if (form.textbook_id) {
+      if (form.gen_mode === 'chapter' && form.chapter_ids.length) {
+        payload.chapter_range = { chapter_ids: form.chapter_ids }
+      } else if (form.gen_mode === 'page' && form.page_start && form.page_end) {
+        payload.page_range = { start: form.page_start, end: form.page_end }
+      }
     }
     await coursewareApi.create(payload)
     ElMessage.success('课件生成任务已提交，请稍候查看')

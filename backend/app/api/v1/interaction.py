@@ -97,18 +97,26 @@ async def list_sessions(
         )
         .order_by(CoursewareSession.created_at.desc())
     )).scalars().all()
+    if not rows:
+        return []
+
+    # 一次聚合避免 N+1
+    sid_list = [s.id for s in rows]
+    stats_rows = (await db.execute(
+        select(
+            InteractionRecord.session_id,
+            func.count(InteractionRecord.id),
+            func.count(func.distinct(InteractionRecord.student_name)),
+        )
+        .where(InteractionRecord.session_id.in_(sid_list))
+        .group_by(InteractionRecord.session_id)
+    )).all()
+    stats = {sid: (cnt or 0, stu or 0) for sid, cnt, stu in stats_rows}
 
     out: list[SessionOut] = []
     for s in rows:
-        cnt = (await db.execute(
-            select(
-                func.count(InteractionRecord.id),
-                func.count(func.distinct(InteractionRecord.student_name)),
-            ).where(InteractionRecord.session_id == s.id)
-        )).one()
         o = SessionOut.model_validate(s)
-        o.record_count = cnt[0] or 0
-        o.student_count = cnt[1] or 0
+        o.record_count, o.student_count = stats.get(s.id, (0, 0))
         out.append(o)
     return out
 

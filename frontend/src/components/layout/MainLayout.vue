@@ -139,6 +139,7 @@ const navGroups = [
     items: [
       { path: '/courseware', label: '课件生成', icon: 'VideoPlay' },
       { path: '/homework',   label: '作业/考试', icon: 'Tickets' },
+      { path: '/question-analysis', label: '试题分析', icon: 'DataAnalysis' },
     ],
   },
   {

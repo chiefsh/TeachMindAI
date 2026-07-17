@@ -383,6 +383,131 @@ def build_homework_pdf(title: str, paper_type: str, questions: list[dict]) -> by
     return buf.getvalue()
 
 
+# ---------- 试题分析导出（题目在前，答案解析按序在最后；不含图） ----------
+
+def _analysis_lines(analysis: dict | None) -> list[str]:
+    """把结构化解析 dict 拉平成可读文本行（纯文字，不含图）。"""
+    if not analysis:
+        return []
+    lines: list[str] = []
+    if analysis.get("思路"):
+        lines.append(f"【思路】{_strip_markdown(str(analysis['思路']))}")
+    for i, s in enumerate(analysis.get("steps") or [], 1):
+        title = _strip_markdown(str(s.get("title") or ""))
+        detail = _strip_markdown(str(s.get("detail") or ""))
+        formula = str(s.get("formula") or "").strip()
+        seg = f"步骤{i}"
+        if title:
+            seg += f"：{title}"
+        lines.append(seg)
+        if detail:
+            lines.append(f"    {detail}")
+        if formula:
+            lines.append(f"    公式：{formula}")
+    kps = analysis.get("知识点") or []
+    if kps:
+        lines.append("【知识点】" + "、".join(_strip_markdown(str(k)) for k in kps))
+    if analysis.get("易错点"):
+        lines.append(f"【易错点】{_strip_markdown(str(analysis['易错点']))}")
+    if analysis.get("答案"):
+        lines.append(f"【答案】{_strip_markdown(str(analysis['答案']))}")
+    return lines
+
+
+def build_analysis_docx(name: str, questions: list[dict]) -> bytes:
+    from docx import Document
+    from docx.shared import Pt, RGBColor
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+    doc = Document()
+    h = doc.add_heading(name, level=0)
+    h.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    for i, q in enumerate(questions, 1):
+        p = doc.add_paragraph()
+        p.add_run(f"{i}. {q.get('content', '')}")
+        opts = q.get("options") or {}
+        for k in sorted(opts.keys()):
+            doc.add_paragraph(f"{k}. {opts[k]}", style="List Bullet")
+
+    doc.add_page_break()
+    doc.add_heading("答案与解析", level=1)
+    for i, q in enumerate(questions, 1):
+        doc.add_heading(f"第 {i} 题", level=2)
+        if q.get("selected") and q.get("analysis_content"):
+            for line in _analysis_lines(q.get("analysis_content")):
+                doc.add_paragraph(line)
+        else:
+            doc.add_paragraph(f"答案：{q.get('answer') or '—'}")
+
+    buf = io.BytesIO()
+    doc.save(buf)
+    return buf.getvalue()
+
+
+def build_analysis_pdf(name: str, questions: list[dict]) -> bytes:
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import mm
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.enums import TA_CENTER
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.cidfonts import UnicodeCIDFont
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak
+
+    font_name = "STSong-Light"
+    try:
+        pdfmetrics.registerFont(UnicodeCIDFont(font_name))
+    except Exception:
+        font_name = "Helvetica"
+
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle("ATitle", parent=styles["Title"], fontName=font_name, fontSize=20, alignment=TA_CENTER)
+    h2 = ParagraphStyle("AH2", parent=styles["Heading2"], fontName=font_name, fontSize=13)
+    body = ParagraphStyle("ABody", parent=styles["Normal"], fontName=font_name, fontSize=11, leading=18)
+    opt = ParagraphStyle("AOpt", parent=body, leftIndent=16)
+
+    def esc(t: str) -> str:
+        return (t or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+    story: list[Any] = [Paragraph(esc(name), title_style), Spacer(1, 6 * mm)]
+    for i, q in enumerate(questions, 1):
+        story.append(Paragraph(f"{i}. {esc(q.get('content', ''))}", body))
+        opts = q.get("options") or {}
+        for k in sorted(opts.keys()):
+            story.append(Paragraph(f"{k}. {esc(str(opts[k]))}", opt))
+        story.append(Spacer(1, 2 * mm))
+
+    story.append(PageBreak())
+    story.append(Paragraph("答案与解析", title_style))
+    story.append(Spacer(1, 4 * mm))
+    for i, q in enumerate(questions, 1):
+        story.append(Paragraph(f"第 {i} 题", h2))
+        if q.get("selected") and q.get("analysis_content"):
+            for line in _analysis_lines(q.get("analysis_content")):
+                story.append(Paragraph(esc(line), body))
+        else:
+            story.append(Paragraph(f"答案：{esc(q.get('answer') or '—')}", body))
+        story.append(Spacer(1, 3 * mm))
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=18 * mm, bottomMargin=18 * mm,
+                            leftMargin=20 * mm, rightMargin=20 * mm)
+    doc.build(story)
+    return buf.getvalue()
+
+
+def build_analysis_export(fmt: str, name: str, questions: list[dict]) -> tuple[bytes, str, str]:
+    if fmt in ("docx", "doc"):
+        return (
+            build_analysis_docx(name, questions),
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "docx",
+        )
+    if fmt == "pdf":
+        return build_analysis_pdf(name, questions), "application/pdf", "pdf"
+    raise ValueError(f"不支持的导出格式：{fmt}")
+
+
 def build_homework_export(fmt: str, title: str, paper_type: str, questions: list[dict]) -> tuple[bytes, str, str]:
     if fmt == "docx":
         return (

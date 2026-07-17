@@ -46,7 +46,8 @@ export interface Courseware {
   is_interactive: boolean; textbook_id?: number; grade_id?: number; subject_id?: number
   task_id?: string; created_at: string
   content?: Record<string, unknown>; custom_prompt?: string
-  chapter_range?: Record<string, number>; page_range?: Record<string, number>
+  chapter_range?: { chapter_ids?: number[] } | Record<string, number>
+  page_range?: { start?: number; end?: number }
 }
 
 export interface HomeworkQuestion {
@@ -71,10 +72,51 @@ export interface ExamResult {
   student_name?: string; student_no?: string; grade_id?: number
 }
 
+export interface ExamSummary {
+  subject_id: number
+  exam_name: string
+  grade_id?: number | null
+  count: number
+  max_score: number
+  min_score: number
+  avg_score: number
+  full_score: number
+  high_count: number
+  low_count: number
+  high_line: number
+  low_line: number
+  latest_at?: string | null
+}
+
 export interface GradeReport {
   id: number; grade_id?: number | null; subject_id: number; exam_name: string
   report_type: 'stats' | 'ai'; custom_prompt?: string | null
   content?: Record<string, any> | null; gen_status: ParseStatus; created_at: string
+}
+
+export interface AnalysisStep { title?: string; detail?: string; formula?: string }
+
+export interface AnalysisContent {
+  思路?: string
+  steps?: AnalysisStep[]
+  知识点?: string[]
+  易错点?: string
+  答案?: string
+}
+
+export interface AnalysisQuestion {
+  id: number; seq: number; content: string
+  options?: Record<string, string> | null; answer?: string | null
+  question_type: QuestionType; difficulty: DifficultyLevel
+  selected: boolean; analysis_status: ParseStatus
+  analysis_content?: AnalysisContent | null; analysis_html?: string | null
+}
+
+export interface AnalysisSet {
+  id: number; name: string; grade_id: number; subject_id: number
+  source_type: string; parse_status: ParseStatus; parse_error?: string | null
+  task_id?: string | null; question_count: number; created_at: string
+  questions?: AnalysisQuestion[]
 }
 
 export interface LLMConfig {

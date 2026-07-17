@@ -1,20 +1,40 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, case
 from typing import Optional
 from pydantic import BaseModel
 
 from app.core.database import get_db
 from app.models.teacher import Teacher
 from app.models.student import Student, ExamResult, EntryMethod, GradeReport, ReportType
+from app.models.teacher_setting import TeacherSetting
 from app.models.textbook import ParseStatus
 from app.schemas.student import (
     StudentCreate, StudentOut, ExamResultCreate, ExamResultOut, GradeStats,
-    AnalysisCreate, AnalysisRegenerate, GradeReportOut,
+    AnalysisCreate, AnalysisRegenerate, GradeReportOut, ExamSummaryOut, GradeLineConfig,
 )
 from app.api.deps import get_current_teacher
 
 router = APIRouter(prefix="/students", tags=["学生成绩"])
+
+# 高分线 / 低分线默认值（教师未设置时使用）
+DEFAULT_HIGH_LINE = 85.0
+DEFAULT_LOW_LINE = 60.0
+GRADE_LINE_KEY = "grade_line"
+
+
+async def _get_grade_lines(db: AsyncSession, teacher_id: int) -> tuple[float, float]:
+    """读取教师的高/低分线配置，未设置则返回默认值。"""
+    row = (await db.execute(
+        select(TeacherSetting).where(
+            TeacherSetting.teacher_id == teacher_id,
+            TeacherSetting.key == GRADE_LINE_KEY,
+        )
+    )).scalar_one_or_none()
+    val = row.value if row and isinstance(row.value, dict) else {}
+    high = val.get("high_line", DEFAULT_HIGH_LINE)
+    low = val.get("low_line", DEFAULT_LOW_LINE)
+    return float(high), float(low)
 
 
 @router.get("", response_model=list[StudentOut])
@@ -187,6 +207,96 @@ async def list_results(
         o.grade_id = gid
         out.append(o)
     return out
+
+
+@router.get("/grade-line-config", response_model=GradeLineConfig)
+async def get_grade_line_config(
+    teacher: Teacher = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+):
+    """获取教师的高/低分线配置（未设置返回默认值）。"""
+    high, low = await _get_grade_lines(db, teacher.id)
+    return GradeLineConfig(high_line=high, low_line=low)
+
+
+@router.put("/grade-line-config", response_model=GradeLineConfig)
+async def save_grade_line_config(
+    data: GradeLineConfig,
+    teacher: Teacher = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+):
+    """保存教师的高/低分线配置。"""
+    row = (await db.execute(
+        select(TeacherSetting).where(
+            TeacherSetting.teacher_id == teacher.id,
+            TeacherSetting.key == GRADE_LINE_KEY,
+        )
+    )).scalar_one_or_none()
+    payload = {"high_line": data.high_line, "low_line": data.low_line}
+    if row:
+        row.value = payload
+    else:
+        db.add(TeacherSetting(teacher_id=teacher.id, key=GRADE_LINE_KEY, value=payload))
+    await db.flush()
+    return data
+
+
+@router.get("/results/summary", response_model=list[ExamSummaryOut])
+async def summary_results(
+    grade_id: Optional[int] = None,
+    subject_id: Optional[int] = None,
+    high_line: Optional[float] = None,
+    low_line: Optional[float] = None,
+    teacher: Teacher = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+):
+    """成绩概览：按「科目 + 考试名称」聚合，返回人数/最高/最低/平均/高分人数/低分人数。
+
+    高分人数 = 得分 >= high_line；低分人数 = 得分 < low_line。
+    high_line / low_line 未传时回退到教师配置（再无则默认值）。
+    """
+    cfg_high, cfg_low = await _get_grade_lines(db, teacher.id)
+    high = high_line if high_line is not None else cfg_high
+    low = low_line if low_line is not None else cfg_low
+
+    # SQL 端聚合，避免成绩量大时全量拉入内存
+    q = (
+        select(
+            Student.grade_id,
+            ExamResult.subject_id,
+            ExamResult.exam_name,
+            func.count(ExamResult.id),
+            func.max(ExamResult.score),
+            func.min(ExamResult.score),
+            func.avg(ExamResult.score),
+            func.max(ExamResult.full_score),
+            func.sum(case((ExamResult.score >= high, 1), else_=0)),
+            func.sum(case((ExamResult.score < low, 1), else_=0)),
+            func.max(ExamResult.created_at),
+        )
+        .join(Student, Student.id == ExamResult.student_id)
+        .where(ExamResult.teacher_id == teacher.id)
+        .group_by(Student.grade_id, ExamResult.subject_id, ExamResult.exam_name)
+        .order_by(func.max(ExamResult.created_at).desc())
+    )
+    if grade_id:
+        q = q.where(Student.grade_id == grade_id)
+    if subject_id:
+        q = q.where(ExamResult.subject_id == subject_id)
+
+    rows = (await db.execute(q)).all()
+    return [
+        ExamSummaryOut(
+            grade_id=gid, subject_id=sid, exam_name=ename,
+            count=int(cnt or 0),
+            max_score=float(mx or 0), min_score=float(mn or 0),
+            avg_score=round(float(avg or 0), 2),
+            full_score=float(full or 100),
+            high_count=int(hi or 0), low_count=int(lo or 0),
+            high_line=high, low_line=low, latest_at=latest,
+        )
+        for gid, sid, ename, cnt, mx, mn, avg, full, hi, lo, latest in rows
+    ]
 
 
 @router.get("/exam-names", response_model=list[str])

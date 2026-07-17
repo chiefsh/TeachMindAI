@@ -21,9 +21,9 @@ class Student(Base, TimestampMixin):
     __tablename__ = "students"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    teacher_id: Mapped[int] = mapped_column(Integer, ForeignKey("teachers.id"), nullable=False)
-    grade_id: Mapped[int] = mapped_column(Integer, ForeignKey("grades.id"), nullable=False)
-    student_no: Mapped[str] = mapped_column(String(32), nullable=False)
+    teacher_id: Mapped[int] = mapped_column(Integer, ForeignKey("teachers.id"), nullable=False, index=True)
+    grade_id: Mapped[int] = mapped_column(Integer, ForeignKey("grades.id"), nullable=False, index=True)
+    student_no: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(64), nullable=False)
     class_name: Mapped[str | None] = mapped_column(String(32), nullable=True)  # 班级
 
@@ -36,10 +36,10 @@ class ExamResult(Base, TimestampMixin):
     __tablename__ = "exam_results"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    student_id: Mapped[int] = mapped_column(Integer, ForeignKey("students.id"), nullable=False)
-    teacher_id: Mapped[int] = mapped_column(Integer, ForeignKey("teachers.id"), nullable=False)
-    subject_id: Mapped[int] = mapped_column(Integer, ForeignKey("subjects.id"), nullable=False)
-    exam_name: Mapped[str] = mapped_column(String(128), nullable=False)   # 考试名称
+    student_id: Mapped[int] = mapped_column(Integer, ForeignKey("students.id"), nullable=False, index=True)
+    teacher_id: Mapped[int] = mapped_column(Integer, ForeignKey("teachers.id"), nullable=False, index=True)
+    subject_id: Mapped[int] = mapped_column(Integer, ForeignKey("subjects.id"), nullable=False, index=True)
+    exam_name: Mapped[str] = mapped_column(String(128), nullable=False, index=True)   # 考试名称
     score: Mapped[float] = mapped_column(Float, nullable=False)
     full_score: Mapped[float] = mapped_column(Float, default=100.0)
     entry_method: Mapped[EntryMethod] = mapped_column(SAEnum(EntryMethod), default=EntryMethod.manual)

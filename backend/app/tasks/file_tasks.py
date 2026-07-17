@@ -3,6 +3,7 @@ from app.tasks.celery_app import celery_app
 from app.services.file_service import (
     parse_textbook_file,
     parse_question_file,
+    parse_analysis_file,
     import_grades_from_file,
 )
 import asyncio
@@ -40,6 +41,14 @@ def parse_question_file_task(
 ):
     try:
         _run(parse_question_file(teacher_id, subject_id, grade_id, bucket, object_name, file_type))
+    except Exception as exc:
+        raise self.retry(exc=exc, countdown=10)
+
+
+@celery_app.task(name="app.tasks.file_tasks.parse_analysis_file_task", bind=True, max_retries=3)
+def parse_analysis_file_task(self, set_id: int):
+    try:
+        _run(parse_analysis_file(set_id, self.request.id))
     except Exception as exc:
         raise self.retry(exc=exc, countdown=10)
 

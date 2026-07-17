@@ -15,10 +15,10 @@ class Courseware(Base, TimestampMixin):
     __tablename__ = "coursewares"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    teacher_id: Mapped[int] = mapped_column(Integer, ForeignKey("teachers.id"), nullable=False)
-    textbook_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("textbooks.id"), nullable=True)
+    teacher_id: Mapped[int] = mapped_column(Integer, ForeignKey("teachers.id"), nullable=False, index=True)
+    textbook_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("textbooks.id"), nullable=True, index=True)
     title: Mapped[str] = mapped_column(String(256), nullable=False)
-    chapter_range: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # {"start":1,"end":3}
+    chapter_range: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # {"chapter_ids":[12,15,18]}
     page_range: Mapped[dict | None] = mapped_column(JSON, nullable=True)     # {"start":1,"end":20}
     courseware_type: Mapped[CoursewareType] = mapped_column(
         SAEnum(CoursewareType), default=CoursewareType.standard

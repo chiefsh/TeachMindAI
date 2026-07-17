@@ -19,6 +19,8 @@ const router = createRouter({
         { path: 'courseware',   name: 'Courseware',  component: () => import('@/views/courseware/CoursewareView.vue') },
         { path: 'courseware/:id', name: 'CoursewareDetail', component: () => import('@/views/courseware/CoursewareDetail.vue') },
         { path: 'homework',     name: 'Homework',    component: () => import('@/views/homework/HomeworkView.vue') },
+        { path: 'question-analysis', name: 'QuestionAnalysis', component: () => import('@/views/question-analysis/QuestionAnalysisView.vue') },
+        { path: 'question-analysis/:id', name: 'QuestionAnalysisDetail', component: () => import('@/views/question-analysis/QuestionAnalysisDetail.vue') },
         { path: 'grades',       name: 'Grades',      component: () => import('@/views/grades/GradesView.vue') },
         { path: 'settings',     name: 'Settings',    component: () => import('@/views/settings/SettingsView.vue') },
       ],

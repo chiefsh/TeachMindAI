@@ -45,6 +45,29 @@ class ExamResultOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class GradeLineConfig(BaseModel):
+    """成绩高分线 / 低分线配置（按教师持久化）。"""
+    high_line: float
+    low_line: float
+
+
+class ExamSummaryOut(BaseModel):
+    """按「科目 + 考试名称」聚合后的成绩概览（成绩列表默认展示维度）。"""
+    subject_id: int
+    exam_name: str
+    grade_id: int | None = None
+    count: int
+    max_score: float
+    min_score: float
+    avg_score: float
+    full_score: float
+    high_count: int    # 高分人数（得分 >= 高分线）
+    low_count: int     # 低分人数（得分 < 低分线）
+    high_line: float
+    low_line: float
+    latest_at: datetime | None = None
+
+
 class GradeStats(BaseModel):
     exam_name: str
     subject_id: int

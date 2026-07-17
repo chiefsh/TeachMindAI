@@ -48,12 +48,21 @@ canvas{max-width:100%}
 const KATEX_VERSION = '0.16.11'
 const CHARTJS_VERSION = '4.4.4'
 
-const HEAD_LIBS = `
+const KATEX_LIBS = `
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@${KATEX_VERSION}/dist/katex.min.css">
 <script defer src="https://cdn.jsdelivr.net/npm/katex@${KATEX_VERSION}/dist/katex.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/katex@${KATEX_VERSION}/dist/contrib/auto-render.min.js"></script>
+`
+const CHART_LIBS = `
 <script defer src="https://cdn.jsdelivr.net/npm/chart.js@${CHARTJS_VERSION}/dist/chart.umd.min.js"></script>
 `
+
+function needsKatex(html: string): boolean {
+  return /\$\$|\\\(|\\\[|katex|mathjax/i.test(html)
+}
+function needsChart(html: string): boolean {
+  return /chart\.js|new\s+Chart\b|window\.Chart|canvas/i.test(html)
+}
 
 // 作答数据回收桥接：互动页通过 window.CW.report/correct/wrong 把结果回传给上层页面
 const CW_BRIDGE = `
@@ -101,18 +110,24 @@ window.addEventListener('load', function(){
 export function wrapInteractiveHtml(fragment: string): string {
   const body = (fragment || '').trim()
   if (/<html[\s>]/i.test(body)) return body
+  // 按内容按需注入 CDN，避免每个 iframe 都拉 KaTeX + Chart.js
+  const libs = [
+    needsKatex(body) ? KATEX_LIBS : '',
+    needsChart(body) ? CHART_LIBS : '',
+  ].join('')
+  const boot = needsKatex(body) ? BOOT : ''
   return `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 ${CW_BRIDGE}
-${HEAD_LIBS}
+${libs}
 <style>${DESIGN_SYSTEM}</style>
 </head>
 <body>
 ${body}
-${BOOT}
+${boot}
 </body>
 </html>`
 }

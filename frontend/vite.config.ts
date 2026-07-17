@@ -9,12 +9,25 @@ export default defineConfig({
       '@': resolve(__dirname, 'src'),
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vue-vendor': ['vue', 'vue-router', 'pinia'],
+          'element-plus': ['element-plus', '@element-plus/icons-vue'],
+          echarts: ['echarts', 'vue-echarts'],
+        },
+      },
+    },
+    chunkSizeWarningLimit: 900,
+  },
   server: {
     port: 3000,
     proxy: {
       '/api': {
         target: 'http://localhost:8000',
         changeOrigin: true,
+        ws: true,
       },
       '/ws': {
         target: 'ws://localhost:8000',

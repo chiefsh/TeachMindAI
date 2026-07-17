@@ -148,18 +148,28 @@ async def export_courseware(
     if not cw.content or cw.gen_status != ParseStatus.done:
         raise HTTPException(status_code=400, detail="课件尚未生成完成，无法导出")
 
-    # 拉取引用到的课本图片字节
+    # 并行拉取引用图片，避免同步 MinIO 串行阻塞事件循环
     images: dict[int, bytes] = {}
     img_ids = _collect_image_ids(cw.content)
     if img_ids:
+        import asyncio
         res = await db.execute(
             select(TextbookImage).where(TextbookImage.id.in_(img_ids))
         )
-        for img in res.scalars().all():
+        img_rows = res.scalars().all()
+
+        async def _fetch(img: TextbookImage):
             try:
-                images[img.id] = get_file_bytes(settings.MINIO_BUCKET_TEXTBOOKS, img.object_name)
+                data = await asyncio.to_thread(
+                    get_file_bytes, settings.MINIO_BUCKET_TEXTBOOKS, img.object_name
+                )
+                return img.id, data
             except Exception:
-                pass
+                return img.id, None
+
+        for iid, data in await asyncio.gather(*[_fetch(img) for img in img_rows]):
+            if data:
+                images[iid] = data
 
     try:
         data, media_type, ext = build_export(fmt, cw.content, cw.title, images)

@@ -27,7 +27,21 @@ const DECK_STYLE = `
 .reveal .slide-label{display:inline-block;font-size:.42em;font-weight:700;color:#fff;background:var(--c-primary);
   padding:.15em .7em;border-radius:999px;margin-bottom:.4em;}
 .reveal section{text-align:left;}
-.reveal section.cover{text-align:center;}
+/* 仅屏幕演示：关闭垂直居中后，内容页顶部对齐、超高可滚动，避免底部内容被裁切。
+   打印(导出 PDF)时不加高度/滚动限制，让内容自然铺排到页面。 */
+@media screen{
+  .reveal .slides>section,
+  .reveal .slides>section>section{
+    height:720px;max-height:720px;
+    overflow-y:auto;overflow-x:hidden;
+    padding:20px 40px;box-sizing:border-box;
+    scrollbar-width:thin;
+  }
+  .reveal .slides>section::-webkit-scrollbar{width:8px;}
+  .reveal .slides>section::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:4px;}
+  /* 封面页：水平居中 + 顶部留白近似垂直居中（避免用 display:flex !important 干扰 reveal 的显隐切换） */
+  .reveal .slides>section.cover{text-align:center;padding-top:200px;}
+}
 .reveal .cover h1{font-size:2.0em;color:var(--c-primary);}
 .reveal .cover .sub{color:var(--c-muted);font-size:.9em;margin-top:.4em;}
 .reveal ul{display:block;}
@@ -155,7 +169,8 @@ ${sections.join('\n')}
   var PRINT_MODE = ${opts.print ? 'true' : 'false'};
   Reveal.initialize({
     hash: false, slideNumber: 'c/t', transition: 'slide',
-    width: 1280, height: 720, margin: 0.06,
+    width: 1280, height: 720, margin: 0.04,
+    center: false,              // 顶部对齐，配合 CSS 让超高内容页可滚动
     showSlideNumber: 'all',
     view: PRINT_MODE ? 'print' : null,
     plugins: [ RevealNotes ]

@@ -32,6 +32,20 @@
         </div>
         <div class="flex items-center gap-2 mt-3 pt-3 border-t border-slate-50" @click.stop>
           <el-button size="small" link :icon="View" @click="router.push(`/question-analysis/${s.id}`)">查看解析</el-button>
+          <el-popconfirm
+            v-if="s.source_type !== 'manual'"
+            title="重新解析将清空已拆题目并重新拆题，确定继续吗？"
+            width="240"
+            @confirm="reparse(s)"
+          >
+            <template #reference>
+              <el-button
+                size="small" link :icon="Refresh"
+                :loading="reparsingId === s.id"
+                :disabled="s.parse_status === 'processing'"
+              >重新解析</el-button>
+            </template>
+          </el-popconfirm>
           <div class="flex-1" />
           <el-popconfirm title="确定删除该试题批次？" @confirm="del(s.id)">
             <template #reference>
@@ -45,17 +59,28 @@
       </div>
     </div>
 
+    <div v-if="total > pageSize" class="mt-4 flex justify-end">
+      <el-pagination
+        v-model:current-page="page"
+        :page-size="pageSize"
+        :total="total"
+        layout="prev, pager, next, total"
+        @current-change="load"
+      />
+    </div>
+
     <!-- 导入弹窗 -->
     <el-dialog v-model="showImport" title="导入试题" width="620px" :close-on-click-modal="false">
       <el-form :model="form" label-width="90px">
         <el-form-item label="年级">
-          <el-select v-model="form.grade_id" placeholder="选择年级" style="width:100%">
+          <el-select v-model="form.grade_id" placeholder="选择年级" style="width:100%" @change="onGradeChange">
             <el-option v-for="g in edu.filteredGrades" :key="g.id" :label="g.name" :value="g.id" />
           </el-select>
         </el-form-item>
         <el-form-item label="学科">
-          <el-select v-model="form.subject_id" placeholder="选择学科" style="width:100%">
-            <el-option v-for="s in edu.filteredSubjects" :key="s.id" :label="s.name" :value="s.id" />
+          <el-select v-model="form.subject_id" placeholder="请先选择年级" style="width:100%"
+            :disabled="!form.grade_id">
+            <el-option v-for="s in edu.subjectsOfGrade(form.grade_id)" :key="s.id" :label="s.name" :value="s.id" />
           </el-select>
         </el-form-item>
         <el-form-item label="试题名称">
@@ -101,7 +126,7 @@ import { useRouter } from 'vue-router'
 import { analysisApi } from '@/api/modules'
 import { useEducationStore } from '@/stores/education'
 import { ElMessage } from 'element-plus'
-import { Plus, View, Delete, DataAnalysis, UploadFilled } from '@element-plus/icons-vue'
+import { Plus, View, Delete, DataAnalysis, UploadFilled, Refresh } from '@element-plus/icons-vue'
 import type { AnalysisSet } from '@/types'
 import RichEditor from '@/components/RichEditor.vue'
 import dayjs from 'dayjs'
@@ -110,8 +135,12 @@ const router = useRouter()
 const edu = useEducationStore()
 const sets = ref<AnalysisSet[]>([])
 const loading = ref(false)
+const total = ref(0)
+const page = ref(1)
+const pageSize = 12
 const showImport = ref(false)
 const submitting = ref(false)
+const reparsingId = ref<number | null>(null)
 const editorRef = ref()
 const file = ref<File | null>(null)
 const form = reactive({
@@ -122,18 +151,25 @@ const form = reactive({
 async function load() {
   loading.value = true
   try {
-    sets.value = (await analysisApi.list({
+    const res = await analysisApi.list({
       grade_id: edu.selectedGradeId || undefined,
       subject_id: edu.selectedSubjectId || undefined,
-    })) as any
+      page: page.value, page_size: pageSize,
+    }) as any
+    sets.value = res.items || []
+    total.value = res.total || 0
   } finally { loading.value = false }
 }
 
-watchDebounced(() => [edu.selectedGradeId, edu.selectedSubjectId], load, { debounce: 250 })
+watchDebounced(() => [edu.selectedGradeId, edu.selectedSubjectId], () => { page.value = 1; load() }, { debounce: 250 })
 
 function openImport() {
   form.grade_id = edu.selectedGradeId || null
-  form.subject_id = edu.selectedSubjectId || null
+  // 仅当全局科目属于该年级学段时才预填，避免带入不匹配的学科
+  const validSubjects = edu.subjectsOfGrade(form.grade_id).map(s => s.id)
+  form.subject_id = validSubjects.includes(edu.selectedSubjectId as number)
+    ? edu.selectedSubjectId
+    : null
   form.name = ''
   form.mode = 'manual'
   form.html = ''
@@ -141,6 +177,11 @@ function openImport() {
   file.value = null
   editorRef.value?.clear?.()
   showImport.value = true
+}
+
+// 年级变化时清空已选学科，保证学科与年级联动
+function onGradeChange() {
+  form.subject_id = null
 }
 
 function onFileChange(f: any) { file.value = f.raw }
@@ -181,6 +222,19 @@ async function del(id: number) {
   await analysisApi.delete(id)
   ElMessage.success('已删除')
   await load()
+}
+
+async function reparse(s: AnalysisSet) {
+  reparsingId.value = s.id
+  try {
+    await analysisApi.reparse(s.id)
+    ElMessage.success('已重新提交解析，稍后刷新查看')
+    await load()
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.detail || '重新解析失败')
+  } finally {
+    reparsingId.value = null
+  }
 }
 
 function statusLabel(s: string) {

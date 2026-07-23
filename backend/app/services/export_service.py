@@ -33,6 +33,61 @@ def _strip_markdown(text: str) -> str:
     return text.strip()
 
 
+# ---------- LaTeX → 可读纯文本（Word/PDF 不渲染公式，退化为 Unicode 文本） ----------
+
+_SUP = {"0": "⁰", "1": "¹", "2": "²", "3": "³", "4": "⁴", "5": "⁵",
+        "6": "⁶", "7": "⁷", "8": "⁸", "9": "⁹", "+": "⁺", "-": "⁻", "n": "ⁿ", "i": "ⁱ"}
+_SUB = {"0": "₀", "1": "₁", "2": "₂", "3": "₃", "4": "₄", "5": "₅",
+        "6": "₆", "7": "₇", "8": "₈", "9": "₉", "+": "₊", "-": "₋"}
+_LATEX_SYMBOLS = {
+    r"\pi": "π", r"\times": "×", r"\div": "÷", r"\cdot": "·", r"\pm": "±", r"\mp": "∓",
+    r"\leq": "≤", r"\geq": "≥", r"\neq": "≠", r"\approx": "≈", r"\equiv": "≡",
+    r"\infty": "∞", r"\alpha": "α", r"\beta": "β", r"\gamma": "γ", r"\delta": "δ",
+    r"\theta": "θ", r"\lambda": "λ", r"\mu": "μ", r"\sigma": "σ", r"\omega": "ω",
+    r"\Delta": "Δ", r"\Omega": "Ω", r"\Sigma": "Σ", r"\circ": "°", r"\degree": "°",
+    r"\angle": "∠", r"\parallel": "∥", r"\perp": "⊥", r"\Rightarrow": "⇒",
+    r"\rightarrow": "→", r"\to": "→", r"\ldots": "…", r"\cdots": "⋯",
+    r"\in": "∈", r"\cup": "∪", r"\cap": "∩", r"\subseteq": "⊆", r"\%": "%",
+}
+
+
+def _convert_math(tex: str) -> str:
+    s = tex
+    s = re.sub(r"\\d?frac\s*\{([^{}]*)\}\s*\{([^{}]*)\}", r"(\1)/(\2)", s)
+    s = re.sub(r"\\sqrt\s*\{([^{}]*)\}", r"√(\1)", s)
+    s = re.sub(r"\\(?:text|mathrm|mathbf|mathit|operatorname)\s*\{([^{}]*)\}", r"\1", s)
+    for k, v in _LATEX_SYMBOLS.items():
+        s = s.replace(k, v)
+
+    def _script(mapping, body, prefix, wrap):
+        if body and all(c in mapping for c in body):
+            return "".join(mapping[c] for c in body)
+        return f"{prefix}{wrap[0]}{body}{wrap[1]}"
+
+    s = re.sub(r"\^\{([^{}]*)\}", lambda m: _script(_SUP, m.group(1), "^", ("(", ")")), s)
+    s = re.sub(r"\^(\w)", lambda m: _script(_SUP, m.group(1), "^", ("", "")), s)
+    s = re.sub(r"_\{([^{}]*)\}", lambda m: _script(_SUB, m.group(1), "_", ("", "")), s)
+    s = re.sub(r"_(\w)", lambda m: _script(_SUB, m.group(1), "_", ("", "")), s)
+    s = re.sub(r"\\left|\\right|\\quad|\\qquad|\\,|\\;|\\!|\\:", "", s)
+    s = s.replace("\\ ", " ")
+    s = re.sub(r"\\([a-zA-Z]+)", r"\1", s)  # 剩余未知命令去掉反斜杠
+    return s.replace("{", "").replace("}", "").strip()
+
+
+def _latex_to_text(text: str) -> str:
+    """把含 $...$ / $$...$$ 的 LaTeX 文本退化为可读 Unicode 文本。"""
+    if not text:
+        return ""
+    text = re.sub(r"\$\$(.+?)\$\$", lambda m: _convert_math(m.group(1)), text, flags=re.DOTALL)
+    text = re.sub(r"\$(.+?)\$", lambda m: _convert_math(m.group(1)), text, flags=re.DOTALL)
+    return text
+
+
+def _clean_text(text: str) -> str:
+    """先去 markdown 再退化 LaTeX，得到适合 Word/PDF 的纯文本。"""
+    return _latex_to_text(_strip_markdown(text or ""))
+
+
 def _slide_lines(slide: dict) -> list[str]:
     """汇总一页幻灯片的可读文本行。"""
     lines: list[str] = []
@@ -385,33 +440,55 @@ def build_homework_pdf(title: str, paper_type: str, questions: list[dict]) -> by
 
 # ---------- 试题分析导出（题目在前，答案解析按序在最后；不含图） ----------
 
-def _analysis_lines(analysis: dict | None) -> list[str]:
-    """把结构化解析 dict 拉平成可读文本行（纯文字，不含图）。"""
+def _analysis_blocks(analysis: dict | None) -> list[tuple[str, str]]:
+    """把结构化解析 dict 拉平成 (标题, 正文) 段落，标题可为空表示普通行。"""
     if not analysis:
         return []
-    lines: list[str] = []
+    blocks: list[tuple[str, str]] = []
     if analysis.get("思路"):
-        lines.append(f"【思路】{_strip_markdown(str(analysis['思路']))}")
+        blocks.append(("思路", _clean_text(str(analysis["思路"]))))
     for i, s in enumerate(analysis.get("steps") or [], 1):
-        title = _strip_markdown(str(s.get("title") or ""))
-        detail = _strip_markdown(str(s.get("detail") or ""))
-        formula = str(s.get("formula") or "").strip()
-        seg = f"步骤{i}"
-        if title:
-            seg += f"：{title}"
-        lines.append(seg)
-        if detail:
-            lines.append(f"    {detail}")
-        if formula:
-            lines.append(f"    公式：{formula}")
+        title = _clean_text(str(s.get("title") or ""))
+        detail = _clean_text(str(s.get("detail") or ""))
+        formula = _clean_text(str(s.get("formula") or ""))
+        head = f"步骤 {i}" + (f"：{title}" if title else "")
+        body_parts = [p for p in (detail, (f"公式：{formula}" if formula else "")) if p]
+        blocks.append((head, "\n".join(body_parts)))
     kps = analysis.get("知识点") or []
     if kps:
-        lines.append("【知识点】" + "、".join(_strip_markdown(str(k)) for k in kps))
+        blocks.append(("知识点", "、".join(_clean_text(str(k)) for k in kps)))
     if analysis.get("易错点"):
-        lines.append(f"【易错点】{_strip_markdown(str(analysis['易错点']))}")
+        blocks.append(("易错点", _clean_text(str(analysis["易错点"]))))
     if analysis.get("答案"):
-        lines.append(f"【答案】{_strip_markdown(str(analysis['答案']))}")
+        blocks.append(("答案", _clean_text(str(analysis["答案"]))))
+    return blocks
+
+
+def _analysis_lines(analysis: dict | None) -> list[str]:
+    """兼容旧接口：把解析拉平成纯文本行。"""
+    lines: list[str] = []
+    for head, body in _analysis_blocks(analysis):
+        lines.append(f"【{head}】" if head in ("思路", "知识点", "易错点", "答案") else head)
+        if body:
+            for ln in body.splitlines():
+                lines.append(f"    {ln}")
     return lines
+
+
+def _set_docx_cjk_font(doc, font: str = "宋体") -> None:
+    """把正文与标题的东亚字体设为中文字体，避免默认 MS Gothic 造成排版错乱。"""
+    from docx.shared import Pt
+    from docx.oxml.ns import qn
+    for style_name in ("Normal", "Heading 1", "Heading 2", "Title"):
+        try:
+            st = doc.styles[style_name]
+        except KeyError:
+            continue
+        st.font.name = "Times New Roman"
+        rpr = st.element.get_or_add_rPr()
+        rfonts = rpr.get_or_add_rFonts()
+        rfonts.set(qn("w:eastAsia"), font)
+    doc.styles["Normal"].font.size = Pt(11)
 
 
 def build_analysis_docx(name: str, questions: list[dict]) -> bytes:
@@ -420,25 +497,44 @@ def build_analysis_docx(name: str, questions: list[dict]) -> bytes:
     from docx.enum.text import WD_ALIGN_PARAGRAPH
 
     doc = Document()
+    _set_docx_cjk_font(doc)
+
     h = doc.add_heading(name, level=0)
     h.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
+    doc.add_heading("试题", level=1)
     for i, q in enumerate(questions, 1):
         p = doc.add_paragraph()
-        p.add_run(f"{i}. {q.get('content', '')}")
+        p.paragraph_format.space_after = Pt(4)
+        run = p.add_run(f"{i}. ")
+        run.bold = True
+        p.add_run(_clean_text(q.get("content", "")))
         opts = q.get("options") or {}
         for k in sorted(opts.keys()):
-            doc.add_paragraph(f"{k}. {opts[k]}", style="List Bullet")
+            op = doc.add_paragraph()
+            op.paragraph_format.left_indent = Pt(18)
+            op.paragraph_format.space_after = Pt(0)
+            op.add_run(f"{k}. {_clean_text(str(opts[k]))}")
 
     doc.add_page_break()
     doc.add_heading("答案与解析", level=1)
     for i, q in enumerate(questions, 1):
         doc.add_heading(f"第 {i} 题", level=2)
         if q.get("selected") and q.get("analysis_content"):
-            for line in _analysis_lines(q.get("analysis_content")):
-                doc.add_paragraph(line)
+            for head, body in _analysis_blocks(q.get("analysis_content")):
+                hp = doc.add_paragraph()
+                hp.paragraph_format.space_after = Pt(2)
+                hp.add_run(head).bold = True
+                if body:
+                    for ln in body.splitlines():
+                        bp = doc.add_paragraph()
+                        bp.paragraph_format.left_indent = Pt(18)
+                        bp.paragraph_format.space_after = Pt(0)
+                        bp.add_run(ln)
         else:
-            doc.add_paragraph(f"答案：{q.get('answer') or '—'}")
+            ap = doc.add_paragraph()
+            ap.add_run("答案：").bold = True
+            ap.add_run(_clean_text(q.get("answer") or "—"))
 
     buf = io.BytesIO()
     doc.save(buf)
@@ -470,11 +566,13 @@ def build_analysis_pdf(name: str, questions: list[dict]) -> bytes:
         return (t or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
     story: list[Any] = [Paragraph(esc(name), title_style), Spacer(1, 6 * mm)]
+    story.append(Paragraph("试题", h2))
+    story.append(Spacer(1, 2 * mm))
     for i, q in enumerate(questions, 1):
-        story.append(Paragraph(f"{i}. {esc(q.get('content', ''))}", body))
+        story.append(Paragraph(f"<b>{i}.</b> {esc(_clean_text(q.get('content', '')))}", body))
         opts = q.get("options") or {}
         for k in sorted(opts.keys()):
-            story.append(Paragraph(f"{k}. {esc(str(opts[k]))}", opt))
+            story.append(Paragraph(f"{k}. {esc(_clean_text(str(opts[k])))}", opt))
         story.append(Spacer(1, 2 * mm))
 
     story.append(PageBreak())
@@ -483,10 +581,12 @@ def build_analysis_pdf(name: str, questions: list[dict]) -> bytes:
     for i, q in enumerate(questions, 1):
         story.append(Paragraph(f"第 {i} 题", h2))
         if q.get("selected") and q.get("analysis_content"):
-            for line in _analysis_lines(q.get("analysis_content")):
-                story.append(Paragraph(esc(line), body))
+            for head, bodytext in _analysis_blocks(q.get("analysis_content")):
+                story.append(Paragraph(f"<b>{esc(head)}</b>", body))
+                for ln in (bodytext or "").splitlines():
+                    story.append(Paragraph(esc(ln), opt))
         else:
-            story.append(Paragraph(f"答案：{esc(q.get('answer') or '—')}", body))
+            story.append(Paragraph(f"<b>答案：</b>{esc(_clean_text(q.get('answer') or '—'))}", body))
         story.append(Spacer(1, 3 * mm))
 
     buf = io.BytesIO()

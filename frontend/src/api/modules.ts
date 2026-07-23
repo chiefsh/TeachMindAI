@@ -4,7 +4,7 @@ import type {
   Student, ExamResult, ExamSummary, GradeReport, LLMConfig, TeacherSubject,
   SchoolLevel, Grade, Subject, SubjectPrompt,
   CoursewareSession, SessionBoard, PublicSession,
-  AnalysisSet,
+  AnalysisSet, Paginated,
 } from '@/types'
 
 // ─── 工作台 ────────────────────────────────────────────────────────
@@ -14,6 +14,7 @@ export const dashboardApi = {
     question_count: number
     courseware_count: number
     student_count: number
+    analysis_count: number
   }>('/dashboard/stats'),
 }
 
@@ -37,7 +38,8 @@ export const educationApi = {
 
 // ─── 课本 ──────────────────────────────────────────────────────────
 export const textbookApi = {
-  list: (params?: { subject_id?: number; grade_id?: number }) => request.get<Textbook[]>('/textbooks', { params }),
+  list: (params?: { subject_id?: number; grade_id?: number; page?: number; page_size?: number }) =>
+    request.get<Paginated<Textbook>>('/textbooks', { params }),
   upload: (formData: FormData) => request.post<Textbook>('/textbooks', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   }),
@@ -63,7 +65,8 @@ export const questionApi = {
 
 // ─── 课件 ──────────────────────────────────────────────────────────
 export const coursewareApi = {
-  list: (params?: { grade_id?: number; subject_id?: number }) => request.get<Courseware[]>('/coursewares', { params }),
+  list: (params?: { grade_id?: number; subject_id?: number; page?: number; page_size?: number }) =>
+    request.get<Paginated<Courseware>>('/coursewares', { params }),
   create: (data: object) => request.post<Courseware>('/coursewares', data),
   get: (id: number) => request.get<Courseware>(`/coursewares/${id}`),
   getStatus: (id: number) => request.get(`/coursewares/${id}/status`),
@@ -145,8 +148,8 @@ export const studentApi = {
 
 // ─── 试题分析 ──────────────────────────────────────────────────────
 export const analysisApi = {
-  list: (params?: { grade_id?: number; subject_id?: number }) =>
-    request.get<AnalysisSet[]>('/question-analysis', { params }),
+  list: (params?: { grade_id?: number; subject_id?: number; page?: number; page_size?: number }) =>
+    request.get<Paginated<AnalysisSet>>('/question-analysis', { params }),
   importManual: (data: { text: string; grade_id: number; subject_id: number; name?: string }) =>
     request.post<AnalysisSet>('/question-analysis/import-manual', data),
   importFile: (formData: FormData) =>
@@ -158,6 +161,7 @@ export const analysisApi = {
     parse_status: string; question_count: number
     analysis: { pending: number; processing: number; done: number; failed: number }
   }>(`/question-analysis/${id}/status`),
+  reparse: (id: number) => request.post<AnalysisSet>(`/question-analysis/${id}/reparse`),
   analyze: (id: number, question_ids: number[]) =>
     request.post<{ task_id: string; count: number }>(`/question-analysis/${id}/analyze`, { question_ids }),
   saveToBank: (id: number, question_ids: number[]) =>

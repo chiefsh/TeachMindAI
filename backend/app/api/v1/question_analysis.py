@@ -6,7 +6,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
-from sqlalchemy import select, func
+from sqlalchemy import select, func, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from urllib.parse import quote
@@ -52,13 +52,22 @@ async def _get_set_or_404(set_id: int, teacher_id: int, db: AsyncSession, with_q
     return aset
 
 
-@router.get("", response_model=list[AnalysisSetOut])
+@router.get("", response_model=dict)
 async def list_sets(
     grade_id: Optional[int] = None,
     subject_id: Optional[int] = None,
+    page: int = 1,
+    page_size: int = 20,
     teacher: Teacher = Depends(get_current_teacher),
     db: AsyncSession = Depends(get_db),
 ):
+    base = select(AnalysisSet.id).where(AnalysisSet.teacher_id == teacher.id)
+    if grade_id:
+        base = base.where(AnalysisSet.grade_id == grade_id)
+    if subject_id:
+        base = base.where(AnalysisSet.subject_id == subject_id)
+    total = (await db.execute(select(func.count()).select_from(base.subquery()))).scalar() or 0
+
     q = (
         select(AnalysisSet, func.count(AnalysisQuestion.id))
         .outerjoin(AnalysisQuestion, AnalysisQuestion.set_id == AnalysisSet.id)
@@ -68,14 +77,19 @@ async def list_sets(
         q = q.where(AnalysisSet.grade_id == grade_id)
     if subject_id:
         q = q.where(AnalysisSet.subject_id == subject_id)
-    q = q.group_by(AnalysisSet.id).order_by(AnalysisSet.created_at.desc())
+    q = (
+        q.group_by(AnalysisSet.id)
+        .order_by(AnalysisSet.created_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
     rows = (await db.execute(q)).all()
-    out: list[AnalysisSetOut] = []
+    items: list[AnalysisSetOut] = []
     for aset, cnt in rows:
         item = AnalysisSetOut.model_validate(aset)
         item.question_count = cnt or 0
-        out.append(item)
-    return out
+        items.append(item)
+    return {"total": total, "page": page, "page_size": page_size, "items": items}
 
 
 @router.post("/import-manual", response_model=AnalysisSetDetail, status_code=201)
@@ -201,6 +215,32 @@ async def get_status(
             "failed": sum(1 for q in qs if q.selected and q.analysis_status == ParseStatus.failed),
         },
     }
+
+
+@router.post("/{set_id}/reparse", response_model=AnalysisSetOut)
+async def reparse(
+    set_id: int,
+    teacher: Teacher = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+):
+    """重新解析：清空已拆题目并重新拆题（仅文件/图片导入的批次可用）。"""
+    aset = await _get_set_or_404(set_id, teacher.id, db)
+    if aset.source_type not in ("file", "image") or not aset.source_file_path:
+        raise HTTPException(status_code=400, detail="该批次没有可重新解析的源文件")
+
+    await db.execute(delete(AnalysisQuestion).where(AnalysisQuestion.set_id == aset.id))
+    aset.parse_status = ParseStatus.pending
+    aset.parse_error = None
+    await db.commit()
+
+    from app.tasks.file_tasks import parse_analysis_file_task
+    task = parse_analysis_file_task.delay(aset.id)
+    aset.task_id = task.id
+    await db.commit()
+
+    out = AnalysisSetOut.model_validate(aset)
+    out.question_count = 0
+    return out
 
 
 @router.post("/{set_id}/analyze")

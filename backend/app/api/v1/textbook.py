@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, func
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
@@ -22,20 +22,28 @@ def _ext(filename: str) -> str:
     return filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
 
 
-@router.get("", response_model=list[TextbookOut])
+@router.get("", response_model=dict)
 async def list_textbooks(
     subject_id: int | None = None,
     grade_id: int | None = None,
+    page: int = 1,
+    page_size: int = 20,
     teacher: Teacher = Depends(get_current_teacher),
     db: AsyncSession = Depends(get_db),
 ):
-    q = select(Textbook).where(Textbook.teacher_id == teacher.id).order_by(Textbook.created_at.desc())
+    q = select(Textbook).where(Textbook.teacher_id == teacher.id)
     if subject_id:
         q = q.where(Textbook.subject_id == subject_id)
     if grade_id:
         q = q.where(Textbook.grade_id == grade_id)
-    result = await db.execute(q)
-    return result.scalars().all()
+
+    total = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar() or 0
+    q = q.order_by(Textbook.created_at.desc()).offset((page - 1) * page_size).limit(page_size)
+    items = (await db.execute(q)).scalars().all()
+    return {
+        "total": total, "page": page, "page_size": page_size,
+        "items": [TextbookOut.model_validate(t) for t in items],
+    }
 
 
 @router.post("", response_model=TextbookOut, status_code=201)

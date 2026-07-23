@@ -216,10 +216,12 @@ async function load() {
 }
 
 async function loadCoursewares() {
-  coursewares.value = (await coursewareApi.list({
+  const res = await coursewareApi.list({
     grade_id: edu.selectedGradeId || undefined,
     subject_id: edu.selectedSubjectId || undefined,
-  })) as any
+    page: 1, page_size: 500,
+  }) as any
+  coursewares.value = res.items || []
 }
 
 // 顶部全局年级/科目变化时同步刷新试卷与可选课件

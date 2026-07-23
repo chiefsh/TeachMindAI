@@ -65,6 +65,16 @@
       </div>
     </div>
 
+    <div v-if="total > pageSize" class="mt-4 flex justify-end">
+      <el-pagination
+        v-model:current-page="page"
+        :page-size="pageSize"
+        :total="total"
+        layout="prev, pager, next, total"
+        @current-change="load"
+      />
+    </div>
+
     <!-- 上传弹窗 -->
     <el-dialog v-model="showUpload" title="上传课本" width="480px" :close-on-click-modal="false">
       <el-form :model="uploadForm" :rules="uploadRules" ref="uploadFormRef" label-width="80px">
@@ -139,6 +149,9 @@ import type { Textbook, Chapter } from '@/types'
 const edu = useEducationStore()
 const textbooks = ref<Textbook[]>([])
 const loading = ref(false)
+const total = ref(0)
+const page = ref(1)
+const pageSize = 12
 const showUpload = ref(false)
 const showChapters = ref(false)
 const chapters = ref<Chapter[]>([])
@@ -168,17 +181,20 @@ function openUpload() {
 async function load() {
   loading.value = true
   try {
-    textbooks.value = (await textbookApi.list({
+    const res = await textbookApi.list({
       grade_id: edu.selectedGradeId || undefined,
       subject_id: edu.selectedSubjectId || undefined,
-    })) as any
+      page: page.value, page_size: pageSize,
+    }) as any
+    textbooks.value = res.items || []
+    total.value = res.total || 0
   } finally {
     loading.value = false
   }
 }
 
 // 顶部全局年级/科目变化时自动刷新
-watchDebounced(() => [edu.selectedGradeId, edu.selectedSubjectId], load, { debounce: 250 })
+watchDebounced(() => [edu.selectedGradeId, edu.selectedSubjectId], () => { page.value = 1; load() }, { debounce: 250 })
 
 async function handleUpload() {
   await uploadFormRef.value?.validate()

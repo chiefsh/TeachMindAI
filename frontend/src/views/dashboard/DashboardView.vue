@@ -6,7 +6,7 @@
     </div>
 
     <!-- 统计卡片 -->
-    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+    <div class="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
       <div v-for="stat in stats" :key="stat.label" class="card">
         <div class="flex items-start justify-between">
           <div>
@@ -76,6 +76,7 @@ const stats = ref([
   { key: 'question_count',   label: '题库题目',  value: '—' as string | number, icon: 'EditPen',    bgColor: 'bg-purple-50', color: 'text-purple-500' },
   { key: 'courseware_count', label: '已生成课件', value: '—' as string | number, icon: 'VideoPlay',  bgColor: 'bg-green-50',  color: 'text-green-500' },
   { key: 'student_count',    label: '学生人数',  value: '—' as string | number, icon: 'User',       bgColor: 'bg-orange-50', color: 'text-orange-500' },
+  { key: 'analysis_count',   label: '试题分析',  value: '—' as string | number, icon: 'DataAnalysis', bgColor: 'bg-indigo-50', color: 'text-indigo-500' },
 ])
 
 onMounted(async () => {
@@ -90,5 +91,6 @@ const quickActions = [
   { label: '导入题库', path: '/question-bank', icon: 'EditPen' },
   { label: '生成课件', path: '/courseware',    icon: 'MagicStick' },
   { label: '布置作业', path: '/homework',      icon: 'Tickets' },
+  { label: '试题分析', path: '/question-analysis', icon: 'DataAnalysis' },
 ]
 </script>

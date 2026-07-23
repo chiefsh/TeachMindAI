@@ -38,7 +38,7 @@ async def parse_textbook_file(textbook_id: int):
                 parsed_pdf = liteparse_service.parse_pdf(file_bytes)
                 chapters = _parse_pdf(parsed_pdf, file_bytes, tb)
             elif tb.file_type in ("docx", "doc"):
-                chapters = _parse_docx(file_bytes)
+                chapters = _parse_docx(file_bytes, tb.file_type)
             elif tb.file_type == "txt":
                 chapters = _parse_txt(file_bytes)
             elif tb.file_type == "epub":
@@ -363,9 +363,8 @@ def _store_pdf_page_screenshots(
     logger.info("课本 %s 整页截图 %d 张", tb.id, count)
 
 
-def _parse_docx(data: bytes) -> list[dict]:
-    from docx import Document
-    doc = Document(io.BytesIO(data))
+def _parse_docx(data: bytes, ext: str = "docx") -> list[dict]:
+    doc = _load_docx(data, ext)
     chapters = []
     current: Optional[dict] = None
     for i, para in enumerate(doc.paragraphs):
@@ -455,7 +454,7 @@ async def parse_question_file(
     if file_type == "pdf":
         text = _extract_pdf_text(file_bytes)
     elif file_type in ("docx", "doc"):
-        text = _extract_docx_text(file_bytes)
+        text = _extract_docx_text(file_bytes, file_type)
     elif file_type == "txt":
         text = file_bytes.decode("utf-8", errors="ignore")
     else:
@@ -473,9 +472,59 @@ def _extract_pdf_text(data: bytes) -> str:
     return parsed["full_text"] or parsed["markdown"]
 
 
-def _extract_docx_text(data: bytes) -> str:
+def _soffice_convert_to_docx(data: bytes, src_ext: str) -> bytes | None:
+    """用 LibreOffice 把旧版 .doc（或格式与扩展名不符的文件）转换为 .docx，失败返回 None。"""
+    import shutil, tempfile, subprocess, glob as _glob, os as _os
+    soffice = shutil.which("soffice") or shutil.which("libreoffice")
+    if not soffice:
+        return None
+    with tempfile.TemporaryDirectory() as tmp:
+        src = _os.path.join(tmp, f"input.{src_ext or 'doc'}")
+        with open(src, "wb") as f:
+            f.write(data)
+        try:
+            # 独立 profile 目录，避免并发转换时共享用户配置的文件锁冲突
+            profile = _os.path.join(tmp, "lo_profile")
+            subprocess.run(
+                [
+                    soffice, "--headless",
+                    f"-env:UserInstallation=file://{profile}",
+                    "--convert-to", "docx", "--outdir", tmp, src,
+                ],
+                check=True, capture_output=True, timeout=180,
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning("LibreOffice 转换 .doc 失败：%s", e)
+            return None
+        outs = _glob.glob(_os.path.join(tmp, "*.docx"))
+        if not outs:
+            return None
+        with open(outs[0], "rb") as f:
+            return f.read()
+
+
+def _load_docx(data: bytes, ext: str = "docx"):
+    """加载 Word 文档为 python-docx Document。
+    旧版 .doc 或扩展名与实际格式不符时，先用 LibreOffice 转成 .docx。
+    """
     from docx import Document
-    doc = Document(io.BytesIO(data))
+    if ext == "doc":
+        converted = _soffice_convert_to_docx(data, "doc")
+        if not converted:
+            raise ValueError("旧版 .doc 文档无法解析，请转换为 .docx 或 PDF 后重新上传")
+        data = converted
+    try:
+        return Document(io.BytesIO(data))
+    except Exception:
+        # 可能是被误标为 docx 的旧版 doc，尝试转换后重试
+        converted = _soffice_convert_to_docx(data, ext or "doc")
+        if converted:
+            return Document(io.BytesIO(converted))
+        raise
+
+
+def _extract_docx_text(data: bytes, ext: str = "docx") -> str:
+    doc = _load_docx(data, ext)
     return "\n".join(p.text for p in doc.paragraphs if p.text.strip())
 
 
@@ -616,7 +665,7 @@ async def parse_analysis_file(set_id: int, task_id: str | None = None):
                 if ext == "pdf":
                     text = _extract_pdf_text(file_bytes)
                 elif ext in ("docx", "doc"):
-                    text = _extract_docx_text(file_bytes)
+                    text = _extract_docx_text(file_bytes, ext)
                 elif ext == "txt":
                     text = file_bytes.decode("utf-8", errors="ignore")
                 else:

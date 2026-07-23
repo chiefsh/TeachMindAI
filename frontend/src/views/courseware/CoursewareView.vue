@@ -64,6 +64,16 @@
       </div>
     </div>
 
+    <div v-if="total > pageSize" class="mt-4 flex justify-end">
+      <el-pagination
+        v-model:current-page="page"
+        :page-size="pageSize"
+        :total="total"
+        layout="prev, pager, next, total"
+        @current-change="load"
+      />
+    </div>
+
     <!-- 生成课件弹窗 -->
     <el-dialog v-model="showCreate" title="生成课件" width="560px" :close-on-click-modal="false">
       <el-form :model="form" :rules="rules" ref="formRef" label-width="90px">
@@ -143,6 +153,9 @@ const router = useRouter()
 const edu = useEducationStore()
 const coursewares = ref<Courseware[]>([])
 const textbooks = ref<Textbook[]>([])
+const total = ref(0)
+const page = ref(1)
+const pageSize = 12
 const loading = ref(false)
 const showCreate = ref(false)
 const creating = ref(false)
@@ -189,19 +202,24 @@ async function onTextbookChange() {
 async function load() {
   loading.value = true
   try {
-    coursewares.value = (await coursewareApi.list({
+    const res = await coursewareApi.list({
       grade_id: edu.selectedGradeId || undefined,
       subject_id: edu.selectedSubjectId || undefined,
-    })) as any
+      page: page.value, page_size: pageSize,
+    }) as any
+    coursewares.value = res.items || []
+    total.value = res.total || 0
   }
   finally { loading.value = false }
 }
 
 async function loadTextbooks() {
-  textbooks.value = (await textbookApi.list({
+  const res = await textbookApi.list({
     grade_id: edu.selectedGradeId || undefined,
     subject_id: edu.selectedSubjectId || undefined,
-  })) as any
+    page: 1, page_size: 500,
+  }) as any
+  textbooks.value = res.items || []
 }
 
 function openCreate() {
@@ -219,7 +237,7 @@ function openCreate() {
 }
 
 // 顶部全局年级/科目变化时同步刷新课件与可选课本
-watchDebounced(() => [edu.selectedGradeId, edu.selectedSubjectId], () => { load(); loadTextbooks() }, { debounce: 250 })
+watchDebounced(() => [edu.selectedGradeId, edu.selectedSubjectId], () => { page.value = 1; load(); loadTextbooks() }, { debounce: 250 })
 
 async function handleCreate() {
   await formRef.value?.validate()

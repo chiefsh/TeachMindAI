@@ -7,6 +7,8 @@ export interface Teacher {
   is_active: boolean
 }
 
+export interface Paginated<T> { total: number; page: number; page_size: number; items: T[] }
+
 export interface SchoolLevel { id: number; name: string; sort_order: number }
 export interface Grade { id: number; school_level_id: number; name: string; sort_order: number }
 export interface Subject { id: number; school_level_id: number; name: string; sort_order: number }

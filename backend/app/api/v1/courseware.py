@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 from typing import Optional
 from urllib.parse import quote
@@ -20,10 +20,12 @@ from app.services.export_service import build_export
 router = APIRouter(prefix="/coursewares", tags=["课件管理"])
 
 
-@router.get("", response_model=list[CoursewareOut])
+@router.get("", response_model=dict)
 async def list_coursewares(
     grade_id: Optional[int] = None,
     subject_id: Optional[int] = None,
+    page: int = 1,
+    page_size: int = 20,
     teacher: Teacher = Depends(get_current_teacher),
     db: AsyncSession = Depends(get_db),
 ):
@@ -37,16 +39,19 @@ async def list_coursewares(
             q = q.where(Textbook.grade_id == grade_id)
         if subject_id:
             q = q.where(Textbook.subject_id == subject_id)
-    rows = (await db.execute(q.order_by(Courseware.created_at.desc()))).scalars().all()
 
-    out = []
+    total = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar() or 0
+    q = q.order_by(Courseware.created_at.desc()).offset((page - 1) * page_size).limit(page_size)
+    rows = (await db.execute(q)).scalars().all()
+
+    items = []
     for cw in rows:
         o = CoursewareOut.model_validate(cw)
         if cw.textbook:
             o.grade_id = cw.textbook.grade_id
             o.subject_id = cw.textbook.subject_id
-        out.append(o)
-    return out
+        items.append(o)
+    return {"total": total, "page": page, "page_size": page_size, "items": items}
 
 
 @router.post("", response_model=CoursewareOut, status_code=201)

@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "mysql+aiomysql://edu_user:edu_pass@localhost:3306/edu_platform"
 
     # Redis
-    REDIS_URL: str = "redis://localhost:6379/0"
+    REDIS_URL: str = "redis://127.0.0.1:6379/0"
 
     # RabbitMQ / Celery
     RABBITMQ_URL: str = "amqp://edu_user:edu_pass@localhost:5672/"

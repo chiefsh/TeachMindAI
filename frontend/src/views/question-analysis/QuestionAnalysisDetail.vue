@@ -25,6 +25,10 @@
     <div v-else-if="set && set.parse_status === 'failed'" class="card !p-8 text-center">
       <el-icon class="text-3xl text-red-400"><CircleClose /></el-icon>
       <p class="text-slate-500 mt-3">解析失败：{{ set.parse_error || '未知错误' }}</p>
+      <el-button
+        v-if="set.source_type !== 'manual'"
+        class="mt-4" type="primary" :icon="Refresh" :loading="reparsing" @click="reparse"
+      >重新解析</el-button>
     </div>
 
     <template v-else>
@@ -62,9 +66,11 @@
                 <el-tag v-else-if="q.selected && q.analysis_status === 'done'" size="small" type="success">已解析</el-tag>
                 <el-tag v-else-if="q.selected && q.analysis_status === 'failed'" size="small" type="danger">解析失败</el-tag>
               </div>
-              <p class="text-sm text-slate-700 mt-2 whitespace-pre-wrap">{{ q.content }}</p>
+              <p class="text-sm text-slate-700 mt-2 math-text" v-html="renderMathText(q.content)" />
               <div v-if="q.options" class="mt-2 space-y-1">
-                <p v-for="(v, k) in q.options" :key="k" class="text-sm text-slate-600">{{ k }}. {{ v }}</p>
+                <p v-for="(v, k) in q.options" :key="k" class="text-sm text-slate-600 math-text">
+                  <span>{{ k }}. </span><span v-html="renderMathText(String(v))" />
+                </p>
               </div>
 
               <div class="mt-3">
@@ -81,32 +87,36 @@
                   <iframe v-if="q.analysis_html && blobUrls[q.id]" :src="blobUrls[q.id]"
                     class="w-full rounded-lg border border-slate-200 bg-white mb-3"
                     style="height:360px" frameborder="0" />
-                  <div v-if="q.analysis_content?.思路" class="mb-2">
+                  <div v-if="q.analysis_content?.思路" class="mb-2 math-text">
                     <span class="font-semibold text-indigo-600">思路：</span>
-                    <span class="text-sm text-slate-700">{{ q.analysis_content.思路 }}</span>
+                    <span class="text-sm text-slate-700" v-html="renderMathText(q.analysis_content.思路)" />
                   </div>
-                  <div v-for="(st, i) in q.analysis_content?.steps || []" :key="i" class="mb-2">
-                    <p class="text-sm font-medium text-slate-800">步骤{{ i + 1 }}{{ st.title ? '：' + st.title : '' }}</p>
-                    <p v-if="st.detail" class="text-sm text-slate-600 whitespace-pre-wrap">{{ st.detail }}</p>
-                    <p v-if="st.formula" class="text-sm text-slate-500 font-mono">{{ st.formula }}</p>
+                  <div v-for="(st, i) in q.analysis_content?.steps || []" :key="i" class="mb-2 math-text">
+                    <p class="text-sm font-medium text-slate-800">
+                      <span>步骤{{ i + 1 }}{{ st.title ? '：' : '' }}</span>
+                      <span v-if="st.title" v-html="renderMathText(st.title)" />
+                    </p>
+                    <p v-if="st.detail" class="text-sm text-slate-600" v-html="renderMathText(st.detail)" />
+                    <p v-if="st.formula" class="text-sm text-slate-600" v-html="renderMathText(wrapFormula(st.formula))" />
                   </div>
                   <div v-if="q.analysis_content?.知识点?.length" class="mb-2">
                     <span class="font-semibold text-slate-700">知识点：</span>
                     <el-tag v-for="(kp, i) in q.analysis_content.知识点" :key="i" size="small" class="mr-1">{{ kp }}</el-tag>
                   </div>
-                  <div v-if="q.analysis_content?.易错点" class="mb-2">
+                  <div v-if="q.analysis_content?.易错点" class="mb-2 math-text">
                     <span class="font-semibold text-amber-600">易错点：</span>
-                    <span class="text-sm text-slate-700">{{ q.analysis_content.易错点 }}</span>
+                    <span class="text-sm text-slate-700" v-html="renderMathText(q.analysis_content.易错点)" />
                   </div>
-                  <div v-if="q.analysis_content?.答案">
+                  <div v-if="q.analysis_content?.答案" class="math-text">
                     <span class="font-semibold text-green-600">答案：</span>
-                    <span class="text-sm text-slate-700">{{ q.analysis_content.答案 }}</span>
+                    <span class="text-sm text-slate-700" v-html="renderMathText(q.analysis_content.答案)" />
                   </div>
                 </template>
                 <!-- 未解析：直接显示答案 -->
                 <template v-else>
                   <span class="font-semibold text-green-600">答案：</span>
-                  <span class="text-sm text-slate-700 whitespace-pre-wrap">{{ q.answer || '（该题暂无答案，可勾选后用 AI 解析）' }}</span>
+                  <span v-if="q.answer" class="text-sm text-slate-700 math-text" v-html="renderMathText(q.answer)" />
+                  <span v-else class="text-sm text-slate-700">（该题暂无答案，可勾选后用 AI 解析）</span>
                 </template>
               </div>
             </div>
@@ -124,10 +134,18 @@ import { analysisApi } from '@/api/modules'
 import { useEducationStore } from '@/stores/education'
 import { ElMessage } from 'element-plus'
 import {
-  ArrowLeft, Download, Loading, CircleClose, Collection, MagicStick, Reading,
+  ArrowLeft, Download, Loading, CircleClose, Collection, MagicStick, Reading, Refresh,
 } from '@element-plus/icons-vue'
 import type { AnalysisSet, AnalysisQuestion } from '@/types'
 import { createIframeBlob } from '@/utils/coursewareFrame'
+import { renderMathText } from '@/utils/mathText'
+
+// 公式字段可能是不带 $ 定界符的裸 LaTeX，补上 $...$ 以便渲染
+function wrapFormula(f: string): string {
+  const s = String(f || '').trim()
+  if (!s) return ''
+  return s.includes('$') ? s : `$${s}$`
+}
 
 const route = useRoute()
 const router = useRouter()
@@ -140,6 +158,7 @@ const checked = reactive(new Set<number>())
 const revealed = reactive(new Set<number>())
 const blobUrls = reactive<Record<number, string>>({})
 const analyzing = ref(false)
+const reparsing = ref(false)
 const parseHint = ref('')
 const progress = reactive({ current: 0, total: 0, hint: '' })
 
@@ -168,6 +187,19 @@ async function load() {
   if (data.parse_status === 'pending' || data.parse_status === 'processing') {
     if (data.task_id) connectParseWs(data.task_id)
     startParsePoll()
+  }
+}
+
+async function reparse() {
+  reparsing.value = true
+  try {
+    await analysisApi.reparse(setId)
+    ElMessage.success('已重新提交解析')
+    await load()
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.detail || '重新解析失败')
+  } finally {
+    reparsing.value = false
   }
 }
 
@@ -334,3 +366,15 @@ onBeforeUnmount(() => {
   for (const k of Object.keys(blobUrls)) URL.revokeObjectURL(blobUrls[Number(k)])
 })
 </script>
+
+<style scoped>
+.math-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.7;
+}
+.math-text :deep(.katex) {
+  font-size: 1.02em;
+  white-space: normal;
+}
+</style>

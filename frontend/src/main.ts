@@ -2,6 +2,7 @@ import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import ElementPlus from 'element-plus'
 import 'element-plus/dist/index.css'
+import 'katex/dist/katex.min.css'
 import './assets/main.css'
 
 // 仅注册实际用到的图标，避免全量 @element-plus/icons-vue 拖慢首屏

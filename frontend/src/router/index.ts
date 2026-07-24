@@ -22,6 +22,7 @@ const router = createRouter({
         { path: 'question-analysis', name: 'QuestionAnalysis', component: () => import('@/views/question-analysis/QuestionAnalysisView.vue') },
         { path: 'question-analysis/:id', name: 'QuestionAnalysisDetail', component: () => import('@/views/question-analysis/QuestionAnalysisDetail.vue') },
         { path: 'grades',       name: 'Grades',      component: () => import('@/views/grades/GradesView.vue') },
+        { path: 'knowledge',    name: 'Knowledge',   component: () => import('@/views/knowledge/KnowledgeGraphView.vue') },
         { path: 'settings',     name: 'Settings',    component: () => import('@/views/settings/SettingsView.vue') },
       ],
     },

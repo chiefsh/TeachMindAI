@@ -127,6 +127,27 @@ export interface LLMConfig {
   is_default: boolean; is_active: boolean
 }
 
+// ── 知识图谱 ──
+export interface KgNeighbor {
+  type: string; direction: 'in' | 'out'
+  other: { id: string; name: string; subject_name?: string }
+  weight: number; cross_subject: boolean; status: string
+}
+export interface KgNode {
+  id: string; name: string; teacher_id?: number
+  subject_id?: number | null; subject_name?: string
+  school_level_id?: number | null; grade_id?: number | null
+  description?: string; difficulty?: number; tags?: string[]; source?: string
+  courseware_ids?: number[]; question_ids?: number[]
+  neighbors?: KgNeighbor[]
+  prerequisite_path?: { id: string; name: string; subject_name?: string }[]
+}
+export interface KgEdge {
+  source: string; target: string; type: string
+  weight: number; cross_subject: boolean; status: string
+}
+export interface KgGraph { nodes: KgNode[]; edges: KgEdge[] }
+
 export interface GradeStats {
   exam_name: string; subject_id: number; avg_score: number
   max_score: number; min_score: number; pass_rate: number

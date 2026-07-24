@@ -249,6 +249,14 @@ async def do_generate_courseware(courseware_id: int):
         finally:
             await db.commit()
 
+        # 生成成功后异步把知识点回填到知识图谱（best-effort，不影响课件本身）
+        if cw.gen_status == ParseStatus.done:
+            try:
+                from app.tasks.knowledge_tasks import persist_courseware_kps_task
+                persist_courseware_kps_task.delay(cw.id)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("课件 %s 知识点入图任务派发失败：%s", cw.id, e)
+
 
 async def _resolve_subject_prompt(db: AsyncSession, teacher_id: int, subject_id: int) -> tuple[str, str]:
     """根据科目解析专属提示词，返回 (科目名, 提示词文本块)。
@@ -868,6 +876,8 @@ async def _generate_lesson_content(
             "objectives": [f"掌握：{p['name']}" for p in points[:3]],
             "key_points": [p["name"] for p in points[:3]],
             "difficulties": [m for p in points for m in p.get("common_mistakes", [])][:3],
+            # 完整知识点结构，供知识图谱回填（前端展示时可忽略）
+            "knowledge_points": points,
         },
         "slides": slides,
     }
@@ -1286,3 +1296,10 @@ async def do_analyze_questions(set_id: int, question_ids: list[int], task_id: st
                 })
 
         await _publish_progress(task_id, {"stage": "completed", "total": total, "current": total})
+
+        # 解析完成后，把题目知识点异步沉淀进知识图谱（best-effort）
+        try:
+            from app.tasks.knowledge_tasks import persist_analysis_kps_task
+            persist_analysis_kps_task.delay(set_id)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("试题批次 %s 知识点入图任务派发失败：%s", set_id, e)

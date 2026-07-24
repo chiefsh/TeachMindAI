@@ -146,6 +146,7 @@ const navGroups = [
     title: '数据分析',
     items: [
       { path: '/grades', label: '学生成绩', icon: 'TrendCharts' },
+      { path: '/knowledge', label: '知识图谱', icon: 'Connection' },
     ],
   },
   {

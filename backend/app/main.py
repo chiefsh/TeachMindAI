@@ -9,7 +9,7 @@ from app.core.database import engine, Base
 from app.core.redis_client import close_redis
 from app.core.minio_client import init_buckets
 from app.core.seed import seed_education_data, seed_subject_prompts
-from app.api.v1 import auth, education, textbook, question, courseware, homework, student, settings, ws, dashboard, interaction, question_analysis
+from app.api.v1 import auth, education, textbook, question, courseware, homework, student, settings, ws, dashboard, interaction, question_analysis, knowledge
 
 
 # create_all 不会给已有表补索引，启动时幂等补齐热查询字段
@@ -61,8 +61,21 @@ async def lifespan(app: FastAPI):
         init_buckets()
     except Exception:
         pass
+    # 初始化知识图谱 Neo4j 约束/索引（best-effort，服务未就绪不阻塞启动）
+    try:
+        from app.core.neo4j_client import init_schema
+        await init_schema()
+    except Exception:
+        pass
     yield
     await close_redis()
+    try:
+        from app.core.neo4j_client import close_neo4j
+        from app.core.qdrant_client import close_qdrant
+        await close_neo4j()
+        await close_qdrant()
+    except Exception:
+        pass
 
 
 app = FastAPI(
@@ -93,6 +106,7 @@ app.include_router(settings.router, prefix="/api/v1")
 app.include_router(dashboard.router, prefix="/api/v1")
 app.include_router(interaction.router, prefix="/api/v1")
 app.include_router(question_analysis.router, prefix="/api/v1")
+app.include_router(knowledge.router, prefix="/api/v1")
 app.include_router(ws.router, prefix="/api/v1")
 
 

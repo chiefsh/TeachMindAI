@@ -4,7 +4,7 @@ import type {
   Student, ExamResult, ExamSummary, GradeReport, LLMConfig, TeacherSubject,
   SchoolLevel, Grade, Subject, SubjectPrompt,
   CoursewareSession, SessionBoard, PublicSession,
-  AnalysisSet, Paginated,
+  AnalysisSet, Paginated, KgNode, KgEdge, KgGraph,
 } from '@/types'
 
 // ─── 工作台 ────────────────────────────────────────────────────────
@@ -169,6 +169,32 @@ export const analysisApi = {
   exportFile: (id: number, format: 'docx' | 'pdf') =>
     request.get<Blob>(`/question-analysis/${id}/export`, { params: { format }, responseType: 'blob' }),
   delete: (id: number) => request.delete(`/question-analysis/${id}`),
+}
+
+// ─── 知识图谱 ──────────────────────────────────────────────────────
+export const knowledgeApi = {
+  getGraph: (params?: { subject_id?: number; grade_id?: number; limit?: number }) =>
+    request.get<KgGraph>('/knowledge/graph', { params }),
+  getStats: () => request.get<{ point_count: number; relation_count: number }>('/knowledge/stats'),
+  searchPoints: (params?: { keyword?: string; subject_id?: number; limit?: number }) =>
+    request.get<KgNode[]>('/knowledge/points', { params }),
+  getPoint: (id: string) => request.get<KgNode>(`/knowledge/points/${id}`),
+  createPoint: (body: {
+    name: string; subject_id?: number | null; grade_id?: number | null
+    description?: string; difficulty?: number; tags?: string[]
+  }) => request.post<{ id: string; name: string; merged: boolean }>('/knowledge/points', body),
+  deletePoint: (id: string) => request.delete(`/knowledge/points/${id}`),
+  createRelation: (body: {
+    from_id: string; to_id: string; rel_type: string
+    weight?: number; cross_subject?: boolean; evidence?: string
+  }) => request.post('/knowledge/relations', body),
+  deleteRelation: (body: { from_id: string; to_id: string; rel_type: string }) =>
+    request.post('/knowledge/relations/delete', body),
+  updateRelationStatus: (body: { from_id: string; to_id: string; rel_type: string; status: string }) =>
+    request.put('/knowledge/relations/status', body),
+  extractChapter: (chapterId: number) => request.post<{ task_id: string }>(`/knowledge/extract/chapter/${chapterId}`),
+  extractTextbook: (textbookId: number) => request.post<{ task_id: string }>(`/knowledge/extract/textbook/${textbookId}`),
+  suggestCrossSubject: () => request.post<{ task_id: string }>('/knowledge/suggest-cross-subject'),
 }
 
 // ─── 设置 ──────────────────────────────────────────────────────────

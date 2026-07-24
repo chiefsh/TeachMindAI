@@ -6,7 +6,7 @@ celery_app = Celery(
     "edu_platform",
     broker=settings.CELERY_BROKER_URL,
     backend=settings.CELERY_RESULT_BACKEND,
-    include=["app.tasks.file_tasks", "app.tasks.ai_tasks"],
+    include=["app.tasks.file_tasks", "app.tasks.ai_tasks", "app.tasks.knowledge_tasks"],
 )
 
 celery_app.conf.update(
@@ -18,11 +18,13 @@ celery_app.conf.update(
     task_queues={
         "ai_tasks": {"exchange": "ai_tasks", "routing_key": "ai"},
         "file_tasks": {"exchange": "file_tasks", "routing_key": "file"},
+        "kg_tasks": {"exchange": "kg_tasks", "routing_key": "kg"},
     },
     task_default_queue="file_tasks",
     task_routes={
         "app.tasks.ai_tasks.*": {"queue": "ai_tasks"},
         "app.tasks.file_tasks.*": {"queue": "file_tasks"},
+        "app.tasks.knowledge_tasks.*": {"queue": "kg_tasks"},
     },
     result_expires=3600,
 )

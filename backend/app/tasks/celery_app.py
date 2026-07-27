@@ -18,13 +18,13 @@ celery_app.conf.update(
     task_queues={
         "ai_tasks": {"exchange": "ai_tasks", "routing_key": "ai"},
         "file_tasks": {"exchange": "file_tasks", "routing_key": "file"},
-        "kg_tasks": {"exchange": "kg_tasks", "routing_key": "kg"},
     },
     task_default_queue="file_tasks",
     task_routes={
         "app.tasks.ai_tasks.*": {"queue": "ai_tasks"},
         "app.tasks.file_tasks.*": {"queue": "file_tasks"},
-        "app.tasks.knowledge_tasks.*": {"queue": "kg_tasks"},
+        # 知识图谱任务同样重度依赖 LLM，并入 ai_tasks 队列，避免单独队列漏消费
+        "app.tasks.knowledge_tasks.*": {"queue": "ai_tasks"},
     },
     result_expires=3600,
 )

@@ -132,7 +132,7 @@ services:
       - qdrant
     volumes:
       - ./backend:/app
-    command: celery -A app.tasks.celery_app worker --loglevel=info -Q ai_tasks,file_tasks,kg_tasks
+    command: celery -A app.tasks.celery_app worker --loglevel=info -Q ai_tasks,file_tasks
 
   frontend:
     build: ./frontend

@@ -33,6 +33,16 @@
             <p class="text-sm line-clamp-2">{{ row.content }}</p>
           </template>
         </el-table-column>
+        <el-table-column label="年级" width="90">
+          <template #default="{ row }">
+            <el-tag size="small" type="info">{{ edu.gradeName(row.grade_id) || '—' }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="科目" width="90">
+          <template #default="{ row }">
+            <el-tag size="small" type="success">{{ edu.subjectName(row.subject_id) || '—' }}</el-tag>
+          </template>
+        </el-table-column>
         <el-table-column label="题型" width="100">
           <template #default="{ row }">
             <el-tag size="small" :type="typeTag(row.question_type)">{{ typeLabel(row.question_type) }}</el-tag>

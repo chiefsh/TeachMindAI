@@ -44,7 +44,8 @@
           </el-button>
         </el-form>
 
-        <div class="mt-6 pt-5 border-t border-slate-100 text-center text-sm text-slate-500">
+        <!-- 注册入口暂时隐藏（如需开放，去掉 v-if="false" 即可） -->
+        <div v-if="false" class="mt-6 pt-5 border-t border-slate-100 text-center text-sm text-slate-500">
           还没有账号？
           <el-button link type="primary" @click="showRegister = true">立即注册</el-button>
         </div>

@@ -24,6 +24,9 @@ def _get_driver():
             settings.NEO4J_URI,
             auth=(settings.NEO4J_USER, settings.NEO4J_PASSWORD),
             max_connection_lifetime=3600,
+            # 服务未就绪时快速失败，避免默认 30s 事务重试刷屏、拖慢启动
+            connection_acquisition_timeout=5,
+            max_transaction_retry_time=5,
         )
     return _driver
 
@@ -62,8 +65,14 @@ async def _collect(tx, cypher: str, params: dict) -> list[dict]:
 
 
 async def init_schema():
-    """创建唯一约束与索引（幂等）。"""
+    """创建唯一约束与索引（幂等）。Neo4j 未就绪时跳过，不阻塞应用启动。"""
     if not settings.KG_ENABLED:
+        return
+    if not await ping():
+        logger.warning(
+            "Neo4j 未就绪（%s），跳过知识图谱 schema 初始化；"
+            "启动 neo4j 服务后重启后端即可生效。", settings.NEO4J_URI,
+        )
         return
     stmts = [
         "CREATE CONSTRAINT kp_id IF NOT EXISTS "

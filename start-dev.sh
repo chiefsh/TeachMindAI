@@ -3,9 +3,9 @@
 
 echo "=== AI 教育平台 - 开发环境启动 ==="
 
-# 1. 启动基础设施（MySQL / Redis / RabbitMQ / MinIO）
+# 1. 启动基础设施（MySQL / Redis / RabbitMQ / MinIO / Neo4j / Qdrant）
 echo "[1/3] 启动基础设施..."
-docker compose up -d mysql redis rabbitmq minio
+docker compose up -d mysql redis rabbitmq minio neo4j qdrant
 echo "等待数据库就绪..."
 sleep 10
 

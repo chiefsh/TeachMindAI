@@ -30,7 +30,9 @@
         <el-table-column type="index" width="55" align="center" />
         <el-table-column label="题干" min-width="280">
           <template #default="{ row }">
-            <p class="text-sm line-clamp-2">{{ row.content }}</p>
+            <p class="text-sm line-clamp-2 cursor-pointer hover:text-primary-600" @click="openDetail(row)">
+              {{ row.content }}
+            </p>
           </template>
         </el-table-column>
         <el-table-column label="年级" width="90">
@@ -53,8 +55,9 @@
             <span :class="`text-xs font-medium ${diffColor(row.difficulty)}`">{{ diffLabel(row.difficulty) }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="100" align="center">
+        <el-table-column label="操作" width="140" align="center">
           <template #default="{ row }">
+            <el-button size="small" link type="primary" @click="openDetail(row)">查看</el-button>
             <el-popconfirm title="确定删除该题目？" @confirm="deleteQ(row.id)">
               <template #reference>
                 <el-button size="small" link type="danger">删除</el-button>
@@ -137,6 +140,46 @@
         <el-button type="primary" :loading="importing" @click="handleImport">导入</el-button>
       </template>
     </el-dialog>
+
+    <!-- 题目详情弹窗 -->
+    <el-dialog v-model="showDetail" title="题目详情" width="640px">
+      <div v-if="detail" class="space-y-4">
+        <div class="flex flex-wrap items-center gap-1.5">
+          <el-tag size="small" type="info">{{ edu.gradeName(detail.grade_id) || '—' }}</el-tag>
+          <el-tag size="small" type="success">{{ edu.subjectName(detail.subject_id) || '—' }}</el-tag>
+          <el-tag size="small" :type="typeTag(detail.question_type)">{{ typeLabel(detail.question_type) }}</el-tag>
+          <span :class="`text-xs font-medium ${diffColor(detail.difficulty)}`">{{ diffLabel(detail.difficulty) }}</span>
+        </div>
+
+        <div>
+          <p class="text-xs font-semibold text-slate-500 mb-1">题干</p>
+          <div class="text-sm text-slate-800 math-text" v-html="renderMathText(detail.content)" />
+        </div>
+
+        <div v-if="detail.options && Object.keys(detail.options).length">
+          <p class="text-xs font-semibold text-slate-500 mb-1">选项</p>
+          <div class="space-y-1">
+            <p v-for="(v, k) in detail.options" :key="k" class="text-sm text-slate-700 math-text">
+              <span class="font-medium">{{ k }}. </span><span v-html="renderMathText(String(v))" />
+            </p>
+          </div>
+        </div>
+
+        <div v-if="detail.answer">
+          <p class="text-xs font-semibold text-slate-500 mb-1">答案</p>
+          <div class="text-sm text-green-600 math-text" v-html="renderMathText(detail.answer)" />
+        </div>
+
+        <div v-if="detail.explanation">
+          <p class="text-xs font-semibold text-slate-500 mb-1">解析</p>
+          <div class="text-sm text-slate-700 math-text" v-html="renderMathText(detail.explanation)" />
+        </div>
+
+        <div v-if="detail.tags?.length" class="flex flex-wrap gap-1.5">
+          <el-tag v-for="t in detail.tags" :key="t" size="small">{{ t }}</el-tag>
+        </div>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -149,6 +192,7 @@ import { ElMessage } from 'element-plus'
 import { Upload, Plus, MagicStick } from '@element-plus/icons-vue'
 import type { Question } from '@/types'
 import RichEditor from '@/components/RichEditor.vue'
+import { renderMathText } from '@/utils/mathText'
 
 const edu = useEducationStore()
 const questions = ref<Question[]>([])
@@ -156,6 +200,8 @@ const total = ref(0)
 const loading = ref(false)
 const showImport = ref(false)
 const showCreate = ref(false)
+const showDetail = ref(false)
+const detail = ref<Question | null>(null)
 const importing = ref(false)
 const creating = ref(false)
 const editorRef = ref<any>(null)
@@ -189,6 +235,11 @@ async function load() {
 
 // 顶部全局年级/科目变化时回到第一页并刷新
 watchDebounced(() => [edu.selectedGradeId, edu.selectedSubjectId], () => { filter.page = 1; load() }, { debounce: 250 })
+
+function openDetail(row: Question) {
+  detail.value = row
+  showDetail.value = true
+}
 
 function openCreate() {
   createForm.grade_id = edu.selectedGradeId || null
@@ -259,3 +310,15 @@ function diffColor(d: string) {
 
 onMounted(load)
 </script>
+
+<style scoped>
+.math-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.7;
+}
+.math-text :deep(.katex) {
+  font-size: 1.02em;
+  white-space: normal;
+}
+</style>

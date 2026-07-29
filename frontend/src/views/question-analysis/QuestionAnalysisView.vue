@@ -1,6 +1,6 @@
 <template>
-  <div class="p-6">
-    <div class="flex items-start justify-between mb-6">
+  <div class="page">
+    <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between mb-4 sm:mb-6">
       <div>
         <h1 class="page-title">试题分析</h1>
         <p class="page-subtitle">导入试题，AI 图解式解析，帮助学生更直观地掌握每道题</p>

@@ -1,6 +1,6 @@
 <template>
-  <div class="p-6">
-    <div class="flex items-start justify-between mb-6">
+  <div class="page">
+    <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between mb-4 sm:mb-6">
       <div>
         <h1 class="page-title">课本管理</h1>
         <p class="page-subtitle">管理上传的课本文档，支持 PDF、Word、TXT、EPUB、MOBI 格式</p>

@@ -1,6 +1,6 @@
 <template>
-  <div class="p-6">
-    <div class="flex items-start justify-between mb-4">
+  <div class="page">
+    <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between mb-4">
       <div class="min-w-0">
         <el-button link :icon="ArrowLeft" @click="router.back()">返回</el-button>
         <h1 class="page-title truncate">{{ set?.name || '试题分析' }}</h1>

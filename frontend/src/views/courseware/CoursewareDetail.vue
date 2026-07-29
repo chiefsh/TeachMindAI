@@ -1,5 +1,5 @@
 <template>
-  <div class="p-6">
+  <div class="page">
     <div class="flex items-center gap-3 mb-6">
       <el-button link :icon="ArrowLeft" @click="router.back()">返回</el-button>
       <div class="flex-1">

@@ -35,16 +35,47 @@ html, body, #app {
 
 /* 卡片通用样式 */
 .card {
-  @apply bg-white rounded-xl shadow-sm border border-slate-100 p-6;
+  @apply bg-white rounded-xl shadow-sm border border-slate-100 p-4 sm:p-6;
+}
+
+/* 页面容器：各业务页统一响应式内边距 */
+.page {
+  @apply p-4 sm:p-5 md:p-6;
 }
 
 /* 页面标题 */
 .page-title {
-  @apply text-xl font-semibold text-slate-800;
+  @apply text-lg sm:text-xl font-semibold text-slate-800;
 }
 
 .page-subtitle {
-  @apply text-sm text-slate-500 mt-1;
+  @apply text-xs sm:text-sm text-slate-500 mt-1;
+}
+
+/* 表格横向滚动（窄屏不撑破布局） */
+.table-scroll {
+  @apply w-full overflow-x-auto;
+}
+.table-scroll .el-table {
+  min-width: 560px;
+}
+
+/* Element Plus 弹窗：小屏接近全宽 */
+@media (max-width: 767px) {
+  .el-dialog {
+    --el-dialog-width: 92vw !important;
+    margin-top: 8vh !important;
+  }
+  .el-dialog__body {
+    padding: 12px 16px !important;
+  }
+  .el-message-box {
+    width: 90vw !important;
+  }
+  .el-drawer.rtl,
+  .el-drawer.ltr {
+    width: min(86vw, 300px) !important;
+  }
 }
 
 /* 状态徽章 */

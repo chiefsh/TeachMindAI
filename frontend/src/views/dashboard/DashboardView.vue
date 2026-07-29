@@ -1,12 +1,12 @@
 <template>
-  <div class="p-6">
+  <div class="page">
     <div class="mb-6">
       <h1 class="page-title">工作台</h1>
       <p class="page-subtitle">欢迎回来，{{ auth.teacher?.real_name }} 老师</p>
     </div>
 
     <!-- 统计卡片 -->
-    <div class="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4 mb-6">
       <div v-for="stat in stats" :key="stat.label" class="card">
         <div class="flex items-start justify-between">
           <div>
@@ -23,7 +23,7 @@
     <!-- 快捷入口 -->
     <div class="card mb-6">
       <h3 class="text-sm font-semibold text-slate-600 mb-4">快捷操作</h3>
-      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         <router-link
           v-for="action in quickActions"
           :key="action.label"

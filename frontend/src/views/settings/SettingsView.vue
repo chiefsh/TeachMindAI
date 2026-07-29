@@ -1,5 +1,5 @@
 <template>
-  <div class="p-6">
+  <div class="page">
     <div class="mb-6">
       <h1 class="page-title">系统设置</h1>
       <p class="page-subtitle">配置 AI 大模型供应商和教学科目</p>

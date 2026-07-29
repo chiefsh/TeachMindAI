@@ -1,6 +1,6 @@
 <template>
-  <div class="p-6">
-    <div class="flex items-start justify-between mb-6">
+  <div class="page">
+    <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between mb-4 sm:mb-6">
       <div>
         <h1 class="page-title">课件生成</h1>
         <p class="page-subtitle">基于课本章节，利用 AI 自动生成教学课件</p>

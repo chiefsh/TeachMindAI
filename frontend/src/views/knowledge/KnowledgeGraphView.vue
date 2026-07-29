@@ -1,13 +1,13 @@
 <template>
-  <div class="p-6">
-    <div class="flex items-start justify-between mb-4">
+  <div class="page">
+    <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between mb-4">
       <div>
         <h1 class="page-title">知识图谱</h1>
         <p class="page-subtitle">
           知识点系统化沉淀与跨学科串联 · 共 {{ stats.point_count }} 个知识点 / {{ stats.relation_count }} 条关系
         </p>
       </div>
-      <div class="flex gap-2">
+      <div class="flex flex-wrap gap-2">
         <el-button :icon="Plus" @click="openCreate">新建知识点</el-button>
         <el-dropdown trigger="click" @command="extractTextbook">
           <el-button :icon="MagicStick">
@@ -46,7 +46,7 @@
     </div>
 
     <!-- 图 -->
-    <div class="card !p-0 overflow-hidden" style="height:calc(100vh - 260px)">
+    <div class="card !p-0 overflow-hidden h-[55vh] sm:h-[60vh] lg:h-[calc(100vh-260px)]">
       <div v-if="!graph.nodes.length && !loading"
         class="h-full flex flex-col items-center justify-center text-slate-400 gap-2">
         <el-icon class="text-4xl"><Share /></el-icon>

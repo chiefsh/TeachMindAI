@@ -1,6 +1,6 @@
 <template>
-  <div class="p-6">
-    <div class="flex items-start justify-between mb-6">
+  <div class="page">
+    <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between mb-4 sm:mb-6">
       <div>
         <h1 class="page-title">作业 / 考试生成</h1>
         <p class="page-subtitle">基于课件内容，AI 自动生成课后作业或考试试卷</p>
@@ -10,6 +10,7 @@
 
     <!-- 列表 -->
     <div class="card !p-0 overflow-hidden">
+      <div class="table-scroll">
       <el-table :data="papers" v-loading="loading">
         <el-table-column label="标题" min-width="200">
           <template #default="{ row }">
@@ -49,6 +50,7 @@
           </template>
         </el-table-column>
       </el-table>
+      </div>
     </div>
 
     <!-- 生成弹窗 -->

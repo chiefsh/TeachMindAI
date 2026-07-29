@@ -1,11 +1,11 @@
 <template>
-  <div class="p-6">
-    <div class="flex items-start justify-between mb-6">
+  <div class="page">
+    <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between mb-4 sm:mb-6">
       <div>
         <h1 class="page-title">学生成绩管理</h1>
         <p class="page-subtitle">成绩录入、统计分析、AI 智能报告</p>
       </div>
-      <div class="flex gap-2">
+      <div class="flex flex-wrap gap-2">
         <el-button :icon="Upload" @click="showImport = true">导入成绩</el-button>
         <el-button type="primary" :icon="Plus" @click="openManual">手动录入</el-button>
       </div>
@@ -35,6 +35,7 @@
       </div>
 
       <div class="card !p-0 overflow-hidden">
+        <div class="table-scroll">
         <el-table :data="summaries" v-loading="loading" max-height="550" @row-click="openDetail" class="cursor-pointer">
           <el-table-column label="科目" width="110">
             <template #default="{ row }">
@@ -68,11 +69,13 @@
             </template>
           </el-table-column>
         </el-table>
+        </div>
       </div>
     </div>
 
     <!-- 单场考试成绩明细弹窗 -->
     <el-dialog v-model="showDetail" :title="detailTitle" width="720px" top="6vh">
+      <div class="table-scroll">
       <el-table :data="detailRows" v-loading="detailLoading" max-height="520">
         <el-table-column type="index" label="#" width="56" align="center" />
         <el-table-column label="姓名" width="120">
@@ -96,6 +99,7 @@
           <template #default="{ row }"><span class="text-xs text-slate-400">{{ formatDate(row.created_at) }}</span></template>
         </el-table-column>
       </el-table>
+      </div>
     </el-dialog>
 
     <!-- 统计分析 -->
@@ -136,6 +140,7 @@
       <!-- 历史统计 -->
       <div class="card !p-0 overflow-hidden">
         <div class="px-4 py-3 border-b border-slate-100 text-sm font-semibold text-slate-600">历史统计分析</div>
+        <div class="table-scroll">
         <el-table :data="statsReports" v-loading="statsHistLoading">
           <el-table-column label="年级" width="100"><template #default="{ row }">{{ edu.gradeName(row.grade_id) || '—' }}</template></el-table-column>
           <el-table-column label="科目" width="90"><template #default="{ row }">{{ edu.subjectName(row.subject_id) || '—' }}</template></el-table-column>
@@ -152,6 +157,7 @@
             </template>
           </el-table-column>
         </el-table>
+        </div>
       </div>
     </div>
 
@@ -193,6 +199,7 @@
       <!-- 历史报告 -->
       <div class="card !p-0 overflow-hidden">
         <div class="px-4 py-3 border-b border-slate-100 text-sm font-semibold text-slate-600">历史 AI 分析报告</div>
+        <div class="table-scroll">
         <el-table :data="aiReports" v-loading="aiHistLoading">
           <el-table-column label="年级" width="100"><template #default="{ row }">{{ edu.gradeName(row.grade_id) || '—' }}</template></el-table-column>
           <el-table-column label="科目" width="90"><template #default="{ row }">{{ edu.subjectName(row.subject_id) || '—' }}</template></el-table-column>
@@ -209,6 +216,7 @@
             </template>
           </el-table-column>
         </el-table>
+        </div>
       </div>
     </div>
 

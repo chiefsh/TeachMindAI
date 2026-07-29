@@ -1,11 +1,11 @@
 <template>
-  <div class="p-6">
-    <div class="flex items-start justify-between mb-6">
+  <div class="page">
+    <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between mb-4 sm:mb-6">
       <div>
         <h1 class="page-title">题库管理</h1>
         <p class="page-subtitle">管理题目，支持文件批量导入和图片 OCR 识别</p>
       </div>
-      <div class="flex gap-2">
+      <div class="flex flex-wrap gap-2">
         <el-button :icon="Upload" @click="openImport">导入题库</el-button>
         <el-button type="primary" :icon="Plus" @click="openCreate">手动录入</el-button>
       </div>
@@ -26,6 +26,7 @@
 
     <!-- 题目列表 -->
     <div class="card !p-0 overflow-hidden">
+      <div class="table-scroll">
       <el-table :data="questions" v-loading="loading" row-class-name="hover:bg-slate-50">
         <el-table-column type="index" width="55" align="center" />
         <el-table-column label="题干" min-width="280">
@@ -66,7 +67,8 @@
           </template>
         </el-table-column>
       </el-table>
-      <div class="p-4 flex justify-end">
+      </div>
+      <div class="p-3 sm:p-4 flex justify-end overflow-x-auto">
         <el-pagination
           v-model:current-page="filter.page"
           :page-size="filter.page_size"

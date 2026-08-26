@@ -58,6 +58,9 @@ class Settings(BaseSettings):
     OCR_LANGUAGE: str = "chi_sim"         # Tesseract 语言；多语言用 + 连接（需本地均有对应 .traineddata）
     OCR_TESSDATA_PATH: str = ""            # 留空则自动探测系统 tessdata 目录
 
+    # 上传上限（课本 / 题库等 multipart）；需与 frontend/nginx.conf 的 client_max_body_size 对齐
+    MAX_UPLOAD_BYTES: int = 500 * 1024 * 1024   # 500MB
+
     # 课本整页截图（增强扫描版/图多文字少页面的课件配图）
     TEXTBOOK_PAGE_SCREENSHOT: bool = True       # 是否对扫描页渲染整页截图入库
     TEXTBOOK_PAGE_SCREENSHOT_MAX: int = 40      # 单本课本最多截图页数

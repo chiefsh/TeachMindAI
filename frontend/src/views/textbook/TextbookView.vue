@@ -106,7 +106,7 @@
           >
             <el-button :icon="Upload">选择文件</el-button>
             <template #tip>
-              <p class="text-xs text-slate-400 mt-1">支持 PDF / Word / TXT / EPUB / MOBI，大小不超过 100MB</p>
+              <p class="text-xs text-slate-400 mt-1">支持 PDF / Word / TXT / EPUB / MOBI，大小不超过 500MB</p>
             </template>
           </el-upload>
         </el-form-item>
@@ -199,6 +199,10 @@ watchDebounced(() => [edu.selectedGradeId, edu.selectedSubjectId], () => { page.
 async function handleUpload() {
   await uploadFormRef.value?.validate()
   if (!uploadForm.file) { ElMessage.warning('请选择文件'); return }
+  if (uploadForm.file.size > 500 * 1024 * 1024) {
+    ElMessage.warning('文件过大，最大支持 500MB')
+    return
+  }
   const fd = new FormData()
   fd.append('file', uploadForm.file)
   fd.append('title', uploadForm.title)

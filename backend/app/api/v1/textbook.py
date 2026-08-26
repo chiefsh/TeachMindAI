@@ -1,7 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete, func
-from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
 from app.core.minio_client import upload_file, get_presigned_url, delete_file, get_file_bytes
@@ -60,6 +59,8 @@ async def upload_textbook(
         raise HTTPException(status_code=400, detail=f"不支持的文件格式，支持：{', '.join(ALLOWED_TYPES)}")
 
     data = await file.read()
+    if len(data) > settings.MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="文件过大，最大支持 500MB")
     object_name = f"{teacher.id}/{grade_id}/{subject_id}/{uuid.uuid4()}.{ext}"
     upload_file(settings.MINIO_BUCKET_TEXTBOOKS, object_name, data, file.content_type or "application/octet-stream")
 
@@ -115,13 +116,32 @@ async def get_chapters(
     db: AsyncSession = Depends(get_db),
 ):
     await _get_or_404(textbook_id, teacher.id, db)
-    result = await db.execute(
-        select(TextbookChapter)
-        .where(TextbookChapter.textbook_id == textbook_id, TextbookChapter.parent_id == None)
-        .options(selectinload(TextbookChapter.children))
-        .order_by(TextbookChapter.sort_order)
-    )
-    return result.scalars().all()
+    rows = (
+        await db.execute(
+            select(TextbookChapter)
+            .where(TextbookChapter.textbook_id == textbook_id)
+            .order_by(TextbookChapter.sort_order, TextbookChapter.id)
+        )
+    ).scalars().all()
+
+    # 一次查出全部章节，在内存拼树；不要走 relationship.children，
+    # 异步会话里懒加载孙节点会 MissingGreenlet。
+    by_parent: dict[int | None, list[TextbookChapter]] = {}
+    for ch in rows:
+        by_parent.setdefault(ch.parent_id, []).append(ch)
+
+    def to_out(ch: TextbookChapter) -> ChapterOut:
+        return ChapterOut(
+            id=ch.id,
+            title=ch.title,
+            level=ch.level,
+            sort_order=ch.sort_order,
+            page_start=ch.page_start,
+            page_end=ch.page_end,
+            children=[to_out(c) for c in by_parent.get(ch.id, [])],
+        )
+
+    return [to_out(ch) for ch in by_parent.get(None, [])]
 
 
 @router.post("/{textbook_id}/reparse", response_model=TextbookOut)

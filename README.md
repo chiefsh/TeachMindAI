@@ -42,7 +42,7 @@
 
 ### 课本管理
 
-上传 PDF / Word / TXT / EPUB / MOBI（单文件 ≤ 100MB）。后台异步解析章节、页码和插图，解析完成后可供课件生成引用。支持预览、查看章节树、重新解析。
+上传 PDF / Word / TXT / EPUB / MOBI（单文件 ≤ 500MB）。后台异步解析章节、页码和插图，解析完成后可供课件生成引用。支持预览、查看章节树、重新解析。
 
 **电子课本从哪来：** 本平台不托管国家课程 PDF。若需要从 [国家中小学智慧教育平台](https://basic.smartedu.cn/) 取得电子课本，可使用开源工具 [tchMaterial-parser](https://github.com/happycola233/tchMaterial-parser)（MIT）：粘贴课本预览页网址，批量解析下载 PDF，并可自动按书名命名、添加书签。下载到本地后，再在智课星里「上传课本」走后续解析与课件生成。
 

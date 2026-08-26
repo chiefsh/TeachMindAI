@@ -31,8 +31,10 @@ instance.interceptors.response.use(
       localStorage.removeItem('token')
       router.push('/login')
       ElMessage.error('登录已过期，请重新登录')
+    } else if (status === 413) {
+      ElMessage.error('文件过大，最大支持 500MB')
     } else {
-      ElMessage.error(msg)
+      ElMessage.error(typeof msg === 'string' ? msg : '请求失败')
     }
     return Promise.reject(err)
   },

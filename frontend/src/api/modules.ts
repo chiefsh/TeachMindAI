@@ -43,6 +43,7 @@ export const textbookApi = {
     request.get<Paginated<Textbook>>('/textbooks', { params }),
   upload: (formData: FormData) => request.post<Textbook>('/textbooks', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 10 * 60 * 1000, // 大 PDF 走 Nginx 反代，给足 10 分钟
   }),
   getPreviewUrl: (id: number) => request.get<{ url: string; file_type: string }>(`/textbooks/${id}/preview-url`),
   getChapters: (id: number) => request.get<Chapter[]>(`/textbooks/${id}/chapters`),

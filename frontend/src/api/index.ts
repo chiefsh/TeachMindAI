@@ -1,19 +1,28 @@
-import axios from 'axios'
+import axios, { type AxiosRequestConfig } from 'axios'
 import { ElMessage } from 'element-plus'
 import router from '@/router'
 
-const request = axios.create({
+/** 拦截器已解包 res.data，调用方拿到的是 T 而不是 AxiosResponse<T>。 */
+export interface ApiClient {
+  get<T = unknown>(url: string, config?: AxiosRequestConfig): Promise<T>
+  post<T = unknown>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T>
+  put<T = unknown>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T>
+  patch<T = unknown>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T>
+  delete<T = unknown>(url: string, config?: AxiosRequestConfig): Promise<T>
+}
+
+const instance = axios.create({
   baseURL: '/api/v1',
   timeout: 30000,
 })
 
-request.interceptors.request.use((config) => {
+instance.interceptors.request.use((config) => {
   const token = localStorage.getItem('token')
   if (token) config.headers.Authorization = `Bearer ${token}`
   return config
 })
 
-request.interceptors.response.use(
+instance.interceptors.response.use(
   (res) => res.data,
   (err) => {
     const status = err.response?.status
@@ -29,4 +38,5 @@ request.interceptors.response.use(
   },
 )
 
+const request = instance as unknown as ApiClient
 export default request

@@ -122,6 +122,11 @@ tasks/<队列>.py      → Celery 包装（薄，真正逻辑在 service）
 | `edu-analytic-geometry` | 数学 | `lib/analytic_kernel.py` |
 | `edu-chem-reaction` | 化学/生物 | `lib/reaction_kernel.py` |
 
+除各 skill 的固定解题题型外，两个数学 skill 还有**通用兜底题型**，供没有具体题面的概念课出 3D / 画板：
+`solid_explore`（可旋转多面体：cube / cuboid / quad_pyramid / tetrahedron / tri_prism，讲底面与高、
+体积表面积）与 `curve_explore`（圆锥曲线画板：ellipse / hyperbola / parabola / circle，拖动动点演示
+定义定值、渐近线、准线、切线）。两者都在 `services/skill_runners/` 的 runner 里构造数据，模板不改。
+
 接入计划：`docs/skill-integration-plan.md`。改某个 skill 时只读该目录 + `skill_service.py`，不要扫另外两个 skill。
 
 ## 前端页面 ↔ 路由

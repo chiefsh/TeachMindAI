@@ -122,11 +122,22 @@
 **在本项目中怎么工作：**
 
 1. 教师创建 **互动课件**，生成流程走到互动页时，先由 LLM **只判类别**（是否立体几何 / 解析几何 / 化学反应，以及哪一种题型）。
-2. 命中后，后端用子进程调用对应 skill 的 `scripts/generate.py`（或立体几何 runner）。**坐标、答案、步骤数值全部由 sympy 内核算出**，再注入数据驱动模板，得到整页 HTML。
+2. 命中后，后端用子进程调用对应的 runner（数学）或 skill 自带的 `scripts/generate.py`（化学）。**坐标、答案、步骤数值全部由 sympy 内核算出**，再注入数据驱动模板，得到整页 HTML。
 3. 前端仍用原来的 iframe 展示，无需为 skill 单独改页面。
 4. 未命中、子进程失败或超时 → 返回空串，上层回退成原来的 LLM 写 HTML，不影响其它科目。
 
-接入代码在 `backend/app/services/skill_service.py`，能力表见 `SKILL_CAPABILITIES`。三个 skill 的模块名会冲突，所以用子进程隔离，改其中一个时不要顺手打开另外两个。
+### 概念课也能出 3D / 画板
+
+上述题型都对应一道具体的题。数学还有两个**通用探究题型**，专门覆盖「认识棱柱棱锥」「椭圆的定义」这类没有题面的概念课——同样是确定性生成，不是让 LLM 现写 HTML：
+
+| 题型 | 形态 | 支持的对象 | 讲什么 |
+|---|---|---|---|
+| `solid_explore` | 可旋转 3D 教具 | 正方体、长方体、正四棱锥、正四面体、正三棱柱 | 顶点/棱/面计数、棱长标注、高亮底面与高，sympy 精确推体积与表面积 |
+| `curve_explore` | 可拖动画板 | 椭圆、双曲线、抛物线、圆 | 焦点/顶点/准线/渐近线/切线，拖动动点实时显示焦半径，用定值指示器演示第一定义 |
+
+`curve_explore` 的定值演示是这两个题型的重点：拖动滑块时 $|PF_1|$、$|PF_2|$ 各自在变，而它们的和（椭圆）、差的绝对值（双曲线）、到焦点与到准线之差（抛物线）在控制台里纹丝不动，定义就在画面上自己成立了。
+
+接入代码在 `backend/app/services/skill_service.py`，能力表见 `SKILL_CAPABILITIES`；两个数学 skill 的 spec 构造在 `backend/app/services/skill_runners/`。三个 skill 的模块名会冲突，所以用子进程隔离，改其中一个时不要顺手打开另外两个。
 
 计算依赖 **sympy**（已在 `backend/requirements.txt`）。化学 skill 的 RDKit 是可选的：没装就用内置 VSEPR 分子库，**不会自动安装 RDKit**。
 
@@ -141,6 +152,16 @@ python3 scripts/generate.py ellipse_dot_range ./sol.html
 
 cd backend/skills/edu-chem-reaction
 python3 scripts/generate.py combustion_ch4 ./reaction.html
+```
+
+通用探究题型带参数，用接入层的 runner 验证（在 `backend/` 下执行，生成的 HTML 直接用浏览器打开）：
+
+```bash
+python3 app/services/skill_runners/solid_geometry_runner.py \
+  '{"problem_type":"solid_explore","body":"quad_pyramid","base_edge":4,"height":3}' /tmp/solid.html
+
+python3 app/services/skill_runners/analytic_geometry_runner.py \
+  '{"problem_type":"curve_explore","curve":"ellipse","a":2,"b":1}' /tmp/curve.html
 ```
 
 源项目也可用 `npx skills add wy51ai/edulab` 装到 Claude Code 等环境；本平台不走这条路径，而是在课件生成管线里直接调本地副本。上游说明见 [edulab README](https://github.com/wy51ai/edulab/blob/master/README.zh-CN.md)。
@@ -332,8 +353,8 @@ MySQL：库 `edu_platform`，用户 `edu_user` / `edu_pass`（root：`edu_root_p
 **知识图谱抽不到跨学科相似点**  
 未配嵌入模型时不会做向量去重/发现，只按名称匹配。
 
-**互动课件没有 3D / 画板，只有普通讲解**  
-skill 只在「互动课件 + 数学/化学/生物 + 题型命中」时介入。标准课件、未覆盖的知识点会走 LLM HTML。可看 Celery 日志里 skill 子进程是否报错。
+**互动课件没有 3D / 画板，只有普通讲解**
+skill 只在「互动课件 + 数学/化学/生物 + 题型命中」时介入。数学的多面体与圆锥曲线知识点即使没有具体题面，也会走 `solid_explore` / `curve_explore` 出 3D 或画板；但概率、数列、三角恒等变换、圆柱圆锥球等仍不在覆盖范围，会回退成 LLM 写的 HTML。可看 Celery 日志里有没有「命中 skill」这行，以及 skill 子进程是否报错。
 
 ---
 

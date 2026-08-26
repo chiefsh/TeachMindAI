@@ -10,6 +10,8 @@ alwaysApply: false
 
 互动页：`_generate_lesson_content` 先 `skill_service.maybe_generate_skill_html`；命中则 sympy+模板出整页 HTML，失败必须回退 LLM。科目提示词来自 `SubjectPrompt`。
 
+skill 题型分两类，都登记在 `SKILL_CAPABILITIES`：解题型（固定题面）与通用兜底型 `solid_explore` / `curve_explore`（概念课用的 3D 教具与曲线画板，spec 带几何体/曲线与尺寸，经 `_normalize_spec` 收敛到合法取值）。数学两个 skill 统一走 `skill_runners/{solid,analytic}_geometry_runner.py` 子进程，化学仍走 skill 自带 CLI。新增可视化题型时只在 runner 里构造数据，不要改 skill 的 `template/*.html`。
+
 课堂：`CoursewareSession`（分享 token）+ `InteractionRecord`。教师端 `interaction.py`；学生免登录 `/s/:token` → `SessionPlay.vue` + `publicApi`。模型在 `models/interaction.py`（未从 `models/__init__.py` 导出，直接 import）。
 
 呈现样式：`Courseware.render_style` 为 `ppt`（幻灯片）或 `html`（单页网页）。同一份 meta+slides 结构，两种渲染器各出一份自包含 HTML：`revealDeck.ts`（reveal.js 演示）与 `lessonPage.ts`（滚动网页 + 目录 + 下载）。html 样式在知识点抽取阶段多要一个 `deep_dive` 深入讲解段落。

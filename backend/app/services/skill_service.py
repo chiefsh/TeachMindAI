@@ -34,11 +34,13 @@ SKILL_CAPABILITIES: dict[str, dict] = {
             "skew_lines": "异面直线所成角",
             "dihedral": "二面角",
             "point_plane_distance": "点到平面的距离",
+            # 通用 3D 教具：不依赖具体题面，讲几何体本身
+            "solid_explore": "立体图形探究台（可旋转 3D：顶点棱面、底面与高、体积与表面积）",
         },
     },
     "edu-analytic-geometry": {
         "subjects": ["数学"],
-        # 这些题型是固定的“示例题场景”，路由器只需选出最贴近的 key（无需 spec）
+        # 除 curve_explore 外都是固定的“示例题场景”，路由器只需选出最贴近的 key（无需 spec）
         "problem_types": {
             "ellipse_dot_range": "椭圆·过焦点弦上向量数量积的取值范围",
             "ellipse_chord_range": "椭圆·过焦点弦弦长的取值范围",
@@ -46,6 +48,8 @@ SKILL_CAPABILITIES: dict[str, dict] = {
             "ellipse_slopeprod_const": "椭圆·中心对称弦斜率之积为定值",
             "parabola_dot_const": "抛物线·焦点弦向量数量积为定值",
             "hyperbola_ecc_range": "双曲线·离心率取值范围",
+            # 通用画板：不依赖具体题面，讲曲线的定义与性质
+            "curve_explore": "圆锥曲线画板（拖动动点，实时演示定义与焦半径定值）",
         },
     },
     "edu-chem-reaction": {
@@ -102,10 +106,30 @@ async def route_math_point(cfg, point: dict, subject_name: str) -> dict | None:
 - parabola_dot_const：抛物线焦点弦向量数量积为定值。
 - hyperbola_ecc_range：双曲线离心率取值范围。
 
+【通用兜底：没有固定题面、但适合可视化的概念课】
+- solid_explore（立体几何 skill）：可旋转 3D 立体图形探究台，讲几何体的顶点/棱/面、底面与高、
+  体积与表面积。适用于「认识棱柱棱锥」「几何体的结构特征」「体积/表面积公式」等。
+  spec 给 body 及尺寸（正整数、尽量小）：
+  - body=cube：edge
+  - body=cuboid：lx、ly、lz
+  - body=quad_pyramid（正四棱锥）：base_edge、height
+  - body=tetrahedron（正四面体）：edge
+  - body=tri_prism（正三棱柱）：base_edge、height
+  只支持这五种多面体；圆柱、圆锥、球一律不要选。
+- curve_explore（解析几何 skill）：可拖动的圆锥曲线画板，实时演示定义与焦半径定值、渐近线、
+  准线、切线。适用于「椭圆/双曲线/抛物线的定义与标准方程」「离心率」「渐近线」「圆的方程」等。
+  spec 给 curve 及参数（正数、尽量小）：
+  - curve=ellipse：a、b（不相等）
+  - curve=hyperbola：a、b，可给 orient（"x" 或 "y"）
+  - curve=parabola：p，可给 axis（"x" 或 "y"）
+  - curve=circle：r
+
 规则：
-1. 只有知识点确实属于上述某题型时才命中；否则返回 {{"match": false}}。
-2. 命中立体几何题型时给出合理示例参数（正整数、尽量小、答案规整）；解析几何 spec 一律为 {{}}。
-3. 只输出 JSON，不要解释，不要 markdown 代码块。
+1. 优先匹配上面的具体题型；只有解题型题目才用具体题型。
+2. 若知识点是概念/性质课（没有具体题面）但属于「多面体」或「圆锥曲线与圆」，用对应的通用兜底类型。
+3. 两类都不沾边（如概率、数列、三角恒等变换、任意函数图像）时返回 {{"match": false}}。
+4. 命中立体几何题型或通用兜底时给出合理示例参数；解析几何固定示例题的 spec 一律为 {{}}。
+5. 只输出 JSON，不要解释，不要 markdown 代码块。
 
 命中示例（线面角·正四棱锥）：
 {{"match": true, "skill": "edu-solid-geometry", "problem_type": "line_plane_angle", "spec": {{"body": "pyramid", "base_edge": 2, "height": 1}}}}
@@ -119,6 +143,10 @@ async def route_math_point(cfg, point: dict, subject_name: str) -> dict | None:
 {{"match": true, "skill": "edu-solid-geometry", "problem_type": "point_plane_distance", "spec": {{"edge": 1}}}}
 命中示例（解析几何·椭圆离心率之类）：
 {{"match": true, "skill": "edu-analytic-geometry", "problem_type": "hyperbola_ecc_range", "spec": {{}}}}
+命中示例（概念课·认识正四棱锥）：
+{{"match": true, "skill": "edu-solid-geometry", "problem_type": "solid_explore", "spec": {{"body": "quad_pyramid", "base_edge": 4, "height": 3}}}}
+命中示例（概念课·椭圆的定义）：
+{{"match": true, "skill": "edu-analytic-geometry", "problem_type": "curve_explore", "spec": {{"curve": "ellipse", "a": 2, "b": 1}}}}
 未命中：
 {{"match": false}}
 """
@@ -178,7 +206,26 @@ async def _classify(cfg, prompt: str) -> dict | None:
     caps = SKILL_CAPABILITIES.get(skill, {}).get("problem_types", {})
     if pt not in caps:
         return None
-    return {"skill": skill, "problem_type": pt, "spec": obj.get("spec") or {}}
+    return {"skill": skill, "problem_type": pt,
+            "spec": _normalize_spec(pt, obj.get("spec") or {})}
+
+
+# 通用兜底题型的合法取值：LLM 给了不认识的几何体/曲线就落到默认，而不是让子进程报错
+SOLID_BODIES = ("cube", "cuboid", "quad_pyramid", "tetrahedron", "tri_prism")
+EXPLORE_CURVES = ("ellipse", "hyperbola", "parabola", "circle")
+
+
+def _normalize_spec(problem_type: str, spec: dict) -> dict:
+    """把 LLM 给的 spec 收敛到 runner 认识的取值范围内。"""
+    if not isinstance(spec, dict):
+        return {}
+    if problem_type == "solid_explore":
+        body = str(spec.get("body", "")).lower()
+        spec["body"] = body if body in SOLID_BODIES else "cuboid"
+    elif problem_type == "curve_explore":
+        curve = str(spec.get("curve", "")).lower()
+        spec["curve"] = curve if curve in EXPLORE_CURVES else "ellipse"
+    return spec
 
 
 # ---------------------------------------------------------------------------
@@ -211,25 +258,33 @@ def _read_html(path: Path) -> str:
     return html if "<html" in html.lower() else ""
 
 
-async def render_solid_geometry_html(routed: dict, timeout: float = 40.0) -> str:
-    """调用 solid_geometry_runner 子进程（题型带参数），返回整页 HTML；失败返回 ''。"""
-    runner = SKILL_RUNNERS / "solid_geometry_runner.py"
+async def _render_via_runner(runner_name: str, routed: dict, timeout: float) -> str:
+    """调用 skill_runners/<runner_name> 子进程（题型可带参数），返回整页 HTML；失败返回 ''。"""
+    runner = SKILL_RUNNERS / runner_name
     if not runner.exists():
-        logger.warning("solid_geometry_runner 不存在：%s", runner)
+        logger.warning("skill runner 不存在：%s", runner)
         return ""
     spec_json = json.dumps({"problem_type": routed["problem_type"], **(routed.get("spec") or {})},
                            ensure_ascii=False)
     with tempfile.TemporaryDirectory() as td:
-        out = Path(td) / "sg.html"
+        out = Path(td) / "out.html"
         if await _run_subprocess([sys.executable, str(runner), spec_json, str(out)], timeout):
             return _read_html(out)
     return ""
 
 
+async def render_solid_geometry_html(routed: dict, timeout: float = 40.0) -> str:
+    return await _render_via_runner("solid_geometry_runner.py", routed, timeout)
+
+
+async def render_analytic_geometry_html(routed: dict, timeout: float = 45.0) -> str:
+    return await _render_via_runner("analytic_geometry_runner.py", routed, timeout)
+
+
 async def _render_via_cli(skill_dir: str, key: str, timeout: float = 45.0) -> str:
     """通用 CLI 渲染：调用 skills/<skill_dir>/scripts/generate.py <key> <out>。
 
-    适用于解析几何、化学（题型为固定场景，无需额外参数）。
+    适用于题型为固定场景、无需额外参数的 skill（化学反应）。
     """
     script = SKILLS_ROOT / skill_dir / "scripts" / "generate.py"
     if not script.exists():
@@ -240,10 +295,6 @@ async def _render_via_cli(skill_dir: str, key: str, timeout: float = 45.0) -> st
         if await _run_subprocess([sys.executable, str(script), key, str(out)], timeout):
             return _read_html(out)
     return ""
-
-
-async def render_analytic_geometry_html(routed: dict, timeout: float = 45.0) -> str:
-    return await _render_via_cli("edu-analytic-geometry", routed["problem_type"], timeout)
 
 
 async def render_chem_reaction_html(routed: dict, timeout: float = 45.0) -> str:

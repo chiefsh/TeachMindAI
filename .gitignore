@@ -2,3 +2,7 @@ node_modules/
 .venv/
 backend/.venv/
 .git/
+
+__pycache__/
+*.py[cod]
+*$py.class

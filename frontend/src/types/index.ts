@@ -43,8 +43,11 @@ export interface Question {
   tags?: string[]; created_at: string
 }
 
+export type RenderStyle = 'ppt' | 'html'
+
 export interface Courseware {
   id: number; title: string; courseware_type: string; gen_status: ParseStatus
+  render_style?: RenderStyle; theme?: string
   is_interactive: boolean; textbook_id?: number; grade_id?: number; subject_id?: number
   task_id?: string; created_at: string
   content?: Record<string, unknown>; custom_prompt?: string

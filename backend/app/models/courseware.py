@@ -11,6 +11,11 @@ class CoursewareType(str, enum.Enum):
     interactive = "interactive" # 互动课件
 
 
+class RenderStyle(str, enum.Enum):
+    ppt = "ppt"     # 幻灯片样式：演示模式 + 导出 PPT
+    html = "html"   # 网页样式：单页滚动网页课件
+
+
 class Courseware(Base, TimestampMixin):
     __tablename__ = "coursewares"
 
@@ -23,6 +28,13 @@ class Courseware(Base, TimestampMixin):
     courseware_type: Mapped[CoursewareType] = mapped_column(
         SAEnum(CoursewareType), default=CoursewareType.standard
     )
+    render_style: Mapped[RenderStyle] = mapped_column(
+        SAEnum(RenderStyle, native_enum=False, length=16),
+        default=RenderStyle.ppt,
+        server_default=RenderStyle.ppt.value,
+    )
+    # 视觉主题 key，取值见 services/courseware_theme.py
+    theme: Mapped[str] = mapped_column(String(24), default="indigo", server_default="indigo")
     custom_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)   # 教师自定义提示词
     content: Mapped[dict | None] = mapped_column(JSON, nullable=True)        # 幻灯片结构 JSON
     gen_status: Mapped[ParseStatus] = mapped_column(

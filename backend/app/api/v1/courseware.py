@@ -67,6 +67,8 @@ async def create_courseware(
         chapter_range=data.chapter_range,
         page_range=data.page_range,
         courseware_type=data.courseware_type,
+        render_style=data.render_style,
+        theme=data.theme,
         custom_prompt=data.custom_prompt,
         is_interactive=data.is_interactive,
         gen_status=ParseStatus.pending,
@@ -177,7 +179,7 @@ async def export_courseware(
                 images[iid] = data
 
     try:
-        data, media_type, ext = build_export(fmt, cw.content, cw.title, images)
+        data, media_type, ext = build_export(fmt, cw.content, cw.title, images, cw.theme)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"导出失败：{e}")
 

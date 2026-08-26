@@ -48,6 +48,9 @@ export const textbookApi = {
   reparse: (id: number) => request.post<Textbook>(`/textbooks/${id}/reparse`),
   listImages: (id: number) => request.get<{ id: number; page_number: number; url: string }[]>(`/textbooks/${id}/images`),
   resolveImages: (ids: number[]) => request.post<Record<string, string>>('/textbooks/images/resolve', { ids }),
+  // base64 data URI，供离线 HTML 内联（presigned URL 会过期）；超大图不返回
+  resolveImagesInline: (ids: number[]) =>
+    request.post<Record<string, string>>('/textbooks/images/resolve-inline', { ids }),
   delete: (id: number) => request.delete(`/textbooks/${id}`),
 }
 

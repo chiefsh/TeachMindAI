@@ -6,14 +6,23 @@
         <h1 class="page-title">{{ cw?.title }}</h1>
         <div class="flex items-center gap-2 mt-1">
           <span v-if="cw" :class="`badge badge-${cw.gen_status}`">{{ statusLabel(cw?.gen_status) }}</span>
+          <el-tag size="small" :type="isWebStyle ? 'primary' : 'info'">
+            {{ isWebStyle ? '网页样式' : 'PPT 样式' }}
+          </el-tag>
           <el-tag v-if="cw?.is_interactive" size="small" type="warning">互动课件</el-tag>
+          <span class="inline-flex items-center gap-1.5 text-xs text-slate-500">
+            <span class="w-3 h-3 rounded-full" :style="{ background: themeGradient }" />
+            {{ theme.label }}
+          </span>
         </div>
       </div>
-      <!-- 操作 -->
+      <!-- 操作：与课件的呈现样式对应，主按钮为该样式的默认打开方式 -->
       <div v-if="cw?.gen_status === 'done' && slides.length" class="flex items-center gap-2">
-        <el-button type="primary" :icon="VideoPlay" @click="openPresent">演示模式</el-button>
+        <el-button :type="isWebStyle ? 'primary' : ''" :icon="Monitor" @click="openLessonPage">网页预览</el-button>
+        <el-button :type="isWebStyle ? '' : 'primary'" :icon="VideoPlay" @click="openPresent">演示模式</el-button>
         <el-button :icon="Connection" @click="openInteraction">课堂互动</el-button>
         <el-button-group>
+          <el-button :loading="downloadingPage" :icon="Link" @click="downloadLessonPage">下载 HTML</el-button>
           <el-button :loading="exporting === 'pptx'" :icon="Download" @click="doExport('pptx')">导出 PPT</el-button>
           <el-button :loading="exporting === 'docx'" :icon="Document" @click="doExport('docx')">导出 Word</el-button>
           <el-button :loading="exporting === 'pdf'" :icon="Tickets" @click="doExport('pdf')">导出 PDF</el-button>
@@ -153,6 +162,24 @@
       ></iframe>
     </el-dialog>
 
+    <!-- 网页课件预览 -->
+    <el-dialog v-model="showPage" width="94%" top="2vh" :destroy-on-close="true">
+      <template #header>
+        <div class="flex items-center gap-3">
+          <span class="font-semibold">网页课件预览</span>
+          <span class="text-xs text-slate-400 flex-1">单页滚动阅读 · 左侧目录跳转 · 可下载为独立 HTML 分享给学生</span>
+          <el-button size="small" :loading="downloadingPage" :icon="Link" @click="downloadLessonPage">下载 HTML</el-button>
+        </div>
+      </template>
+      <iframe
+        v-if="pageBlobUrl"
+        :src="pageBlobUrl"
+        sandbox="allow-scripts allow-popups allow-modals"
+        class="w-full rounded-lg border border-slate-200 bg-white"
+        style="height:86vh"
+      ></iframe>
+    </el-dialog>
+
     <!-- 演示模式（reveal.js） -->
     <el-dialog v-model="showPresent" title="" width="98%" top="1vh" :destroy-on-close="true" class="present-dialog">
       <template #header>
@@ -275,10 +302,14 @@ import { coursewareApi, textbookApi, interactionApi } from '@/api/modules'
 import {
   ArrowLeft, ArrowRight, Loading, CircleClose, Download, Document, Tickets, FullScreen,
   VideoPlay, Connection, Plus, CopyDocument, DataAnalysis, Delete, Refresh, Printer,
+  Monitor, Link,
 } from '@element-plus/icons-vue'
 import QRCode from 'qrcode'
 import { createIframeBlob } from '@/utils/coursewareFrame'
 import { buildRevealDeck } from '@/utils/revealDeck'
+import { buildLessonPage } from '@/utils/lessonPage'
+import { getTheme } from '@/utils/coursewareTheme'
+import { useEducationStore } from '@/stores/education'
 import { renderMarkdown } from '@/utils/markdown'
 import type { Courseware, CoursewareSession, SessionBoard } from '@/types'
 
@@ -313,7 +344,9 @@ const deckBlobUrl = ref('')
 const deckIframe = ref<HTMLIFrameElement | null>(null)
 function openPresent() {
   if (deckBlobUrl.value) { URL.revokeObjectURL(deckBlobUrl.value) }
-  deckBlobUrl.value = makeBlobUrl(buildRevealDeck(cw.value?.content, imageMap.value))
+  deckBlobUrl.value = makeBlobUrl(
+    buildRevealDeck(cw.value?.content, imageMap.value, { theme: cw.value?.theme })
+  )
   showPresent.value = true
 }
 
@@ -325,12 +358,67 @@ function fullscreenDeck() {
 }
 
 function printDeck() {
-  const html = buildRevealDeck(cw.value?.content, imageMap.value, { print: true })
+  const html = buildRevealDeck(cw.value?.content, imageMap.value, { print: true, theme: cw.value?.theme })
   const w = window.open('', '_blank')
   if (!w) { ElMessage.warning('请允许弹出窗口以导出 PDF'); return }
   w.document.open()
   w.document.write(html)
   w.document.close()
+}
+
+// 网页样式课件：单页滚动网页，可预览也可下载为独立 HTML
+const edu = useEducationStore()
+const showPage = ref(false)
+const pageBlobUrl = ref('')
+const downloadingPage = ref(false)
+const isWebStyle = computed(() => cw.value?.render_style === 'html')
+const theme = computed(() => getTheme(cw.value?.theme))
+const themeGradient = computed(() => `linear-gradient(135deg, ${theme.value.primary}, ${theme.value.accent})`)
+
+function lessonPageHtml(images: Record<string, string> = imageMap.value): string {
+  const ctx = [
+    cw.value?.grade_id ? edu.gradeName(cw.value.grade_id) : '',
+    cw.value?.subject_id ? edu.subjectName(cw.value.subject_id) : '',
+  ].filter(Boolean).join(' · ')
+  return buildLessonPage(cw.value?.content, images, { subtitle: ctx, theme: cw.value?.theme })
+}
+
+function openLessonPage() {
+  if (pageBlobUrl.value) { URL.revokeObjectURL(pageBlobUrl.value) }
+  // 预览用带时效的 URL 即可，无需为此把图片全量内联
+  pageBlobUrl.value = makeBlobUrl(lessonPageHtml())
+  showPage.value = true
+}
+
+/** 下载的 HTML 会脱离平台长期保存，图片改为内联 base64，避免 presigned URL 过期后丢图。 */
+async function downloadLessonPage() {
+  downloadingPage.value = true
+  try {
+    const ids = referencedImageIds()
+    let images = imageMap.value
+    if (ids.length) {
+      try {
+        const inlined = (await textbookApi.resolveImagesInline(ids)) as any as Record<string, string>
+        images = { ...imageMap.value, ...inlined }
+        const missing = ids.filter((id) => !inlined[String(id)])
+        if (missing.length) {
+          ElMessage.warning(`有 ${missing.length} 张图片体积过大未内联，离线保存后可能无法显示`)
+        }
+      } catch {
+        ElMessage.warning('图片内联失败，已改用临时链接，链接过期后图片会失效')
+      }
+    }
+
+    const blob = new Blob([lessonPageHtml(images)], { type: 'text/html;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${cw.value?.title || '网页课件'}.html`
+    a.click()
+    URL.revokeObjectURL(url)
+  } finally {
+    downloadingPage.value = false
+  }
 }
 
 // 课堂互动
@@ -491,7 +579,7 @@ function slideImages(slide: any): string[] {
     .filter(Boolean)
 }
 
-async function resolveImages() {
+function referencedImageIds(): number[] {
   const ids: number[] = []
   for (const s of slides.value) {
     for (const id of s.images || []) {
@@ -499,9 +587,14 @@ async function resolveImages() {
       if (!Number.isNaN(n)) ids.push(n)
     }
   }
+  return [...new Set(ids)]
+}
+
+async function resolveImages() {
+  const ids = referencedImageIds()
   if (!ids.length) return
   try {
-    imageMap.value = (await textbookApi.resolveImages([...new Set(ids)])) as any
+    imageMap.value = (await textbookApi.resolveImages(ids)) as any
   } catch { /* 图片解析失败忽略 */ }
 }
 
@@ -560,7 +653,7 @@ onMounted(load)
 onUnmounted(() => {
   stopStatusPoll()
   // 释放所有 Blob URL，防止内存泄漏
-  ;[currentBlobUrl, fsBlobUrl, deckBlobUrl].forEach(r => {
+  ;[currentBlobUrl, fsBlobUrl, deckBlobUrl, pageBlobUrl].forEach(r => {
     if (r.value) { URL.revokeObjectURL(r.value); r.value = '' }
   })
   _blobUrls.forEach(u => URL.revokeObjectURL(u))

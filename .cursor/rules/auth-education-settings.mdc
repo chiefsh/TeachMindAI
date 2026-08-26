@@ -1,0 +1,15 @@
+---
+description: 登录鉴权、学段年级科目、LLM 与科目提示词设置
+globs: backend/app/api/v1/{auth,education,settings,dashboard}.py,backend/app/models/{teacher,education,llm_config,teacher_setting,subject_prompt}.py,backend/app/schemas/{auth,education,llm_config}.py,backend/app/core/{security,seed}.py,frontend/src/views/LoginView.vue,frontend/src/views/settings/**,frontend/src/views/dashboard/**,frontend/src/stores/{auth,education}.ts
+alwaysApply: false
+---
+
+# 认证 / 学段科目 / 设置
+
+**认证：** JWT `sub` = 教师 id。登录写 token；登出把 token 丢 Redis `blacklist:`。前端 `auth.ts` 存 `localStorage.token`。
+
+**学段科目：** `SchoolLevel` → `Grade` / `Subject`；教师授课关系 `TeacherSubject`。种子数据 `core/seed.py`。前端筛选存在 `education.ts`，多数列表 API 带 `grade_id`/`subject_id`。
+
+**设置：** `LLMConfig` 多供应商（litellm）；`SubjectPrompt` 按科目覆盖课件提示词与互动指导。测连通走 `settings.py` 的 test 接口。
+
+**工作台：** `dashboard.py` 只返回各模块计数，不要把业务统计塞进这里。

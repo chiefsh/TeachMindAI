@@ -1,7 +1,8 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from datetime import datetime
 from app.models.textbook import ParseStatus
-from app.models.courseware import CoursewareType
+from app.models.courseware import CoursewareType, RenderStyle
+from app.services.courseware_theme import THEMES, DEFAULT_THEME
 
 
 class CoursewareCreate(BaseModel):
@@ -10,14 +11,23 @@ class CoursewareCreate(BaseModel):
     chapter_range: dict | None = None   # 按章节：{"chapter_ids": [12, 15, 18]}
     page_range: dict | None = None      # 按页码：{"start": 1, "end": 30}
     courseware_type: CoursewareType = CoursewareType.standard
+    render_style: RenderStyle = RenderStyle.ppt   # 呈现样式：幻灯片 / 网页
+    theme: str = DEFAULT_THEME                    # 视觉主题 key
     custom_prompt: str | None = None
     is_interactive: bool = False
+
+    @field_validator("theme")
+    @classmethod
+    def _known_theme(cls, v: str) -> str:
+        return v if v in THEMES else DEFAULT_THEME
 
 
 class CoursewareOut(BaseModel):
     id: int
     title: str
     courseware_type: CoursewareType
+    render_style: RenderStyle
+    theme: str
     gen_status: ParseStatus
     is_interactive: bool
     textbook_id: int | None

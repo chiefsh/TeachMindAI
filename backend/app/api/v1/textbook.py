@@ -4,14 +4,14 @@ from sqlalchemy import select, delete, func
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
-from app.core.minio_client import upload_file, get_presigned_url, delete_file
+from app.core.minio_client import upload_file, get_presigned_url, delete_file, get_file_bytes
 from app.core.config import settings
 from app.models.teacher import Teacher
 from app.models.textbook import Textbook, TextbookChapter, TextbookImage, ParseStatus
 from app.schemas.textbook import TextbookOut, ChapterOut, TextbookCreate
 from app.api.deps import get_current_teacher
 from pydantic import BaseModel
-import uuid, os
+import asyncio, base64, uuid, os
 
 router = APIRouter(prefix="/textbooks", tags=["课本管理"])
 
@@ -210,6 +210,57 @@ async def resolve_image_urls(
         )
         for img in images
     }
+
+
+# 内联图片的体积上限：base64 会膨胀约 1/3，过大的整页截图不值得塞进单个 HTML 文件
+_INLINE_IMAGE_MAX_BYTES = 2 * 1024 * 1024
+_INLINE_TOTAL_MAX_BYTES = 24 * 1024 * 1024
+
+
+@router.post("/images/resolve-inline")
+async def resolve_images_inline(
+    data: ResolveImagesRequest,
+    teacher: Teacher = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+):
+    """把图片 id 批量解析为 base64 data URI，供离线 HTML 内联。
+
+    presigned URL 有时效，下载后的网页课件过期就丢图，所以离线场景改为内联。
+    超出体积上限的图片不返回，调用方对这些图回退到 presigned URL。
+    """
+    if not data.ids:
+        return {}
+
+    result = await db.execute(
+        select(TextbookImage)
+        .join(Textbook, Textbook.id == TextbookImage.textbook_id)
+        .where(TextbookImage.id.in_(data.ids), Textbook.teacher_id == teacher.id)
+        .order_by(TextbookImage.sort_order, TextbookImage.id)
+    )
+    images = result.scalars().all()
+    if not images:
+        return {}
+
+    async def _fetch(img: TextbookImage):
+        try:
+            raw = await asyncio.to_thread(
+                get_file_bytes, settings.MINIO_BUCKET_TEXTBOOKS, img.object_name
+            )
+            return img, raw
+        except Exception:
+            return img, None
+
+    out: dict[str, str] = {}
+    total = 0
+    for img, raw in await asyncio.gather(*[_fetch(i) for i in images]):
+        if not raw or len(raw) > _INLINE_IMAGE_MAX_BYTES:
+            continue
+        if total + len(raw) > _INLINE_TOTAL_MAX_BYTES:
+            break
+        total += len(raw)
+        encoded = base64.b64encode(raw).decode()
+        out[str(img.id)] = f"data:{img.content_type or 'image/png'};base64,{encoded}"
+    return out
 
 
 async def _get_or_404(textbook_id: int, teacher_id: int, db: AsyncSession) -> Textbook:

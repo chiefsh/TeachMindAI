@@ -2,6 +2,7 @@
 // 互动页以内嵌 iframe 形式渲染，复用 wrapInteractiveHtml 保证隔离与统一样式。
 import { renderMarkdown } from './markdown'
 import { wrapInteractiveHtml } from './coursewareFrame'
+import { getTheme, type CoursewareTheme } from './coursewareTheme'
 
 const REVEAL_VERSION = '5.1.0'
 const KATEX_VERSION = '0.16.11'
@@ -20,8 +21,8 @@ function escAttr(s: string): string {
   return esc(s).replace(/"/g, '&quot;')
 }
 
-const DECK_STYLE = `
-:root{--c-primary:#4f46e5;--c-accent:#0ea5e9;--c-text:#1e293b;--c-muted:#64748b;}
+const deckStyle = (t: CoursewareTheme) => `
+:root{--c-primary:${t.primary};--c-accent:${t.accent};--c-text:${t.text};--c-muted:${t.muted};}
 .reveal{font-family:-apple-system,"PingFang SC","Microsoft YaHei","Noto Sans CJK SC",sans-serif;}
 .reveal h1,.reveal h2,.reveal h3{color:var(--c-text);text-transform:none;letter-spacing:0;}
 .reveal .slide-label{display:inline-block;font-size:.42em;font-weight:700;color:#fff;background:var(--c-primary);
@@ -42,8 +43,9 @@ const DECK_STYLE = `
   /* 封面页：水平居中 + 顶部留白近似垂直居中（避免用 display:flex !important 干扰 reveal 的显隐切换） */
   .reveal .slides>section.cover{text-align:center;padding-top:200px;}
 }
-.reveal .cover h1{font-size:2.0em;color:var(--c-primary);}
-.reveal .cover .sub{color:var(--c-muted);font-size:.9em;margin-top:.4em;}
+/* 封面铺主题渐变（data-background-gradient），文字反白 */
+.reveal .cover h1{font-size:2.0em;color:#fff;}
+.reveal .cover .sub{color:rgba(255,255,255,.85);font-size:.9em;margin-top:.4em;}
 .reveal ul{display:block;}
 .reveal .body{font-size:.78em;line-height:1.5;}
 .reveal .body h3{font-size:1.05em;margin:.4em 0 .2em;color:var(--c-primary);}
@@ -58,13 +60,17 @@ const DECK_STYLE = `
 
 interface DeckImageMap { [id: string]: string }
 
-function slideSection(slide: any, imageMap: DeckImageMap): string {
+function coverGradient(t: CoursewareTheme): string {
+  return `linear-gradient(135deg, ${t.primary}, ${t.accent})`
+}
+
+function slideSection(slide: any, imageMap: DeckImageMap, theme: CoursewareTheme): string {
   const type = slide.type || 'content'
   const label = TYPE_LABELS[type] || ''
   const parts: string[] = []
 
   if (type === 'title') {
-    parts.push('<section class="cover">')
+    parts.push(`<section class="cover" data-background-gradient="${escAttr(coverGradient(theme))}">`)
     parts.push(`<h1>${esc(slide.title || '')}</h1>`)
     if (slide.subtitle) parts.push(`<p class="sub">${esc(slide.subtitle)}</p>`)
     parts.push('</section>')
@@ -120,25 +126,31 @@ function metaSection(meta: any): string {
 interface DeckOptions {
   /** 打印模式：用 reveal 的 view:'print' 排版并自动唤起浏览器打印（另存为 PDF）。 */
   print?: boolean
+  /** 视觉主题 key，见 coursewareTheme.ts */
+  theme?: string
 }
 
 /** 由课件内容构建一份完整可独立运行的 reveal.js HTML 文档。 */
 export function buildRevealDeck(content: any, imageMap: DeckImageMap = {}, opts: DeckOptions = {}): string {
   const meta = content?.meta || {}
   const slides: any[] = content?.slides || []
+  const theme = getTheme(opts.theme)
 
   const sections: string[] = []
   // 封面：优先用 slides 里的 title 页，否则用 meta 生成
   const hasCover = slides.some((s) => s.type === 'title')
   if (!hasCover) {
-    sections.push(`<section class="cover"><h1>${esc(meta.title || '教学课件')}</h1>` +
-      (meta.duration ? `<p class="sub">${esc(meta.duration)}</p>` : '') + '</section>')
+    sections.push(
+      `<section class="cover" data-background-gradient="${escAttr(coverGradient(theme))}">` +
+      `<h1>${esc(meta.title || '教学课件')}</h1>` +
+      (meta.duration ? `<p class="sub">${esc(meta.duration)}</p>` : '') + '</section>'
+    )
   }
   const metaSec = metaSection(meta)
 
   let metaInserted = false
   for (const s of slides) {
-    sections.push(slideSection(s, imageMap))
+    sections.push(slideSection(s, imageMap, theme))
     // 在封面之后插入课程概览
     if (!metaInserted && s.type === 'title' && metaSec) {
       sections.push(metaSec)
@@ -156,7 +168,7 @@ export function buildRevealDeck(content: any, imageMap: DeckImageMap = {}, opts:
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@${REVEAL_VERSION}/dist/reveal.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@${REVEAL_VERSION}/dist/theme/white.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@${KATEX_VERSION}/dist/katex.min.css">
-<style>${DECK_STYLE}</style>
+<style>${deckStyle(theme)}</style>
 </head>
 <body>
 <div class="reveal"><div class="slides">

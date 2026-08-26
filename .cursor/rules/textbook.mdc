@@ -1,0 +1,16 @@
+---
+description: 课本上传、解析章节/配图、预览
+globs: backend/app/api/v1/textbook.py,backend/app/models/textbook.py,backend/app/schemas/textbook.py,backend/app/services/file_service.py,backend/app/services/liteparse_service.py,backend/app/tasks/file_tasks.py,frontend/src/views/textbook/**
+alwaysApply: false
+---
+
+# 课本模块
+
+流程：上传 → MinIO（textbooks bucket）→ Celery `parse_textbook_task` → `file_service.parse_textbook_file`。
+
+- 模型：`Textbook`、`TextbookChapter`（树）、`TextbookImage`（页图/截图）。状态字段 `parse_status`。
+- PDF：目录/字体标题/正则标题多层抽章节；扫描页可整页截图（`TEXTBOOK_PAGE_SCREENSHOT*` 配置）。
+- 解析引擎：`liteparse_service.py` + PyMuPDF。不要在 API 层做同步重解析。
+- 前端：`TextbookView.vue` 负责列表、上传、章节树、预览 URL。
+- 插图给下游用：`POST images/resolve` 返回带时效的 presigned URL（页面展示）；`POST images/resolve-inline` 返回 base64 data URI（离线 HTML 内联，有单图/总量上限，超限不返回由调用方回退 URL）。
+- 下游：课件按章节/页码范围引用课本；知识图谱可对章节/整书抽取知识点。

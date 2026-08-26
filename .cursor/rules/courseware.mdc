@@ -1,0 +1,19 @@
+---
+description: 课件生成、导出、课堂互动会话与学生端作答
+globs: backend/app/api/v1/{courseware,interaction}.py,backend/app/models/{courseware,interaction,subject_prompt}.py,backend/app/schemas/courseware.py,backend/app/services/{courseware_components,courseware_theme}.py,backend/app/services/skill_service.py,backend/app/services/skill_runners/**,frontend/src/views/courseware/**,frontend/src/views/public/**,frontend/src/utils/{coursewareFrame,revealDeck,lessonPage,coursewareTheme}.ts
+alwaysApply: false
+---
+
+# 课件与课堂互动
+
+生成：`POST /coursewares` → Celery `generate_courseware_task` → `ai_service.do_generate_courseware`。内容是幻灯片 JSON（`Courseware.content`），状态 `gen_status`。
+
+互动页：`_generate_lesson_content` 先 `skill_service.maybe_generate_skill_html`；命中则 sympy+模板出整页 HTML，失败必须回退 LLM。科目提示词来自 `SubjectPrompt`。
+
+课堂：`CoursewareSession`（分享 token）+ `InteractionRecord`。教师端 `interaction.py`；学生免登录 `/s/:token` → `SessionPlay.vue` + `publicApi`。模型在 `models/interaction.py`（未从 `models/__init__.py` 导出，直接 import）。
+
+呈现样式：`Courseware.render_style` 为 `ppt`（幻灯片）或 `html`（单页网页）。同一份 meta+slides 结构，两种渲染器各出一份自包含 HTML：`revealDeck.ts`（reveal.js 演示）与 `lessonPage.ts`（滚动网页 + 目录 + 下载）。html 样式在知识点抽取阶段多要一个 `deep_dive` 深入讲解段落。
+
+视觉主题：`Courseware.theme` 存主题 key（创建时选，默认 `indigo`）。调色板有两份且必须同步——后端 `services/courseware_theme.py` 供导出用，前端 `utils/coursewareTheme.ts` 供 `revealDeck.ts` / `lessonPage.ts` / 选择器用；增删主题要同时改两边的 key 与色值。未知 key 一律回退默认主题。
+
+前端：列表/详情 `views/courseware/`；iframe 用 `coursewareFrame.ts`。导出走 `export_service.build_export`（pptx/docx/pdf，第 5 个参数传 `cw.theme`）；网页课件由前端直接下载 .html。

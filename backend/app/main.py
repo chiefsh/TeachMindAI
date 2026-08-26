@@ -28,11 +28,39 @@ _INDEX_SQL = [
 ]
 
 
+# create_all 也不会给已有表补列，启动时按需补齐后加的字段
+_COLUMN_SQL = [
+    (
+        "coursewares", "render_style",
+        "ALTER TABLE coursewares ADD COLUMN render_style VARCHAR(16) NOT NULL DEFAULT 'ppt'",
+    ),
+    (
+        "coursewares", "theme",
+        "ALTER TABLE coursewares ADD COLUMN theme VARCHAR(24) NOT NULL DEFAULT 'indigo'",
+    ),
+]
+
+
 async def _ensure_indexes():
     async with engine.begin() as conn:
         for sql in _INDEX_SQL:
             try:
                 await conn.execute(text(sql))
+            except Exception:
+                pass
+
+
+async def _ensure_columns():
+    from sqlalchemy import inspect as sa_inspect
+
+    async with engine.begin() as conn:
+        for table, column, ddl in _COLUMN_SQL:
+            try:
+                columns = await conn.run_sync(
+                    lambda sync_conn, t=table: [c["name"] for c in sa_inspect(sync_conn).get_columns(t)]
+                )
+                if column not in columns:
+                    await conn.execute(text(ddl))
             except Exception:
                 pass
 
@@ -44,6 +72,10 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(Base.metadata.create_all)
     try:
         await _ensure_indexes()
+    except Exception:
+        pass
+    try:
+        await _ensure_columns()
     except Exception:
         pass
     # 注入基础数据（学段/年级/科目）

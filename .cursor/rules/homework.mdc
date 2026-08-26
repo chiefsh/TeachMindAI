@@ -1,0 +1,12 @@
+---
+description: 作业/试卷生成与导出
+globs: backend/app/api/v1/homework.py,backend/app/models/homework.py,backend/app/schemas/homework.py,frontend/src/views/homework/**
+alwaysApply: false
+---
+
+# 作业 / 试卷
+
+- 模型：`HomeworkPaper` + `HomeworkQuestion`。可关联课件 `courseware_id`。
+- 生成：Celery `generate_homework_task` → `ai_service.do_generate_homework`（可掺题库 `use_question_bank`）。
+- 导出：`export_service.build_homework_docx/pdf`。
+- 前端：`HomeworkView.vue` + `homeworkApi`。不要把成绩录入做到本模块（成绩在 student/grades）。

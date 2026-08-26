@@ -1,0 +1,18 @@
+---
+description: 后端分层、鉴权、异步任务与多租户约定
+globs: backend/app/**/*.py
+alwaysApply: false
+---
+
+# 后端约定
+
+分层：`api/v1/` 只做路由与校验 → `services/` 业务 → `models/` 表。Pydantic 放 `schemas/`。
+
+- 入口：`backend/app/main.py`。`import app.core.proxy` 必须保持最先，避免 litellm 被 socks 代理搞崩。
+- 鉴权：教师接口用 `Depends(get_current_teacher)`（`api/deps.py`）。登出 token 进 Redis 黑名单。
+- DB：SQLAlchemy 2.0 async + `aiomysql`；会话 `get_db`。查询必须带 `teacher_id` 隔离。
+- 重活：Celery（`tasks/celery_app.py`）。AI/图谱进 `ai_tasks` 队列，文件解析进 `file_tasks`。Task 函数保持薄，逻辑写在 service。
+- 进度：service 往 Redis channel `task_progress:{task_id}` 发 JSON，前端走 `ws.py`。
+- LLM：只通过 `ai_service._call_llm` / `build_litellm_kwargs`；Key 来自 `LLMConfig` 解密，不要硬编码。
+- 配置：`core/config.py` + `backend/.env`。不要把密钥写进代码或提交 `.env`。
+- 建表：启动时 `create_all`；不要为小改动手写散落 DDL（索引补齐在 `main.py` 的 `_INDEX_SQL`）。

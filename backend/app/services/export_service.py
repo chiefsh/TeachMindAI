@@ -115,10 +115,19 @@ def _meta_blocks(meta: dict) -> list[tuple[str, list[str]]]:
 
 # ---------- PPTX ----------
 
-def build_pptx(content: dict, title: str, images: dict[int, bytes]) -> bytes:
+def build_pptx(content: dict, title: str, images: dict[int, bytes], theme: str | None = None) -> bytes:
     from pptx import Presentation
     from pptx.util import Inches, Pt
     from pptx.dml.color import RGBColor
+    from pptx.enum.shapes import MSO_SHAPE
+
+    from app.services.courseware_theme import get_theme, rgb
+
+    th = get_theme(theme)
+    c_primary = RGBColor(*rgb(th["primary"]))
+    c_accent = RGBColor(*rgb(th["accent"]))
+    c_text = RGBColor(*rgb(th["text"]))
+    c_white = RGBColor(0xFF, 0xFF, 0xFF)
 
     prs = Presentation()
     prs.slide_width = Inches(13.333)
@@ -128,15 +137,53 @@ def build_pptx(content: dict, title: str, images: dict[int, bytes]) -> bytes:
     meta = content.get("meta") or {}
     slides = content.get("slides") or []
 
+    def _fill(shape, color):
+        shape.fill.solid()
+        shape.fill.fore_color.rgb = color
+        shape.line.fill.background()
+        try:
+            shape.shadow.inherit = False
+        except Exception:
+            pass
+
+    def add_cover_slide(heading: str, lines: list[str]):
+        """封面整页铺主题色，让不同主题一眼可辨。"""
+        slide = prs.slides.add_slide(blank)
+        bg = slide.background.fill
+        bg.solid()
+        bg.fore_color.rgb = c_primary
+        # 底部强调色条，呼应主题的辅助色
+        _fill(slide.shapes.add_shape(
+            MSO_SHAPE.RECTANGLE, 0, Inches(6.9), prs.slide_width, Inches(0.6)
+        ), c_accent)
+
+        tb = slide.shapes.add_textbox(Inches(1.0), Inches(2.4), Inches(11.3), Inches(2.4))
+        tf = tb.text_frame
+        tf.word_wrap = True
+        p = tf.paragraphs[0]
+        p.text = heading
+        p.font.size = Pt(44)
+        p.font.bold = True
+        p.font.color.rgb = c_white
+        for line in [l for l in lines if l]:
+            sub = tf.add_paragraph()
+            sub.text = line
+            sub.font.size = Pt(18)
+            sub.font.color.rgb = c_white
+
     def add_text_slide(heading: str, lines: list[str], notes: str = "", img_ids: list[int] | None = None):
         slide = prs.slides.add_slide(blank)
-        # 标题
+        # 顶部主题色条
+        _fill(slide.shapes.add_shape(
+            MSO_SHAPE.RECTANGLE, 0, 0, prs.slide_width, Inches(0.16)
+        ), c_primary)
+
         tb = slide.shapes.add_textbox(Inches(0.6), Inches(0.4), Inches(12), Inches(1))
         p = tb.text_frame.paragraphs[0]
         p.text = heading
         p.font.size = Pt(30)
         p.font.bold = True
-        p.font.color.rgb = RGBColor(0x4F, 0x46, 0xE5)
+        p.font.color.rgb = c_primary
 
         has_img = bool(img_ids)
         body_w = Inches(7.2) if has_img else Inches(12)
@@ -148,6 +195,7 @@ def build_pptx(content: dict, title: str, images: dict[int, bytes]) -> bytes:
             para = tf.paragraphs[0] if first else tf.add_paragraph()
             para.text = line
             para.font.size = Pt(18)
+            para.font.color.rgb = c_text
             first = False
 
         if has_img:
@@ -166,7 +214,7 @@ def build_pptx(content: dict, title: str, images: dict[int, bytes]) -> bytes:
             slide.notes_slide.notes_text_frame.text = notes
 
     # 封面
-    add_text_slide(
+    add_cover_slide(
         meta.get("title") or title,
         [meta.get("duration", ""), "AI 智能教学课件"],
     )
@@ -190,15 +238,22 @@ def build_pptx(content: dict, title: str, images: dict[int, bytes]) -> bytes:
 
 # ---------- DOCX ----------
 
-def build_docx(content: dict, title: str, images: dict[int, bytes]) -> bytes:
+def build_docx(content: dict, title: str, images: dict[int, bytes], theme: str | None = None) -> bytes:
     from docx import Document
     from docx.shared import Pt, Inches, RGBColor
+
+    from app.services.courseware_theme import get_theme, rgb
+
+    th = get_theme(theme)
+    c_primary = RGBColor(*rgb(th["primary"]))
 
     doc = Document()
     meta = content.get("meta") or {}
     slides = content.get("slides") or []
 
     h = doc.add_heading(meta.get("title") or title, level=0)
+    for run in h.runs:
+        run.font.color.rgb = c_primary
     if meta.get("duration"):
         doc.add_paragraph(f"课时：{meta['duration']}")
 
@@ -214,7 +269,9 @@ def build_docx(content: dict, title: str, images: dict[int, bytes]) -> bytes:
         heading = s.get("title") or label or "幻灯片"
         if label and label not in heading:
             heading = f"【{label}】{heading}"
-        doc.add_heading(heading, level=1)
+        hd = doc.add_heading(heading, level=1)
+        for run in hd.runs:
+            run.font.color.rgb = c_primary
         if s.get("subtitle"):
             doc.add_paragraph(s["subtitle"])
         for b in s.get("bullets") or []:
@@ -245,7 +302,7 @@ def build_docx(content: dict, title: str, images: dict[int, bytes]) -> bytes:
 
 # ---------- PDF ----------
 
-def build_pdf(content: dict, title: str, images: dict[int, bytes]) -> bytes:
+def build_pdf(content: dict, title: str, images: dict[int, bytes], theme: str | None = None) -> bytes:
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.units import mm
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -264,11 +321,18 @@ def build_pdf(content: dict, title: str, images: dict[int, bytes]) -> bytes:
     except Exception:
         font_name = "Helvetica"
 
+    from app.services.courseware_theme import get_theme
+
+    th = get_theme(theme)
+    c_primary = colors.HexColor(th["primary"])
+
     styles = getSampleStyleSheet()
-    title_style = ParagraphStyle("CnTitle", parent=styles["Title"], fontName=font_name, fontSize=22)
+    title_style = ParagraphStyle("CnTitle", parent=styles["Title"], fontName=font_name, fontSize=22,
+                                 textColor=c_primary)
     h1 = ParagraphStyle("CnH1", parent=styles["Heading1"], fontName=font_name, fontSize=15,
-                        textColor=colors.HexColor("#4F46E5"))
-    h2 = ParagraphStyle("CnH2", parent=styles["Heading2"], fontName=font_name, fontSize=13)
+                        textColor=c_primary)
+    h2 = ParagraphStyle("CnH2", parent=styles["Heading2"], fontName=font_name, fontSize=13,
+                        textColor=colors.HexColor(th["text"]))
     body = ParagraphStyle("CnBody", parent=styles["Normal"], fontName=font_name, fontSize=11,
                           leading=18, alignment=TA_LEFT)
     note = ParagraphStyle("CnNote", parent=body, textColor=colors.grey, fontSize=10)
@@ -620,20 +684,22 @@ def build_homework_export(fmt: str, title: str, paper_type: str, questions: list
     raise ValueError(f"不支持的导出格式：{fmt}")
 
 
-def build_export(fmt: str, content: dict, title: str, images: dict[int, bytes]) -> tuple[bytes, str, str]:
+def build_export(
+    fmt: str, content: dict, title: str, images: dict[int, bytes], theme: str | None = None,
+) -> tuple[bytes, str, str]:
     """返回 (bytes, media_type, filename_ext)"""
     if fmt == "pptx":
         return (
-            build_pptx(content, title, images),
+            build_pptx(content, title, images, theme),
             "application/vnd.openxmlformats-officedocument.presentationml.presentation",
             "pptx",
         )
     if fmt == "docx":
         return (
-            build_docx(content, title, images),
+            build_docx(content, title, images, theme),
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             "docx",
         )
     if fmt == "pdf":
-        return build_pdf(content, title, images), "application/pdf", "pdf"
+        return build_pdf(content, title, images, theme), "application/pdf", "pdf"
     raise ValueError(f"不支持的导出格式：{fmt}")

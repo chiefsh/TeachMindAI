@@ -15,11 +15,12 @@
         @click="router.push(`/courseware/${cw.id}`)"
       >
         <div class="flex items-start gap-3">
-          <div class="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0"
-            :class="cw.is_interactive ? 'bg-purple-50' : 'bg-blue-50'">
-            <el-icon class="text-xl" :class="cw.is_interactive ? 'text-purple-500' : 'text-blue-500'">
-              <VideoPlay />
-            </el-icon>
+          <!-- 图标底色即课件主题色，列表里一眼可辨 -->
+          <div
+            class="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0"
+            :style="{ background: themeGradient(cw.theme) }"
+          >
+            <el-icon class="text-xl text-white"><VideoPlay /></el-icon>
           </div>
           <div class="flex-1 min-w-0">
             <p class="text-sm font-semibold text-slate-800 truncate">{{ cw.title }}</p>
@@ -29,6 +30,9 @@
             </div>
             <div class="flex items-center flex-wrap gap-2 mt-1.5">
               <span :class="`badge badge-${cw.gen_status}`">{{ statusLabel(cw.gen_status) }}</span>
+              <el-tag size="small" :type="cw.render_style === 'html' ? 'primary' : 'info'">
+                {{ cw.render_style === 'html' ? '网页样式' : 'PPT 样式' }}
+              </el-tag>
               <el-tag v-if="cw.is_interactive" size="small" type="warning">互动</el-tag>
               <span class="text-xs text-slate-400">{{ formatDate(cw.created_at) }}</span>
             </div>
@@ -107,6 +111,33 @@
             <el-input-number v-model="form.page_end" :min="1" placeholder="结束页" style="width:120px" />
           </div>
         </el-form-item>
+        <el-form-item label="呈现样式">
+          <div>
+            <el-radio-group v-model="form.render_style">
+              <el-radio value="ppt">PPT 样式</el-radio>
+              <el-radio value="html">网页样式</el-radio>
+            </el-radio-group>
+            <p class="text-xs text-slate-400 mt-1 leading-relaxed">
+              {{ form.render_style === 'ppt'
+                ? '按页组织，支持演示模式与导出 PPT/Word/PDF，适合课堂讲授。'
+                : '生成单页滚动网页，讲解更完整、可内嵌互动，适合学生自主阅读与分享。' }}
+            </p>
+          </div>
+        </el-form-item>
+        <el-form-item label="课件主题">
+          <div class="flex flex-wrap gap-2">
+            <button
+              v-for="t in THEMES" :key="t.key" type="button"
+              class="theme-swatch"
+              :class="{ active: form.theme === t.key }"
+              :title="t.label"
+              @click="form.theme = t.key"
+            >
+              <span class="theme-dot" :style="{ background: themeGradient(t.key) }" />
+              <span>{{ t.label }}</span>
+            </button>
+          </div>
+        </el-form-item>
         <el-form-item label="课件类型">
           <el-radio-group v-model="form.courseware_type">
             <el-radio value="standard">标准课件</el-radio>
@@ -146,7 +177,8 @@ import { coursewareApi, textbookApi } from '@/api/modules'
 import { useEducationStore } from '@/stores/education'
 import { ElMessage } from 'element-plus'
 import { MagicStick, View, Delete, VideoPlay, RefreshRight } from '@element-plus/icons-vue'
-import type { Courseware, Textbook, Chapter } from '@/types'
+import type { Courseware, Textbook, Chapter, RenderStyle } from '@/types'
+import { THEMES, DEFAULT_THEME, getTheme } from '@/utils/coursewareTheme'
 import dayjs from 'dayjs'
 
 const router = useRouter()
@@ -165,6 +197,8 @@ const chapterOptions = ref<{ id: number; label: string }[]>([])
 const chaptersLoading = ref(false)
 const form = reactive({
   title: '', textbook_id: null as number | null, courseware_type: 'standard',
+  render_style: 'ppt' as RenderStyle,
+  theme: DEFAULT_THEME,
   gen_mode: 'chapter' as 'chapter' | 'page',
   chapter_ids: [] as number[],
   page_start: null as number | null, page_end: null as number | null,
@@ -226,6 +260,8 @@ function openCreate() {
   form.title = ''
   form.textbook_id = null
   form.courseware_type = 'standard'
+  form.render_style = 'ppt'
+  form.theme = DEFAULT_THEME
   form.gen_mode = 'chapter'
   form.chapter_ids = []
   form.page_start = null
@@ -247,6 +283,8 @@ async function handleCreate() {
       title: form.title,
       textbook_id: form.textbook_id,
       courseware_type: form.courseware_type,
+      render_style: form.render_style,
+      theme: form.theme,
       custom_prompt: form.custom_prompt,
       is_interactive: form.courseware_type === 'interactive',
     }
@@ -281,6 +319,11 @@ async function deleteCw(id: number) {
   await load()
 }
 
+function themeGradient(key?: string) {
+  const t = getTheme(key)
+  return `linear-gradient(135deg, ${t.primary}, ${t.accent})`
+}
+
 function statusLabel(s: string) {
   return { pending: '待生成', processing: '生成中', done: '已完成', failed: '生成失败' }[s] || s
 }
@@ -291,3 +334,16 @@ onMounted(async () => {
   await loadTextbooks()
 })
 </script>
+
+<style scoped>
+.theme-swatch {
+  @apply flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-200 bg-white
+         text-xs text-slate-600 transition-all hover:border-slate-300;
+}
+.theme-swatch.active {
+  @apply border-primary-500 text-primary-700 font-medium bg-primary-50;
+}
+.theme-dot {
+  @apply w-4 h-4 rounded-full flex-shrink-0;
+}
+</style>

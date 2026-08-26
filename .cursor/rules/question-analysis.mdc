@@ -1,0 +1,13 @@
+---
+description: 试卷/试题导入、逐题 AI 分析、回存题库与导出
+globs: backend/app/api/v1/question_analysis.py,backend/app/models/question_analysis.py,backend/app/schemas/question_analysis.py,frontend/src/views/question-analysis/**
+alwaysApply: false
+---
+
+# 试题分析
+
+- 模型：`AnalysisSet`（一套卷）+ `AnalysisQuestion`（逐题状态与分析 JSON）。
+- 导入：手工文本 / 文件（`parse_analysis_file`）。解析与分析都是异步，看 `parse_status` 与逐题 analysis 计数。
+- 分析：Celery `analyze_questions_task` → `ai_service.do_analyze_questions`（可出示意图 HTML）。不要对失败题自动重试整单（会重复推进度）。
+- 回存题库：`save-to-bank` 写 `Question` 表。导出：`export_service.build_analysis_*`。
+- 前端：列表 `QuestionAnalysisView.vue`，详情 `QuestionAnalysisDetail.vue`。

@@ -448,6 +448,8 @@ def _normalize_knowledge_points(raw_points: list, max_points: int = 4) -> list[d
         mistakes = [str(x).strip() for x in mistakes if str(x).strip()][:3]
         life_example = str(p.get("life_example") or "").strip()
         activity_goal = str(p.get("activity_goal") or f"通过互动练习掌握{name}").strip()
+        # 网页样式课件才会产出，供学生自主阅读的深入讲解段落
+        deep_dive = str(p.get("deep_dive") or "").strip()
         out.append({
             "name": name[:64],
             "plain_explanation": plain,
@@ -455,6 +457,7 @@ def _normalize_knowledge_points(raw_points: list, max_points: int = 4) -> list[d
             "common_mistakes": mistakes,
             "life_example": life_example,
             "activity_goal": activity_goal,
+            "deep_dive": deep_dive,
         })
     return out[:max_points]
 
@@ -465,20 +468,34 @@ async def _extract_knowledge_points(
     chapter_content: str,
     subject_name: str = "",
     subject_block: str = "",
+    web_style: bool = False,
 ) -> list[dict]:
-    """先分析课本内容，抽取可教学的知识点。"""
+    """先分析课本内容，抽取可教学的知识点。
+
+    web_style=True 时课件将以网页形式呈现（学生自主滚动阅读），
+    因此要求更完整的讲解正文，并额外产出 deep_dive 深入讲解段落。
+    """
     subject_hint = ""
     if subject_block:
         subject_hint = (
             f"\n【学科：{subject_name or '通用'}】请结合学科特征抽取知识点。\n{subject_block}\n"
         )
+    web_rule = ""
+    deep_dive_field = ""
+    if web_style:
+        web_rule = (
+            "\n5. 本课件将以【网页】形式呈现，学生会自己滚动阅读，没有老师逐句讲解："
+            "plain_explanation 要写成 2~3 句完整的话；"
+            "并额外给 deep_dive —— 150~300 字的深入讲解，讲清原理、使用方法与典型场景，可分成若干短段（用换行分段）。"
+        )
+        deep_dive_field = ',\n      "deep_dive": "适合自主阅读的深入讲解段落"'
     system_prompt = f"""你是资深教研专家。请先分析课本内容，抽取可直接用于上课的知识点，输出 JSON。{subject_hint}
 
 要求：
 1. 只保留最关键、最适合课堂互动的知识点，3~4个。
 2. 解释要生动、有趣、直白，便于学生快速理解；每个知识点必须给生活化例子。
 3. 每个知识点都给一个可操作的互动目标（activity_goal），用于后续生成互动课件。
-4. 只输出 JSON，不要解释，不要 markdown 代码块。
+4. 只输出 JSON，不要解释，不要 markdown 代码块。{web_rule}
 
 JSON 格式：
 {{
@@ -490,7 +507,7 @@ JSON 格式：
       "core_concepts": ["要点1", "要点2"],
       "common_mistakes": ["易错1"],
       "life_example": "生活中的例子",
-      "activity_goal": "该知识点互动页要达成的学习目标"
+      "activity_goal": "该知识点互动页要达成的学习目标"{deep_dive_field}
     }}
   ]
 }}"""
@@ -501,7 +518,8 @@ JSON 格式：
     resp = await _call_llm(
         cfg,
         [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
-        max_tokens=max(cfg.max_tokens or 0, 4000),
+        # 网页样式多产出 deep_dive 长段落，给足输出预算，避免 JSON 被截断
+        max_tokens=max(cfg.max_tokens or 0, 6000 if web_style else 4000),
     )
     raw = _resp_content(resp)
     obj = _parse_json_object(raw) or {}
@@ -713,14 +731,25 @@ async def _generate_lesson_content(
     cfg, cw, chapter_content: str, image_catalog: str,
     subject_name: str = "", subject_block: str = "", subject_interactive: str = "",
 ) -> dict:
-    """两阶段课件生成：先抽取知识点，再按知识点生成互动课件。"""
+    """两阶段课件生成：先抽取知识点，再按知识点生成互动课件。
+
+    render_style 决定同一份结构化内容的写法：
+    - ppt：面向教师讲授的幻灯片，正文精炼、要点化；
+    - html：面向学生自主阅读的网页，正文更完整并带深入讲解段落。
+    """
+    from app.models.courseware import RenderStyle
+
+    is_web = getattr(cw, "render_style", RenderStyle.ppt) == RenderStyle.html
+
     interactive_hint = ""
     if cw.is_interactive:
         from app.services.courseware_components import build_interactive_prompt
         interactive_hint = build_interactive_prompt(subject_interactive)
 
     # Stage 1: 分析知识点
-    points = await _extract_knowledge_points(cfg, cw, chapter_content, subject_name, subject_block)
+    points = await _extract_knowledge_points(
+        cfg, cw, chapter_content, subject_name, subject_block, web_style=is_web,
+    )
     if not points:
         logger.warning("课件 %s 未提取到有效知识点，回退到旧版整课件生成", cw.id)
         # 回退：沿用旧版单次生成，避免任务失败
@@ -735,7 +764,12 @@ async def _generate_lesson_content(
                 "\n\n【可引用的课本插图】（如某页内容需要配图，把对应图的数字 id 放进该幻灯片的 images 数组）：\n"
                 + image_catalog
             )
-        system_prompt = f"""你是一位资深的一线教师和课件设计专家。请基于课本内容，设计一节【完整的、可直接照着讲授的】课堂教学课件（类似 PPT），时长约 40-45 分钟。{subject_hint}
+        form_hint = (
+            "一份【学生可自主滚动阅读的网页课件】，每个小节的 content 要写成完整段落（可用 ### 小标题分段）"
+            if is_web else
+            "一节【完整的、可直接照着讲授的】课堂教学课件（类似 PPT），每页 content 精炼、以要点为主"
+        )
+        system_prompt = f"""你是一位资深的一线教师和课件设计专家。请基于课本内容，设计{form_hint}，时长约 40-45 分钟。{subject_hint}
 要求：
 1. 课件需有 meta + slides 结构，每页字段包含 index,type,title,bullets,content,notes。
 2. 全部中文，输出严格 JSON，不要 markdown 代码块。
@@ -791,6 +825,8 @@ async def _generate_lesson_content(
         content_parts = []
         if p.get("plain_explanation"):
             content_parts.append(f"### 先用一句话说清楚\n{p['plain_explanation']}")
+        if is_web and p.get("deep_dive"):
+            content_parts.append(f"### 深入理解\n{p['deep_dive']}")
         if p.get("common_mistakes"):
             content_parts.append("### 常见误区\n" + "\n".join(f"- {x}" for x in p["common_mistakes"]))
         if p.get("life_example"):
@@ -872,6 +908,7 @@ async def _generate_lesson_content(
     return {
         "meta": {
             "title": cw.title,
+            "render_style": RenderStyle.html.value if is_web else RenderStyle.ppt.value,
             "duration": "45分钟",
             "objectives": [f"掌握：{p['name']}" for p in points[:3]],
             "key_points": [p["name"] for p in points[:3]],

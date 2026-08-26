@@ -1,0 +1,14 @@
+---
+description: 题库录入、文件导入与 AI 拆题
+globs: backend/app/api/v1/question.py,backend/app/models/question.py,backend/app/schemas/question.py,frontend/src/views/question-bank/**
+alwaysApply: false
+---
+
+# 题库模块
+
+- 模型：`Question`（题型/难度枚举见 `models/question.py` 与 `types/index.ts`）。
+- 录入：手工创建、`/questions/manual`（可 AI 拆题）、文件导入（Celery `parse_question_file_task`）。
+- AI 拆题：`ai_service.parse_questions_from_text` / `parse_questions_from_image`。
+- 文件解析：`file_service.parse_question_file`（docx/pdf/图片；复杂格式可 soffice 转 docx）。
+- 试题分析「存入题库」会写本表，不要在分析模块另建一套题库存储。
+- 前端：`QuestionBankView.vue` + `questionApi`。

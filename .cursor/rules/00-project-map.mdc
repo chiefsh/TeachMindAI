@@ -1,0 +1,30 @@
+---
+description: AI 教育平台总索引。先按功能打开对应模块，禁止全仓扫描。
+alwaysApply: true
+---
+
+# 导航协议
+
+这是教师端 **AI 教育平台**（Vue3 前端 + FastAPI 后端）。详细路径见根目录 `AGENTS.md`。
+
+**每次任务：** 根据用户问题对照模块名，只打开该模块文件。不要递归搜索整个仓库，不要读 `frontend/dist/`、`**/__pycache__/`。
+
+跨模块文件仅在真正调用时打开：`frontend/src/api/modules.ts`、`frontend/src/types/index.ts`、`backend/app/services/ai_service.py`、`file_service.py`、`export_service.py`。
+
+| 功能 | 先打开 |
+|---|---|
+| 登录/鉴权 | `backend/app/api/v1/auth.py`、`frontend/src/stores/auth.ts`、`views/LoginView.vue` |
+| 学段年级科目 | `api/v1/education.py`、`models/education.py`、`stores/education.ts` |
+| 工作台 | `api/v1/dashboard.py`、`views/dashboard/` |
+| 课本 | `api/v1/textbook.py`、`models/textbook.py`、`views/textbook/`、`file_service.parse_textbook_file` |
+| 题库 | `api/v1/question.py`、`models/question.py`、`views/question-bank/` |
+| 课件/互动 | `api/v1/courseware.py`、`interaction.py`、`views/courseware/`、`skill_service.py` |
+| 理科 skill | `backend/skills/<name>/` + `services/skill_service.py`（不要扫其他 skill） |
+| 作业 | `api/v1/homework.py`、`views/homework/` |
+| 试题分析 | `api/v1/question_analysis.py`、`views/question-analysis/` |
+| 成绩 | `api/v1/student.py`、`grade_stats.py`、`views/grades/` |
+| 知识图谱 | `api/v1/knowledge.py`、`knowledge_*_service.py`、`views/knowledge/` |
+| LLM/设置 | `api/v1/settings.py`、`models/llm_config.py`、`views/settings/` |
+| 异步任务 | `backend/app/tasks/`、`api/v1/ws.py` |
+
+API 前缀一律 `/api/v1`。新接口必须同时改对应 API 与 `frontend/src/api/modules.ts`。

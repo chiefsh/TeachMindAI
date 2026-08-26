@@ -216,7 +216,7 @@ def build_pptx(content: dict, title: str, images: dict[int, bytes], theme: str |
     # 封面
     add_cover_slide(
         meta.get("title") or title,
-        [meta.get("duration", ""), "AI 智能教学课件"],
+        [meta.get("duration", ""), "智课星教学课件"],
     )
     # 教学目标/重难点
     for h, items in _meta_blocks(meta):

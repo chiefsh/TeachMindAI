@@ -1,11 +1,11 @@
 ---
-description: AI 教育平台总索引。先按功能打开对应模块，禁止全仓扫描。
+description: 智课星总索引。先按功能打开对应模块，禁止全仓扫描。
 alwaysApply: true
 ---
 
 # 导航协议
 
-这是教师端 **AI 教育平台**（Vue3 前端 + FastAPI 后端）。详细路径见根目录 `AGENTS.md`。
+这是教师端 **智课星**（Vue3 前端 + FastAPI 后端）。详细路径见根目录 `AGENTS.md`。
 
 **每次任务：** 根据用户问题对照模块名，只打开该模块文件。不要递归搜索整个仓库，不要读 `frontend/dist/`、`**/__pycache__/`。
 

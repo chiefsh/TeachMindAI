@@ -10,7 +10,7 @@
           <div class="w-8 h-8 rounded-lg bg-primary-600 flex items-center justify-center">
             <el-icon class="text-white text-base"><Reading /></el-icon>
           </div>
-          <span class="font-bold text-slate-800 text-base">AI 教学平台</span>
+          <span class="font-bold text-slate-800 text-base">智课星</span>
         </div>
       </div>
       <nav class="flex-1 overflow-y-auto py-4 px-3">
@@ -61,7 +61,7 @@
             <div class="w-8 h-8 rounded-lg bg-primary-600 flex items-center justify-center">
               <el-icon class="text-white text-base"><Reading /></el-icon>
             </div>
-            <span class="font-bold text-slate-800 text-base">AI 教学平台</span>
+            <span class="font-bold text-slate-800 text-base">智课星</span>
           </div>
         </div>
         <nav class="flex-1 overflow-y-auto py-4 px-3">

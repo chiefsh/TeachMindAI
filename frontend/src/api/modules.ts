@@ -24,6 +24,7 @@ export const authApi = {
   register: (data: object) => request.post('/auth/register', data),
   logout: () => request.post('/auth/logout'),
   me: () => request.get('/auth/me'),
+  getConfig: () => request.get<{ enable_regist: boolean }>('/auth/config'),
 }
 
 // ─── 学段/年级/科目 ────────────────────────────────────────────────

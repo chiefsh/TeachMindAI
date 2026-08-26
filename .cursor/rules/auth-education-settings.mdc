@@ -6,7 +6,7 @@ alwaysApply: false
 
 # 认证 / 学段科目 / 设置
 
-**认证：** JWT `sub` = 教师 id。登录写 token；登出把 token 丢 Redis `blacklist:`。前端 `auth.ts` 存 `localStorage.token`。
+**认证：** JWT `sub` = 教师 id。登录写 token；登出把 token 丢 Redis `blacklist:`。前端 `auth.ts` 存 `localStorage.token`。环境变量 `ENABLE_REGIST`（默认 true）控制登录页注册入口与 `POST /auth/register`；前端读公开接口 `GET /auth/config`。
 
 **学段科目：** `SchoolLevel` → `Grade` / `Subject`；教师授课关系 `TeacherSubject`。种子数据 `core/seed.py`。前端筛选存在 `education.ts`，多数列表 API 带 `grade_id`/`subject_id`。
 

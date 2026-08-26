@@ -15,6 +15,10 @@ class TeacherRegister(BaseModel):
         return v
 
 
+class PublicAuthConfig(BaseModel):
+    enable_regist: bool
+
+
 class TeacherLogin(BaseModel):
     username: str
     password: str

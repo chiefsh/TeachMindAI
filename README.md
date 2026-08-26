@@ -1,4 +1,4 @@
-# AI 教学平台
+# 智课星
 
 面向教师的 Web 应用：用 AI 辅助备课、出题、阅卷分析和知识图谱。上传课本后即可生成课件 / 作业，试题可做图解式解析，成绩与知识点沉淀在同一套工作流里。
 
@@ -21,6 +21,7 @@
 - [功能一览](#功能一览)
 - [理科互动 Skill（edulab）](#理科互动-skilledulab)
 - [如何使用](#如何使用)
+- [注册开关 ENABLE_REGIST](#注册开关-enable_regist)
 - [本地开发启动](#本地开发启动)
 - [Docker 一键启动](#docker-一键启动)
 - [部署说明](#部署说明)
@@ -43,6 +44,10 @@
 
 上传 PDF / Word / TXT / EPUB / MOBI（单文件 ≤ 100MB）。后台异步解析章节、页码和插图，解析完成后可供课件生成引用。支持预览、查看章节树、重新解析。
 
+**电子课本从哪来：** 本平台不托管国家课程 PDF。若需要从 [国家中小学智慧教育平台](https://basic.smartedu.cn/) 取得电子课本，可使用开源工具 [tchMaterial-parser](https://github.com/happycola233/tchMaterial-parser)（MIT）：粘贴课本预览页网址，批量解析下载 PDF，并可自动按书名命名、添加书签。下载到本地后，再在智课星里「上传课本」走后续解析与课件生成。
+
+使用方法、Access Token、免责声明见该项目文档。资源版权归原平台及相关权利人所有，请仅用于个人学习与教学参考，勿用于商业用途或二次分发；该工具与国家中小学智慧教育平台无隶属或合作关系。
+
 ![课本列表](docs/screenshots/02-textbook.png)
 
 ![上传课本](docs/screenshots/03-textbook-upload.png)
@@ -62,9 +67,11 @@
 - **课件类型**：标准 / 互动（数学 / 化学 / 生物命中题型时走 [edulab](https://github.com/wy51ai/edulab) skill，失败再回退 LLM）
 - **教师想法**：自定义侧重点、难度与互动形式
 
-详情页支持演示模式、网页预览、课堂互动会话（生成分享链接给学生）、导出。
+详情页支持演示模式、网页预览、课堂互动会话（生成分享链接给学生）、导出。网页样式为单页滚动阅读：左侧目录跳转，可下载独立 HTML 分享给学生，也可打印 / 存为 PDF。
 
 ![生成课件](docs/screenshots/05-courseware.png)
+
+![网页课件预览](docs/screenshots/12-courseware-preview.png)
 
 ### 作业 / 考试
 
@@ -143,27 +150,48 @@ python3 scripts/generate.py combustion_ch4 ./reaction.html
 ## 如何使用
 
 1. 按下文启动服务，浏览器打开 <http://localhost:3000>。
-2. **登录**。登录页注册入口当前是关闭的（`LoginView.vue` 里 `v-if="false"`）。首次使用请用接口建教师账号：
-
-```bash
-curl -X POST http://localhost:8000/api/v1/auth/register \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "username": "teacher",
-    "email": "teacher@example.com",
-    "password": "123456",
-    "real_name": "张老师"
-  }'
-```
-
-之后用该用户名密码登录。需要开放页面注册时，去掉登录页注册区块上的 `v-if="false"` 即可。
+2. **登录**。默认开放注册，登录页有「立即注册」。上线后若要关掉自助注册，见 [注册开关 ENABLE_REGIST](#注册开关-enable_regist)。
 
 3. 进入 **系统设置**，添加至少一个大模型并设为默认，点「测试」确认可用。课件、作业、试题分析、知识抽取都依赖这一步。
 4. 在设置里添加 **我的教学科目**，顶栏选中对应学段 / 年级 / 科目。
-5. 推荐路径：**上传课本 → 等解析完成 → 生成课件 / 作业**；试卷分析、成绩、知识图谱可按需使用。
+5. 推荐路径：**准备课本 PDF（可用 [tchMaterial-parser](https://github.com/happycola233/tchMaterial-parser) 从智慧教育平台下载）→ 上传课本 → 等解析完成 → 生成课件 / 作业**；试卷分析、成绩、知识图谱可按需使用。
 6. 课件详情里开启 **课堂互动** 后，把 `/s/:token` 链接发给学生即可，学生端无需登录。
 
 课本解析、课件生成等耗时任务走 Celery，页面状态为「处理中」时请确认 `celery_worker` 在跑。
+
+---
+
+## 注册开关 ENABLE_REGIST
+
+环境变量 `ENABLE_REGIST` 控制登录页是否显示「立即注册」，并同步开关后端 `POST /api/v1/auth/register`（关掉后接口返回 403，不能只藏按钮）。登录页通过公开接口 `GET /api/v1/auth/config` 读取 `{ "enable_regist": true/false }`，因此 **改变量后只需重启 backend，不必重建前端镜像**。
+
+| 值 | 效果 |
+|---|---|
+| 不设、`true`、`1`、`yes` | 显示注册入口，允许注册（**默认**） |
+| `false`、`0`、`no` | 隐藏入口，拒绝注册，仅已有教师账号可登录 |
+
+**本地开发**（`backend/.env`）：
+
+```bash
+ENABLE_REGIST=true
+# ENABLE_REGIST=false
+```
+
+**Docker Compose**（`docker-compose.yml` 里 `backend.environment`，已默认 `"true"`）：
+
+```yaml
+backend:
+  environment:
+    ENABLE_REGIST: "true"    # 生产可改为 "false"
+```
+
+改完后：
+
+```bash
+docker compose up -d backend
+```
+
+生产建议：先用默认打开注册建好教师账号，再把 `ENABLE_REGIST` 设为 `false` 并重启 backend，避免公网随意注册。
 
 ---
 
@@ -233,7 +261,7 @@ docker compose ps
 docker compose logs -f backend celery_worker
 ```
 
-MySQL / Neo4j 尚未就绪时，后端可能重启一两次，属正常。日志出现 Uvicorn 监听 `8000` 后访问 <http://localhost:3000>。
+MySQL / Neo4j 尚未就绪时，后端可能重启一两次，属正常。日志出现 Uvicorn 监听 `8000` 后访问 <http://localhost:3000>。默认开放教师注册；关闭方式见 [ENABLE_REGIST](#注册开关-enable_regist)。
 
 compose 里的前端是生产构建，改 Vue 代码不会热更新。日常开发请用上一节「本地开发启动」。
 
@@ -260,10 +288,11 @@ docker compose down -v       # 删除 MySQL / MinIO / Neo4j 等全部数据
 上线前建议：
 
 1. 修改 `SECRET_KEY`、`ENCRYPTION_KEY`，以及 MySQL / MinIO / RabbitMQ / Neo4j 密码（同时改 compose 的 `environment`）。
-2. 后端、Celery **不要**把宿主机 `.env` 的 `localhost` 带进容器；compose 已用服务名（`mysql`、`redis` 等）注入。
-3. 用反向代理终结 HTTPS，把 443 转到 `frontend:80`；WebSocket 路径 `/api/v1/ws/task/{task_id}` 需要升级头。
-4. 生产关闭后端 `--reload`，前端构建参数用生产 API 源（当前 nginx 已走容器网络 `backend:8000`）。
-5. 数据卷定期备份：`mysql_data`、`minio_data`、`neo4j_data`、`qdrant_data`。
+2. 将 `ENABLE_REGIST` 设为 `false`，禁止公网自助注册（见 [注册开关](#注册开关-enable_regist)）。
+3. 后端、Celery **不要**把宿主机 `.env` 的 `localhost` 带进容器；compose 已用服务名（`mysql`、`redis` 等）注入。
+4. 用反向代理终结 HTTPS，把 443 转到 `frontend:80`；WebSocket 路径 `/api/v1/ws/task/{task_id}` 需要升级头。
+5. 生产关闭后端 `--reload`，前端构建参数用生产 API 源（当前 nginx 已走容器网络 `backend:8000`）。
+6. 数据卷定期备份：`mysql_data`、`minio_data`、`neo4j_data`、`qdrant_data`。
 
 知识图谱向量去重可选：在运行环境配置 `EMBEDDING_MODEL` / `EMBEDDING_API_BASE` / `EMBEDDING_API_KEY`；留空则只按名称精确匹配。
 
@@ -273,7 +302,7 @@ docker compose down -v       # 删除 MySQL / MinIO / Neo4j 等全部数据
 
 | 地址 | 用途 | 默认凭据 |
 |---|---|---|
-| http://localhost:3000 | 教师端 | 自行注册的教师账号 |
+| http://localhost:3000 | 教师端 | 自行注册的教师账号（`ENABLE_REGIST=true` 时） |
 | http://localhost:8000/docs | Swagger | Bearer Token（登录后获取） |
 | http://localhost:15672 | RabbitMQ 管理台 | `edu_user` / `edu_pass` |
 | http://localhost:9001 | MinIO 控制台 | `edu_minio_user` / `edu_minio_pass` |
@@ -284,6 +313,9 @@ MySQL：库 `edu_platform`，用户 `edu_user` / `edu_pass`（root：`edu_root_p
 ---
 
 ## 常见问题
+
+**登录页没有「立即注册」**  
+检查 backend 环境变量 `ENABLE_REGIST` 是否为 `false`。登录页读的是 `GET /api/v1/auth/config`，改完需重启 backend，不用重建前端。
 
 **课件 / 课本一直「生成中 / 解析中」**  
 检查 `celery_worker` 是否在跑，RabbitMQ 是否健康。
@@ -307,4 +339,5 @@ skill 只在「互动课件 + 数学/化学/生物 + 题型命中」时介入。
 
 ## 致谢
 
-理科互动页 skill 来自 [edulab](https://github.com/wy51ai/edulab)，协议 [Apache-2.0](https://github.com/wy51ai/edulab/blob/master/LICENSE)。在此致谢原作者。本仓库对 skill 的改动仅限于接入课件生成管线（子进程调用、题型路由、失败回退），内核与模板保持与上游一致。
+- 理科互动页 skill 来自 [edulab](https://github.com/wy51ai/edulab)，协议 [Apache-2.0](https://github.com/wy51ai/edulab/blob/master/LICENSE)。在此致谢原作者。本仓库对 skill 的改动仅限于接入课件生成管线（子进程调用、题型路由、失败回退），内核与模板保持与上游一致。
+- 电子课本下载可参考 [tchMaterial-parser](https://github.com/happycola233/tchMaterial-parser)（MIT）：国家中小学智慧教育平台电子课本解析与批量下载。智课星本身不内置该工具，下载后的 PDF 再上传到本平台解析。

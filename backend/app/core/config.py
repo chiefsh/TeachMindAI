@@ -4,11 +4,13 @@ from typing import Optional
 
 class Settings(BaseSettings):
     # 应用
-    APP_NAME: str = "AI教育平台"
+    APP_NAME: str = "智课星"
     ENVIRONMENT: str = "development"
     SECRET_KEY: str = "your-secret-key-change-in-production"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 24小时
     ALGORITHM: str = "HS256"
+    # 是否开放教师注册入口（登录页展示 + POST /auth/register）；false / 0 / no 关闭
+    ENABLE_REGIST: bool = True
 
     # 数据库
     DATABASE_URL: str = "mysql+aiomysql://edu_user:edu_pass@localhost:3306/edu_platform"

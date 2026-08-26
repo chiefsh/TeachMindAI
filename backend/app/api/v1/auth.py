@@ -8,15 +8,23 @@ from app.core.security import verify_password, get_password_hash, create_access_
 from app.core.redis_client import get_redis
 from app.core.config import settings
 from app.models.teacher import Teacher
-from app.schemas.auth import TeacherRegister, TeacherLogin, TokenResponse, TeacherProfile
+from app.schemas.auth import TeacherRegister, TeacherLogin, TokenResponse, TeacherProfile, PublicAuthConfig
 from app.api.deps import get_current_teacher, bearer_scheme
 from fastapi.security import HTTPAuthorizationCredentials
 
 router = APIRouter(prefix="/auth", tags=["认证"])
 
 
+@router.get("/config", response_model=PublicAuthConfig)
+async def public_auth_config():
+    """登录页用的公开配置，无需鉴权。"""
+    return PublicAuthConfig(enable_regist=settings.ENABLE_REGIST)
+
+
 @router.post("/register", response_model=TeacherProfile, status_code=201)
 async def register(data: TeacherRegister, db: AsyncSession = Depends(get_db)):
+    if not settings.ENABLE_REGIST:
+        raise HTTPException(status_code=403, detail="当前未开放注册")
     result = await db.execute(select(Teacher).where(Teacher.username == data.username))
     if result.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="用户名已存在")

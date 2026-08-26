@@ -6,7 +6,7 @@
         <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-primary-600 mb-4 shadow-sm">
           <el-icon class="text-white text-3xl"><Reading /></el-icon>
         </div>
-        <h1 class="text-2xl sm:text-3xl font-bold text-slate-800">AI 教学平台</h1>
+        <h1 class="text-2xl sm:text-3xl font-bold text-slate-800">智课星</h1>
         <p class="text-slate-500 mt-2 text-sm">智能辅助，让教学更高效</p>
       </div>
 
@@ -44,8 +44,7 @@
           </el-button>
         </el-form>
 
-        <!-- 注册入口暂时隐藏（如需开放，去掉 v-if="false" 即可） -->
-        <div v-if="false" class="mt-6 pt-5 border-t border-slate-100 text-center text-sm text-slate-500">
+        <div v-if="enableRegist" class="mt-6 pt-5 border-t border-slate-100 text-center text-sm text-slate-500">
           还没有账号？
           <el-button link type="primary" @click="showRegister = true">立即注册</el-button>
         </div>
@@ -77,7 +76,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useEducationStore } from '@/stores/education'
@@ -111,6 +110,7 @@ async function handleLogin() {
 }
 
 const showRegister = ref(false)
+const enableRegist = ref(true)
 const regFormRef = ref()
 const regLoading = ref(false)
 const regForm = reactive({ username: '', real_name: '', email: '', password: '' })
@@ -133,4 +133,13 @@ async function handleRegister() {
     regLoading.value = false
   }
 }
+
+onMounted(async () => {
+  try {
+    const cfg = await authApi.getConfig()
+    enableRegist.value = cfg.enable_regist !== false
+  } catch {
+    enableRegist.value = true
+  }
+})
 </script>

@@ -1,0 +1,31 @@
+---
+description: 当需要设计、开发、修改 Vue 3 前端界面或编写 UI 样式时自动触发
+globs: "*.vue", "*.ts", "*.js", "src/components/**/*"
+alwaysApply: false
+---
+
+# Vue 3 Frontend Design 核心规范
+
+## 🎨 前端设计 (Frontend Design) 规范
+- **拒绝平庸 UI**：禁止生成粗糙、千篇一律的管理后台界面。使用现代化的渐变色、微妙的阴影（shadow-sm/md）、柔和 border-radius（rounded-xl/2xl）。
+- **色彩与对比**：严格遵守 WCAG 对比度规范。使用系统化调色盘（如 Slate, Zinc, Emerald），优先支持深色模式。
+- **动态交互**：所有可点击元素必须包含平滑的过渡效果（transition-all duration-300 ease-in-out）、悬停缩放（hover:scale-[1.02]）及明确的焦点状态。
+- **微互动**：必须包含加载状态（Skeleton 骨架屏）、成功/失败的微动画（如弹性缩放），提升用户体验。
+- **响应式优先**：所有布局必须适配移动端（使用 Tailwind 的 md:, lg: 断点）。
+
+## 🟢 Vue 3 编码规范
+- **技术栈**：Vue 3 + TypeScript + Tailwind CSS。
+- **组件结构**：严格使用 `<script setup lang="ts">`。
+- **状态管理**：优先使用 `ref()` 和 `computed()`。只有跨组件共享状态才使用 Pinia。
+- **性能优化**：长列表使用虚拟滚动；图片必须懒加载；组件销毁时必须清除定时器和全局事件监听。
+- **代码组织**：
+  ```vue
+  <script setup lang="ts">
+  // 1. Imports
+  // 2. Props / Emits
+  // 3. State (Refs, Real reactive data)
+  // 4. Computed properties
+  // 5. Methods / Actions
+  // 6. Lifecycle hooks
+  </script>
+  ```

@@ -213,6 +213,7 @@ const viewerKey = ref(0)
 const uploading = ref(false)
 const reparsingId = ref<number | null>(null)
 const uploadFormRef = ref()
+const uploadRef = ref()
 const uploadForm = reactive({ title: '', grade_id: null as number | null, subject_id: null as number | null, file: null as File | null })
 const uploadRules = {
   title: [{ required: true, message: '请填写课本标题' }],
@@ -227,6 +228,7 @@ function onUploadGradeChange() {
 
 function onUploadFileChange(f: { name?: string; raw?: File }) {
   uploadForm.file = f.raw ?? null
+  if (uploadForm.title.trim()) return
   const name = (f.raw?.name || f.name || "").trim()
   if (!name) return
   const stem = name.replace(/\.[^.]+$/, "").trim()

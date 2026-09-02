@@ -48,6 +48,8 @@ export const textbookApi = {
   getPreviewUrl: (id: number) => request.get<{ url: string; file_type: string }>(`/textbooks/${id}/preview-url`),
   getChapters: (id: number) => request.get<Chapter[]>(`/textbooks/${id}/chapters`),
   reparse: (id: number) => request.post<Textbook>(`/textbooks/${id}/reparse`),
+  relatedCounts: (id: number) =>
+    request.get<{ courseware: number; homework: number; questions: number }>(`/textbooks/${id}/related-counts`),
   listImages: (id: number) => request.get<{ id: number; page_number: number; url: string }[]>(`/textbooks/${id}/images`),
   resolveImages: (ids: number[]) => request.post<Record<string, string>>('/textbooks/images/resolve', { ids }),
   // base64 data URI，供离线 HTML 内联（presigned URL 会过期）；超大图不返回

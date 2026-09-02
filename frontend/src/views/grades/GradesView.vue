@@ -604,6 +604,8 @@ async function handleImport() {
       ElMessage.success('图片识别任务已提交')
     }
     showImport.value = false
+    await loadSummary()
+    await loadExamNames()
   } finally { importing.value = false }
 }
 

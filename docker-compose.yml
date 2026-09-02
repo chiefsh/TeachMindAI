@@ -87,11 +87,12 @@ services:
       REDIS_URL: redis://redis:6379/0
       RABBITMQ_URL: amqp://edu_user:edu_pass@rabbitmq:5672/
       MINIO_ENDPOINT: minio:9000
+      MINIO_PUBLIC_ENDPOINT: localhost:9000
       MINIO_ACCESS_KEY: edu_minio_user
       MINIO_SECRET_KEY: edu_minio_pass
       SECRET_KEY: your-secret-key-change-in-production
       ENVIRONMENT: development
-      ENABLE_REGIST: "true"
+      ENABLE_REGIST: "false"
       NEO4J_URI: bolt://neo4j:7687
       NEO4J_USER: neo4j
       NEO4J_PASSWORD: edu_neo4j_pass
@@ -118,6 +119,7 @@ services:
       REDIS_URL: redis://redis:6379/0
       RABBITMQ_URL: amqp://edu_user:edu_pass@rabbitmq:5672/
       MINIO_ENDPOINT: minio:9000
+      MINIO_PUBLIC_ENDPOINT: localhost:9000
       MINIO_ACCESS_KEY: edu_minio_user
       MINIO_SECRET_KEY: edu_minio_pass
       SECRET_KEY: your-secret-key-change-in-production

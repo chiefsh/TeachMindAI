@@ -24,10 +24,14 @@ class Settings(BaseSettings):
     CELERY_RESULT_BACKEND: str = ""
 
     # MinIO
+    # MINIO_ENDPOINT：容器/本机访问对象存储（Docker 内用 minio:9000）
+    # MINIO_PUBLIC_ENDPOINT：签给浏览器的地址（主机可访问的 IP/域名）；留空则与上者相同
     MINIO_ENDPOINT: str = "localhost:9000"
+    MINIO_PUBLIC_ENDPOINT: str = ""
     MINIO_ACCESS_KEY: str = "edu_minio_user"
     MINIO_SECRET_KEY: str = "edu_minio_pass"
     MINIO_SECURE: bool = False
+    MINIO_PUBLIC_SECURE: bool = False
     MINIO_BUCKET_TEXTBOOKS: str = "textbooks"
     MINIO_BUCKET_QUESTIONS: str = "question-banks"
     MINIO_BUCKET_COURSEWARES: str = "coursewares"

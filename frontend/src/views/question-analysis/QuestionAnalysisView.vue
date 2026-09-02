@@ -128,6 +128,7 @@ import { useEducationStore } from '@/stores/education'
 import { ElMessage } from 'element-plus'
 import { Plus, View, Delete, DataAnalysis, UploadFilled, Refresh } from '@element-plus/icons-vue'
 import type { AnalysisSet } from '@/types'
+import { isBusyStatus, useBusyPoll } from '@/utils/busyPoll'
 import RichEditor from '@/components/RichEditor.vue'
 import dayjs from 'dayjs'
 
@@ -148,8 +149,8 @@ const form = reactive({
   name: '', mode: 'manual' as 'manual' | 'file', html: '', text: '',
 })
 
-async function load() {
-  loading.value = true
+async function load(silent = false) {
+  if (!silent) loading.value = true
   try {
     const res = await analysisApi.list({
       grade_id: edu.selectedGradeId || undefined,
@@ -158,8 +159,16 @@ async function load() {
     }) as any
     sets.value = res.items || []
     total.value = res.total || 0
-  } finally { loading.value = false }
+  } finally {
+    loading.value = false
+    busyPoll.sync()
+  }
 }
+
+const busyPoll = useBusyPoll(
+  () => load(true),
+  () => sets.value.some(s => isBusyStatus(s.parse_status)),
+)
 
 watchDebounced(() => [edu.selectedGradeId, edu.selectedSubjectId], () => { page.value = 1; load() }, { debounce: 250 })
 
@@ -228,7 +237,7 @@ async function reparse(s: AnalysisSet) {
   reparsingId.value = s.id
   try {
     await analysisApi.reparse(s.id)
-    ElMessage.success('已重新提交解析，稍后刷新查看')
+    ElMessage.success('已重新提交解析')
     await load()
   } catch (e: any) {
     ElMessage.error(e?.response?.data?.detail || '重新解析失败')

@@ -310,11 +310,13 @@ function focusNode(id: string) { openNode(id) }
 // ── 抽取 / 发现 ──
 async function extractTextbook(textbookId: number) {
   await knowledgeApi.extractTextbook(textbookId)
-  ElMessage.success('已提交抽取任务，知识点将陆续入图，稍后刷新查看')
+  ElMessage.success('已提交抽取任务，知识点将陆续入图')
+  setTimeout(() => { void load() }, 4000)
 }
 async function suggestCross() {
   await knowledgeApi.suggestCrossSubject()
   ElMessage.success('已提交跨学科关联发现任务，完成后可在节点中审核')
+  setTimeout(() => { void load() }, 4000)
 }
 async function locateByKeyword() {
   if (!keyword.value.trim()) return

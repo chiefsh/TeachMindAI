@@ -1037,6 +1037,66 @@ async def do_generate_homework(paper_id: int, courseware_ids: list[int], use_que
             await db.commit()
 
 
+async def structure_textbook_toc(teacher_id: int, toc_text: str) -> list[dict]:
+    """把扫描版教材『目录』页的 OCR 文本交给大模型，还原为规范章节结构。
+
+    返回 [{"level": 1|2, "title": str, "page": int|None}, ...]，按目录顺序排列。
+    无 LLM 配置或解析失败时返回 []（上层回退到启发式识别）。
+    """
+    toc_text = (toc_text or "").strip()
+    if not toc_text:
+        return []
+
+    async with AsyncSessionLocal() as db:
+        cfg = await _get_default_llm(teacher_id, db)
+    if not cfg:
+        logger.warning("课本目录结构化：教师 %s 未配置 LLM，跳过", teacher_id)
+        return []
+
+    prompt = (
+        "下面是一本教材『目录』页的 OCR 文本，可能存在错别字、缺字、多余符号、"
+        "换行错乱或列错位。请据此还原出规范、通顺的章节目录结构。\n\n"
+        "要求：\n"
+        "1. 一级条目为『章』(level=1)，二级条目为『节』(level=2)。\n"
+        "2. 修正明显的 OCR 错字，使标题为通顺规范的中文（例：『炊烧』→『燃烧』、"
+        "『低兢行动』→『低碳行动』）。\n"
+        "3. 每个『节』尽量给出其正文页码（整数）；『章』通常没有单独页码，用 null。\n"
+        "4. 严格按目录中真实出现的顺序输出，不要遗漏，也不要臆造不存在的条目。\n"
+        "5. 忽略『目录』标题本身；『附录』『元素周期表』等若出现可作为 level=1 保留。\n"
+        "6. 只输出 JSON，不要输出解释或多余文字。\n\n"
+        "输出格式：\n"
+        '{"chapters":[{"level":1,"title":"第一章 启航化学之旅","page":null},'
+        '{"level":2,"title":"第一节 化学让世界更美好","page":2}]}\n\n'
+        f"OCR 文本：\n{toc_text}"
+    )
+
+    try:
+        resp = await _call_llm(cfg, [{"role": "user", "content": prompt}], max_tokens=2048)
+        raw = _resp_content(resp)
+        start, end = raw.find("{"), raw.rfind("}") + 1
+        if start < 0 or end <= start:
+            logger.warning("课本目录结构化：LLM 未返回 JSON")
+            return []
+        data = json.loads(raw[start:end])
+    except Exception as e:  # noqa: BLE001
+        logger.warning("课本目录结构化失败：%s", e)
+        return []
+
+    chapters: list[dict] = []
+    for item in (data.get("chapters") or []):
+        title = str(item.get("title") or "").strip()
+        if not title:
+            continue
+        level = 1 if int(item.get("level") or 1) <= 1 else 2
+        page = item.get("page")
+        try:
+            page = int(page) if page is not None else None
+        except (TypeError, ValueError):
+            page = None
+        chapters.append({"level": level, "title": title[:256], "page": page})
+    return chapters
+
+
 async def do_ocr_grades(teacher_id: int, filename: str, file_data: bytes) -> dict:
     """使用大模型 Vision 能力识别成绩图片"""
     async with AsyncSessionLocal() as db:

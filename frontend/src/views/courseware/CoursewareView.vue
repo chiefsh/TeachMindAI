@@ -179,6 +179,7 @@ import { ElMessage } from 'element-plus'
 import { MagicStick, View, Delete, VideoPlay, RefreshRight } from '@element-plus/icons-vue'
 import type { Courseware, Textbook, Chapter, RenderStyle } from '@/types'
 import { THEMES, DEFAULT_THEME, getTheme } from '@/utils/coursewareTheme'
+import { isBusyStatus, useBusyPoll } from '@/utils/busyPoll'
 import dayjs from 'dayjs'
 
 const router = useRouter()
@@ -233,8 +234,8 @@ async function onTextbookChange() {
   }
 }
 
-async function load() {
-  loading.value = true
+async function load(silent = false) {
+  if (!silent) loading.value = true
   try {
     const res = await coursewareApi.list({
       grade_id: edu.selectedGradeId || undefined,
@@ -243,9 +244,16 @@ async function load() {
     }) as any
     coursewares.value = res.items || []
     total.value = res.total || 0
+  } finally {
+    loading.value = false
+    busyPoll.sync()
   }
-  finally { loading.value = false }
 }
+
+const busyPoll = useBusyPoll(
+  () => load(true),
+  () => coursewares.value.some(c => isBusyStatus(c.gen_status)),
+)
 
 async function loadTextbooks() {
   const res = await textbookApi.list({
@@ -296,7 +304,7 @@ async function handleCreate() {
       }
     }
     await coursewareApi.create(payload)
-    ElMessage.success('课件生成任务已提交，请稍候查看')
+    ElMessage.success('课件生成任务已提交')
     showCreate.value = false
     await load()
   } finally { creating.value = false }
@@ -306,7 +314,7 @@ async function regenerateCw(cw: Courseware) {
   regeneratingId.value = cw.id
   try {
     await coursewareApi.regenerate(cw.id)
-    ElMessage.success('已重新触发生成，请稍候查看')
+    ElMessage.success('已重新触发生成')
     await load()
   } finally {
     regeneratingId.value = null

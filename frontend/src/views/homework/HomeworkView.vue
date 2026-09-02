@@ -170,6 +170,7 @@ import { useEducationStore } from '@/stores/education'
 import { ElMessage } from 'element-plus'
 import { Plus, MagicStick, Loading, Document, Tickets } from '@element-plus/icons-vue'
 import type { HomeworkPaper, HomeworkQuestion, Courseware } from '@/types'
+import { isBusyStatus, useBusyPoll } from '@/utils/busyPoll'
 import dayjs from 'dayjs'
 
 const edu = useEducationStore()
@@ -206,16 +207,23 @@ const questionTypes = [
   { value: 'short_answer', label: '简答题' }, { value: 'true_false', label: '判断题' },
 ]
 
-async function load() {
-  loading.value = true
+async function load(silent = false) {
+  if (!silent) loading.value = true
   try {
     papers.value = (await homeworkApi.list({
       grade_id: edu.selectedGradeId || undefined,
       subject_id: edu.selectedSubjectId || undefined,
     })) as any
+  } finally {
+    loading.value = false
+    busyPoll.sync()
   }
-  finally { loading.value = false }
 }
+
+const busyPoll = useBusyPoll(
+  () => load(true),
+  () => papers.value.some(p => isBusyStatus(p.gen_status)),
+)
 
 async function loadCoursewares() {
   const res = await coursewareApi.list({

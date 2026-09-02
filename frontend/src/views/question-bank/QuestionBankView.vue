@@ -222,8 +222,8 @@ const difficulties = [
   { value: 'hard', label: '较难' }, { value: 'very_hard', label: '特难' },
 ]
 
-async function load() {
-  loading.value = true
+async function load(silent = false) {
+  if (!silent) loading.value = true
   try {
     const res: any = await questionApi.list({
       ...filter,
@@ -266,7 +266,8 @@ async function handleImport() {
     await questionApi.importFile(fd)
     ElMessage.success('导入任务已提交，正在后台处理')
     showImport.value = false
-    setTimeout(load, 3000)
+    await load()
+    setTimeout(() => load(true), 3000)
   } finally { importing.value = false }
 }
 

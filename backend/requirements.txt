@@ -32,6 +32,7 @@ ebooklib==0.18
 striprtf==0.0.26
 mobi==0.3.3
 Pillow==10.4.0
+pytesseract==0.3.13
 
 # AI接入
 litellm==1.49.1

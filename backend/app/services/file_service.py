@@ -36,7 +36,7 @@ async def parse_textbook_file(textbook_id: int):
             if tb.file_type == "pdf":
                 from app.services import liteparse_service
                 parsed_pdf = liteparse_service.parse_pdf(file_bytes)
-                chapters = _parse_pdf(parsed_pdf, file_bytes, tb)
+                chapters = await _parse_pdf(parsed_pdf, file_bytes, tb)
             elif tb.file_type in ("docx", "doc"):
                 chapters = _parse_docx(file_bytes, tb.file_type)
             elif tb.file_type == "txt":
@@ -194,17 +194,31 @@ def _detect_pdf_headings_by_font(data: bytes) -> list[dict]:
 
 
 def _detect_headings_by_regex(page_texts: list[str]) -> list[dict]:
-    """基于正则识别章节标题（适用于扫描/OCR 得到的纯文本，无字号信息）。"""
-    section_re = re.compile(r"^第\s*[一二三四五六七八九十百零两\d]+\s*[节课讲]")
+    """基于正则识别章节标题（适用于扫描/OCR 得到的纯文本，无字号信息）。
+
+    只认『第X章/节/课』和 Chapter/Unit/Lesson，不认『1. xxx』——扫描正文里
+    实验步骤、选项编号会被后者大量误判成章节。
+    """
+    chapter_re = re.compile(
+        r"^第\s*[一二三四五六七八九十百零两\d]+\s*[章篇单元]"
+        r"|^Chapter\s*\d+|^Unit\s*\d+",
+        re.IGNORECASE,
+    )
+    section_re = re.compile(
+        r"^第\s*[一二三四五六七八九十百零两\d]+\s*[节课讲]"
+        r"|^Lesson\s*\d+",
+        re.IGNORECASE,
+    )
     result: list[dict] = []
     for pno, text in enumerate(page_texts):
         for line in (text or "").splitlines():
-            line = line.strip()
+            line = line.strip().lstrip("#").strip()
             if not line or len(line) > 40:
                 continue
-            if _HEADING_RE.match(line):
-                level = 2 if section_re.match(line) else 1
-                result.append({"title": line[:60], "level": level, "page": pno})
+            if section_re.match(line):
+                result.append({"title": line[:60], "level": 2, "page": pno})
+            elif chapter_re.match(line):
+                result.append({"title": line[:60], "level": 1, "page": pno})
     return result
 
 
@@ -233,10 +247,11 @@ def _build_chapters_from_headings(headings: list[dict], page_texts: list[str]) -
     return chapters
 
 
-def _parse_pdf(parsed: dict, data: bytes, tb: Textbook) -> list[dict]:
+async def _parse_pdf(parsed: dict, data: bytes, tb: Textbook) -> list[dict]:
     """基于 liteparse 解析结果构建章节。
 
-    优先级：PDF 书签目录 → 字号启发式标题 → 正则标题(扫描件) → 逐页兜底。
+    优先级：PDF 书签目录 → 扫描版『目录』页(OCR+LLM 结构化) → 字号启发式标题
+    → 正则标题(扫描件) → 逐页兜底。
     """
     page_texts = [pg["text"] for pg in parsed["pages"]]
     tb.total_pages = parsed["total_pages"] or len(page_texts)
@@ -262,13 +277,28 @@ def _parse_pdf(parsed: dict, data: bytes, tb: Textbook) -> list[dict]:
             })
         return chapters
 
+    # 无书签：扫描版教材优先解析『目录』页（psm-4 OCR + LLM 结构化，最贴近真实目录）
+    try:
+        toc_chapters = await _parse_scanned_toc(data, page_texts, tb)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("课本 %s 目录页解析失败，回退启发式：%s", tb.id, e)
+        toc_chapters = []
+    if len(toc_chapters) >= 2:
+        logger.info("课本 %s 从『目录』页还原到 %d 个章节条目", tb.id, len(toc_chapters))
+        return toc_chapters
+
     # 无书签：启发式识别真实章节结构
     headings = _detect_pdf_headings_by_font(data)
     if len(headings) < 2:
         headings = _detect_headings_by_regex(page_texts)
-    if len(headings) >= 2:
+    if 2 <= len(headings) <= 60:
         logger.info("课本 %s 无书签，启发式识别到 %d 个章节标题", tb.id, len(headings))
         return _build_chapters_from_headings(headings, page_texts)
+    if len(headings) > 60:
+        logger.warning(
+            "课本 %s 启发式命中 %d 条，更像正文碎片而非目录，忽略",
+            tb.id, len(headings),
+        )
 
     # 兜底：逐页作为章节
     for i, text in enumerate(page_texts):
@@ -279,6 +309,186 @@ def _parse_pdf(parsed: dict, data: bytes, tb: Textbook) -> list[dict]:
             "sort": i,
         })
     return chapters
+
+
+# ─── 扫描版『目录』页解析（OCR + LLM 结构化）─────────────────────────
+
+_TOC_MARKER_RE = re.compile(r"第\s*[一二三四五六七八九十百零两\d]+\s*[章节]")
+
+
+def _looks_like_toc(text: str) -> bool:
+    """一页是否像目录：含至少 2 处『第X章/节』标记。"""
+    return len(_TOC_MARKER_RE.findall(text or "")) >= 2
+
+
+def _ocr_page_psm4(doc, page_index: int) -> str:
+    """按单栏可变字号模式(psm 4)对某页整页 OCR。
+
+    目录页多为『章节+页码』的单栏列表，psm 4 比默认版式分析更能保持阅读顺序。
+    """
+    try:
+        from PIL import Image
+        import pytesseract
+        pix = doc[page_index].get_pixmap(matrix=_render_matrix())
+        img = Image.open(io.BytesIO(pix.tobytes("png")))
+        lang = (getattr(settings, "OCR_LANGUAGE", "chi_sim") or "chi_sim").strip() or "chi_sim"
+        return pytesseract.image_to_string(img, lang=lang, config="--psm 4")
+    except Exception as e:  # noqa: BLE001
+        logger.warning("目录页 OCR 失败(p%d)：%s", page_index + 1, e)
+        return ""
+
+
+def _render_matrix():
+    import fitz
+    return fitz.Matrix(3, 3)
+
+
+def _extract_toc_ocr(data: bytes, page_texts: list[str]) -> tuple[str, list[int]]:
+    """定位并 OCR 扫描版『目录』页，返回 (拼接后的目录文本, 页码索引列表(0基))。"""
+    import fitz
+    # 让 tesseract 找到中文语言包
+    try:
+        from app.services import liteparse_service
+        liteparse_service._apply_tessdata_env(liteparse_service._detect_tessdata_path())
+    except Exception:  # noqa: BLE001
+        pass
+
+    doc = fitz.open(stream=data, filetype="pdf")
+    n = len(doc)
+    ocr_cache: dict[int, str] = {}
+
+    def lite_text(i: int) -> str:
+        return (page_texts[i] if i < len(page_texts) else "") or ""
+
+    def ocr(i: int) -> str:
+        if i not in ocr_cache:
+            ocr_cache[i] = _ocr_page_psm4(doc, i)
+        return ocr_cache[i]
+
+    def page_src(i: int) -> str:
+        """优先 psm-4 OCR；容器缺 pytesseract 时回退 liteparse 已有文字。"""
+        t = ocr(i)
+        if t.strip():
+            return t
+        return lite_text(i)
+
+    # 先用 liteparse 已有的逐页文字快速定位『目录』页，失败再对前若干页做 OCR 兜底
+    start = None
+    for i in range(min(n, 20)):
+        t = lite_text(i)
+        if "目录" in t.replace(" ", "") or _looks_like_toc(t):
+            start = i
+            break
+    if start is None:
+        for i in range(min(n, 15)):
+            t = ocr(i)
+            if "目录" in t.replace(" ", "") or _looks_like_toc(t):
+                start = i
+                break
+    if start is None:
+        return "", []
+
+    indices = [start]
+    parts = [page_src(start)]
+    # 目录常跨多页：向后延伸，直到某页不再像目录
+    for j in range(start + 1, min(start + 4, n)):
+        tj = page_src(j)
+        if _looks_like_toc(tj) or "目录" in tj.replace(" ", ""):
+            indices.append(j)
+            parts.append(tj)
+        else:
+            break
+    return "\n".join(p for p in parts if p.strip()), indices
+
+
+def _norm_cjk(s: str) -> str:
+    """归一化用于模糊匹配：仅保留中文与字母数字。"""
+    return re.sub(r"[^\u4e00-\u9fff0-9A-Za-z]+", "", s or "")
+
+
+def _detect_page_offset(entries: list[dict], page_texts: list[str], toc_indices: list[int]) -> int:
+    """估算『目录标注页码』→『PDF 页码(1基)』的偏移量。
+
+    做法：取若干带页码的『节』标题，去正文中定位其实际出现的 PDF 页，
+    以 (PDF页1基 - 标注页码) 的中位数作为偏移，鲁棒对抗个别错配。
+    定位失败则假设正文紧接目录页之后开始。
+    """
+    n = len(page_texts)
+    body_start = (max(toc_indices) + 1) if toc_indices else 0
+    samples: list[int] = []
+    for e in entries:
+        p = e.get("page")
+        if not p:
+            continue
+        core = re.sub(r"^第\s*[一二三四五六七八九十百零两\d]+\s*[章节]\s*", "", e["title"])
+        key = _norm_cjk(core)
+        if len(key) < 3:
+            continue
+        for idx in range(body_start, n):
+            if key in _norm_cjk(page_texts[idx]):
+                samples.append((idx + 1) - p)
+                break
+    if samples:
+        samples.sort()
+        return samples[len(samples) // 2]
+    return body_start
+
+
+def _build_chapters_from_toc(
+    entries: list[dict], page_texts: list[str], toc_indices: list[int], tb: Textbook
+) -> list[dict]:
+    """把 LLM 结构化后的目录条目落成带页码与正文的章节列表。"""
+    n = len(page_texts)
+    offset = _detect_page_offset(entries, page_texts, toc_indices)
+
+    def to_pdf_page(p: int) -> int:
+        v = p + offset
+        if n:
+            v = min(max(v, 1), n)
+        return v
+
+    # 计算各条目起始 PDF 页：节用自身页码；章无页码则借用其后首个有页码条目
+    start_map: dict[int, int] = {}
+    for i, e in enumerate(entries):
+        if e.get("page"):
+            start_map[i] = to_pdf_page(int(e["page"]))
+    for i, e in enumerate(entries):
+        if i not in start_map:
+            for j in range(i + 1, len(entries)):
+                if j in start_map:
+                    start_map[i] = start_map[j]
+                    break
+
+    chapters: list[dict] = []
+    for i, e in enumerate(entries):
+        ps = start_map.get(i)
+        pe = None
+        content = ""
+        if ps is not None:
+            later = [start_map[j] for j in range(i + 1, len(entries))
+                     if j in start_map and start_map[j] > ps]
+            pe = (min(later) - 1) if later else (n or ps)
+            if pe < ps:
+                pe = ps
+            content = "\n".join(page_texts[ps - 1:pe])[:5000]
+        chapters.append({
+            "title": e["title"], "level": e["level"],
+            "page_start": ps, "page_end": pe,
+            "content": content, "sort": i,
+        })
+    return chapters
+
+
+async def _parse_scanned_toc(data: bytes, page_texts: list[str], tb: Textbook) -> list[dict]:
+    """扫描版无书签 PDF：OCR『目录』页 → LLM 结构化 → 生成章节。失败返回 []。"""
+    toc_text, toc_indices = _extract_toc_ocr(data, page_texts)
+    if not toc_text or not toc_indices:
+        return []
+    from app.services import ai_service
+    entries = await ai_service.structure_textbook_toc(tb.teacher_id, toc_text)
+    if len(entries) < 2:
+        return []
+    return _build_chapters_from_toc(entries, page_texts, toc_indices, tb)
 
 
 def _extract_and_store_pdf_images(db, tb: Textbook, data: bytes, max_images: int = 80) -> set[int]:

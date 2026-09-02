@@ -1,13 +1,16 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete, func
+from sqlalchemy import select, delete, update, func
 
 from app.core.database import get_db
 from app.core.minio_client import upload_file, get_presigned_url, delete_file, get_file_bytes
 from app.core.config import settings
 from app.models.teacher import Teacher
 from app.models.textbook import Textbook, TextbookChapter, TextbookImage, ParseStatus
-from app.schemas.textbook import TextbookOut, ChapterOut, TextbookCreate
+from app.models.courseware import Courseware
+from app.models.homework import HomeworkPaper, HomeworkQuestion
+from app.models.interaction import CoursewareSession, InteractionRecord
+from app.schemas.textbook import TextbookOut, ChapterOut, TextbookCreate, TextbookRelatedCounts
 from app.api.deps import get_current_teacher
 from pydantic import BaseModel
 import asyncio, base64, uuid, os
@@ -105,7 +108,15 @@ async def get_preview_url(
     db: AsyncSession = Depends(get_db),
 ):
     tb = await _get_or_404(textbook_id, teacher.id, db)
-    url = get_presigned_url(settings.MINIO_BUCKET_TEXTBOOKS, tb.file_path, expires_hours=2)
+    extra = None
+    if tb.file_type == "pdf":
+        extra = {
+            "response-content-type": "application/pdf",
+            "response-content-disposition": "inline",
+        }
+    url = get_presigned_url(
+        settings.MINIO_BUCKET_TEXTBOOKS, tb.file_path, expires_hours=2, response_headers=extra,
+    )
     return {"url": url, "file_type": tb.file_type}
 
 
@@ -152,7 +163,12 @@ async def reparse_textbook(
 ):
     """重新解析课本：清空旧章节，重置状态并重新触发解析任务"""
     tb = await _get_or_404(textbook_id, teacher.id, db)
-    # 删除旧章节与旧图片
+    # 章节树自引用 parent_id，须先断开父子再删，否则 MySQL 1451
+    await db.execute(
+        update(TextbookChapter)
+        .where(TextbookChapter.textbook_id == tb.id)
+        .values(parent_id=None)
+    )
     await db.execute(
         delete(TextbookChapter).where(TextbookChapter.textbook_id == tb.id)
     )
@@ -170,6 +186,17 @@ async def reparse_textbook(
     return tb
 
 
+@router.get("/{textbook_id}/related-counts", response_model=TextbookRelatedCounts)
+async def get_related_counts(
+    textbook_id: int,
+    teacher: Teacher = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+):
+    """删除前提示：该书关联的课件、作业/试卷及其试题数量。"""
+    await _get_or_404(textbook_id, teacher.id, db)
+    return await _count_related(textbook_id, db)
+
+
 @router.delete("/{textbook_id}", status_code=204)
 async def delete_textbook(
     textbook_id: int,
@@ -177,8 +204,74 @@ async def delete_textbook(
     db: AsyncSession = Depends(get_db),
 ):
     tb = await _get_or_404(textbook_id, teacher.id, db)
+    await _purge_related(tb.id, db)
+    # 章节树自引用 parent_id，须先断开再随课本删除
+    await db.execute(
+        update(TextbookChapter)
+        .where(TextbookChapter.textbook_id == tb.id)
+        .values(parent_id=None)
+    )
     delete_file(settings.MINIO_BUCKET_TEXTBOOKS, tb.file_path)
     await db.delete(tb)
+
+
+async def _courseware_ids(textbook_id: int, db: AsyncSession) -> list[int]:
+    rows = (
+        await db.execute(select(Courseware.id).where(Courseware.textbook_id == textbook_id))
+    ).scalars().all()
+    return list(rows)
+
+
+async def _count_related(textbook_id: int, db: AsyncSession) -> TextbookRelatedCounts:
+    cw_ids = await _courseware_ids(textbook_id, db)
+    if not cw_ids:
+        return TextbookRelatedCounts()
+    hw = (
+        await db.execute(
+            select(func.count()).select_from(HomeworkPaper).where(
+                HomeworkPaper.courseware_id.in_(cw_ids)
+            )
+        )
+    ).scalar() or 0
+    qs = (
+        await db.execute(
+            select(func.count()).select_from(HomeworkQuestion).join(
+                HomeworkPaper, HomeworkPaper.id == HomeworkQuestion.paper_id
+            ).where(HomeworkPaper.courseware_id.in_(cw_ids))
+        )
+    ).scalar() or 0
+    return TextbookRelatedCounts(courseware=len(cw_ids), homework=hw, questions=qs)
+
+
+async def _purge_related(textbook_id: int, db: AsyncSession) -> None:
+    cw_ids = await _courseware_ids(textbook_id, db)
+    if not cw_ids:
+        return
+    paper_ids = (
+        await db.execute(
+            select(HomeworkPaper.id).where(HomeworkPaper.courseware_id.in_(cw_ids))
+        )
+    ).scalars().all()
+    if paper_ids:
+        await db.execute(
+            delete(HomeworkQuestion).where(HomeworkQuestion.paper_id.in_(list(paper_ids)))
+        )
+        await db.execute(
+            delete(HomeworkPaper).where(HomeworkPaper.id.in_(list(paper_ids)))
+        )
+    session_ids = (
+        await db.execute(
+            select(CoursewareSession.id).where(CoursewareSession.courseware_id.in_(cw_ids))
+        )
+    ).scalars().all()
+    if session_ids:
+        await db.execute(
+            delete(InteractionRecord).where(InteractionRecord.session_id.in_(list(session_ids)))
+        )
+        await db.execute(
+            delete(CoursewareSession).where(CoursewareSession.id.in_(list(session_ids)))
+        )
+    await db.execute(delete(Courseware).where(Courseware.id.in_(cw_ids)))
 
 
 @router.get("/{textbook_id}/images")

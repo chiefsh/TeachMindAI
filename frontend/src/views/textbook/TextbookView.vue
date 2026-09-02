@@ -51,11 +51,7 @@
             </template>
           </el-popconfirm>
           <div class="flex-1" />
-          <el-popconfirm title="确定删除该课本吗？" @confirm="deleteBook(tb.id)">
-            <template #reference>
-              <el-button size="small" link type="danger" :icon="Delete">删除</el-button>
-            </template>
-          </el-popconfirm>
+          <el-button size="small" link type="danger" :icon="Delete" @click="confirmDeleteBook(tb)">删除</el-button>
         </div>
       </div>
 
@@ -102,7 +98,7 @@
             :auto-upload="false"
             :limit="1"
             accept=".pdf,.doc,.docx,.txt,.epub,.mobi"
-            :on-change="(f: any) => uploadForm.file = f.raw"
+            :on-change="onUploadFileChange"
           >
             <el-button :icon="Upload">选择文件</el-button>
             <template #tip>
@@ -117,34 +113,86 @@
       </template>
     </el-dialog>
 
-    <!-- 章节弹窗 -->
-    <el-dialog v-model="showChapters" :title="`章节目录 - ${currentBook?.title}`" width="500px">
-      <el-tree
-        :data="chapters"
-        :props="{ label: 'title', children: 'children' }"
-        :expand-on-click-node="false"
-      >
-        <template #default="{ node, data }">
-          <span class="text-sm flex items-center gap-2 flex-1 min-w-0">
-            <span class="truncate">{{ data.title }}</span>
-            <span v-if="data.page_start" class="text-xs text-slate-400 flex-shrink-0">
-              p{{ data.page_start }}{{ data.page_end !== data.page_start ? `-${data.page_end}` : '' }}
+    <!-- 章节弹窗：左目录，右 PDF 预览 -->
+    <el-dialog
+      v-model="showChapters"
+      :title="`章节目录 - ${currentBook?.title}`"
+      width="92vw"
+      top="4vh"
+      class="chapter-preview-dialog"
+      destroy-on-close
+      @closed="resetChapterPreview"
+    >
+      <div class="flex flex-col lg:flex-row gap-3 min-h-[68vh]">
+        <div class="lg:w-[320px] lg:flex-shrink-0 lg:max-h-[68vh] overflow-y-auto rounded-xl border border-slate-100 bg-slate-50/70 p-2">
+          <el-tree
+            :data="chapters"
+            node-key="id"
+            :props="{ label: 'title', children: 'children' }"
+            :expand-on-click-node="false"
+            highlight-current
+            :current-node-key="activeChapterId || undefined"
+            @node-click="onChapterClick"
+          >
+            <template #default="{ data }">
+              <span
+                class="text-sm flex items-center gap-2 flex-1 min-w-0 pr-1 cursor-pointer"
+                :class="data.id === activeChapterId ? 'text-primary-600 font-medium' : 'text-slate-700'"
+              >
+                <span class="truncate">{{ data.title }}</span>
+                <span v-if="data.page_start" class="text-xs text-slate-400 flex-shrink-0">
+                  p{{ data.page_start }}{{ data.page_end !== data.page_start ? `-${data.page_end}` : '' }}
+                </span>
+              </span>
+            </template>
+          </el-tree>
+        </div>
+
+        <div class="flex-1 min-w-0 flex flex-col rounded-xl border border-slate-100 bg-white overflow-hidden">
+          <div class="flex items-center gap-2 px-3 py-2 border-b border-slate-100">
+            <span class="text-sm text-slate-600 truncate flex-1">
+              {{ activeChapterTitle || '点击左侧章节预览对应页' }}
             </span>
-          </span>
-        </template>
-      </el-tree>
+            <el-button
+              v-if="previewUrl && viewerPage"
+              size="small"
+              link
+              :icon="View"
+              @click="openPreviewPage"
+            >新窗口打开</el-button>
+          </div>
+          <div class="flex-1 min-h-[56vh] bg-slate-50 relative">
+            <div v-if="previewLoading" class="absolute inset-0 flex items-center justify-center">
+              <el-icon class="is-loading text-slate-400" :size="28"><Loading /></el-icon>
+            </div>
+            <iframe
+              v-else-if="currentBook?.file_type === 'pdf' && viewerSrc"
+              :key="viewerKey"
+              :src="viewerSrc"
+              class="w-full h-full min-h-[56vh] border-0"
+              title="课本预览"
+            />
+            <div v-else class="absolute inset-0 flex items-center justify-center px-6">
+              <p class="text-sm text-slate-400 text-center">
+                {{ previewHint }}
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
     </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { watchDebounced } from '@vueuse/core'
 import { textbookApi } from '@/api/modules'
 import { useEducationStore } from '@/stores/education'
-import { ElMessage } from 'element-plus'
-import { Upload, View, List, Delete, Refresh } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Upload, View, List, Delete, Refresh, Loading } from '@element-plus/icons-vue'
 import type { Textbook, Chapter } from '@/types'
+import { isBusyStatus, useBusyPoll } from '@/utils/busyPoll'
 
 const edu = useEducationStore()
 const textbooks = ref<Textbook[]>([])
@@ -156,6 +204,12 @@ const showUpload = ref(false)
 const showChapters = ref(false)
 const chapters = ref<Chapter[]>([])
 const currentBook = ref<Textbook | null>(null)
+const previewUrl = ref('')
+const previewLoading = ref(false)
+const activeChapterId = ref<number | null>(null)
+const activeChapterTitle = ref('')
+const viewerPage = ref<number | null>(null)
+const viewerKey = ref(0)
 const uploading = ref(false)
 const reparsingId = ref<number | null>(null)
 const uploadFormRef = ref()
@@ -171,15 +225,28 @@ function onUploadGradeChange() {
   uploadForm.subject_id = null
 }
 
+function onUploadFileChange(f: { name?: string; raw?: File }) {
+  uploadForm.file = f.raw ?? null
+  const name = (f.raw?.name || f.name || "").trim()
+  if (!name) return
+  const stem = name.replace(/\.[^.]+$/, "").trim()
+  if (!stem) return
+  uploadForm.title = stem
+  uploadFormRef.value?.clearValidate?.('title')
+}
+
 function openUpload() {
   // 默认带入顶部全局选择的年级/科目
+  uploadForm.title = ''
+  uploadForm.file = null
   uploadForm.grade_id = edu.selectedGradeId || null
   uploadForm.subject_id = edu.selectedSubjectId || null
+  uploadRef.value?.clearFiles?.()
   showUpload.value = true
 }
 
-async function load() {
-  loading.value = true
+async function load(silent = false) {
+  if (!silent) loading.value = true
   try {
     const res = await textbookApi.list({
       grade_id: edu.selectedGradeId || undefined,
@@ -190,8 +257,14 @@ async function load() {
     total.value = res.total || 0
   } finally {
     loading.value = false
+    busyPoll.sync()
   }
 }
+
+const busyPoll = useBusyPoll(
+  () => load(true),
+  () => textbooks.value.some(t => isBusyStatus(t.parse_status)),
+)
 
 // 顶部全局年级/科目变化时自动刷新
 watchDebounced(() => [edu.selectedGradeId, edu.selectedSubjectId], () => { page.value = 1; load() }, { debounce: 250 })
@@ -213,21 +286,136 @@ async function handleUpload() {
     await textbookApi.upload(fd)
     ElMessage.success('上传成功，正在后台解析')
     showUpload.value = false
+    uploadForm.title = ''
+    uploadForm.file = null
+    uploadRef.value?.clearFiles?.()
     await load()
   } finally {
     uploading.value = false
   }
 }
 
+function chapterStartPage(ch: Chapter): number | null {
+  if (ch.page_start) return ch.page_start
+  for (const child of ch.children || []) {
+    const p = chapterStartPage(child)
+    if (p) return p
+  }
+  return null
+}
+
+const viewerSrc = computed(() => {
+  if (!previewUrl.value || !viewerPage.value) return ''
+  const base = previewUrl.value.split('#')[0]
+  return `${base}#page=${viewerPage.value}`
+})
+
+const previewHint = computed(() => {
+  if (currentBook.value && currentBook.value.file_type !== 'pdf') {
+    return '当前文件不是 PDF，无法按页预览。请使用「预览」在新窗口打开原文。'
+  }
+  if (!previewUrl.value) return '未能获取预览地址，请稍后重试或使用「预览」打开。'
+  return '点击左侧章节，右侧将跳转到对应页。'
+})
+
+function jumpToPage(page: number) {
+  viewerPage.value = page
+  viewerKey.value += 1
+}
+
+function onChapterClick(data: Chapter) {
+  activeChapterId.value = data.id
+  activeChapterTitle.value = data.title
+  const page = chapterStartPage(data)
+  if (!page) {
+    ElMessage.info('该章节没有页码，无法定位')
+    return
+  }
+  if (currentBook.value?.file_type !== 'pdf' || !previewUrl.value) return
+  jumpToPage(page)
+}
+
+function openPreviewPage() {
+  if (viewerSrc.value) window.open(viewerSrc.value, '_blank')
+}
+
+function resetChapterPreview() {
+  chapters.value = []
+  currentBook.value = null
+  previewUrl.value = ''
+  previewLoading.value = false
+  activeChapterId.value = null
+  activeChapterTitle.value = ''
+  viewerPage.value = null
+}
+
 async function previewBook(tb: Textbook) {
-  const res: any = await textbookApi.getPreviewUrl(tb.id)
+  const res = await textbookApi.getPreviewUrl(tb.id)
   window.open(res.url, '_blank')
 }
 
 async function viewChapters(tb: Textbook) {
   currentBook.value = tb
-  chapters.value = (await textbookApi.getChapters(tb.id)) as any
+  chapters.value = []
+  previewUrl.value = ''
+  viewerPage.value = null
+  activeChapterId.value = null
+  activeChapterTitle.value = ''
   showChapters.value = true
+  previewLoading.value = true
+  try {
+    const [chs, preview] = await Promise.all([
+      textbookApi.getChapters(tb.id),
+      tb.file_type === 'pdf' ? textbookApi.getPreviewUrl(tb.id) : Promise.resolve(null),
+    ])
+    chapters.value = chs
+    if (preview) previewUrl.value = preview.url
+    const first = chs[0]
+    if (first && preview) onChapterClick(first)
+  } catch {
+    ElMessage.error('加载章节或预览地址失败')
+  } finally {
+    previewLoading.value = false
+  }
+}
+
+async function confirmDeleteBook(tb: Textbook) {
+  let related = { courseware: 0, homework: 0, questions: 0 }
+  try {
+    related = await textbookApi.relatedCounts(tb.id)
+  } catch {
+    // 数量查询失败仍继续二次确认，避免挡删除
+  }
+  const summary = [
+    `课件 ${related.courseware} 个`,
+    `作业/试卷 ${related.homework} 份`,
+    `试题 ${related.questions} 道`,
+  ].join('、')
+  try {
+    await ElMessageBox.confirm(
+      `即将删除课本「${tb.title}」。\n关联的 ${summary} 都会被一并删除，且无法恢复。`,
+      '删除课本',
+      {
+        type: 'warning',
+        confirmButtonText: '继续删除',
+        cancelButtonText: '取消',
+        confirmButtonClass: 'el-button--danger',
+      },
+    )
+    await ElMessageBox.confirm(
+      '请再次确认：此操作不可撤销。确定删除该课本及全部关联课件、作业和试题吗？',
+      '二次确认',
+      {
+        type: 'error',
+        confirmButtonText: '确定删除',
+        cancelButtonText: '取消',
+        confirmButtonClass: 'el-button--danger',
+      },
+    )
+  } catch {
+    return
+  }
+  await deleteBook(tb.id)
 }
 
 async function deleteBook(id: number) {
@@ -240,7 +428,7 @@ async function reparseBook(tb: Textbook) {
   reparsingId.value = tb.id
   try {
     await textbookApi.reparse(tb.id)
-    ElMessage.success('已重新触发解析，请稍候刷新查看')
+    ElMessage.success('已重新触发解析')
     await load()
   } finally {
     reparsingId.value = null
@@ -259,3 +447,10 @@ function formatSize(bytes: number) {
 
 onMounted(load)
 </script>
+
+<style scoped>
+:deep(.el-dialog__body) {
+  padding-top: 8px;
+  padding-bottom: 16px;
+}
+</style>

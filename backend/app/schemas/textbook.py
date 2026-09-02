@@ -35,3 +35,9 @@ class TextbookCreate(BaseModel):
     title: str
     subject_id: int
     grade_id: int
+
+
+class TextbookRelatedCounts(BaseModel):
+    courseware: int = 0
+    homework: int = 0
+    questions: int = 0

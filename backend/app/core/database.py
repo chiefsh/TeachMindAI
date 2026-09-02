@@ -7,7 +7,7 @@ engine = create_async_engine(
     settings.DATABASE_URL,
     pool_pre_ping=True,
     pool_recycle=3600,
-    echo=settings.ENVIRONMENT == "development",
+    echo=False,
     # 关键：强制连接使用 utf8mb4，否则中文会被写成 "?"
     connect_args={"charset": "utf8mb4"},
 )

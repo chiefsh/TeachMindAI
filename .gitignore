@@ -3,6 +3,9 @@ node_modules/
 backend/.venv/
 .git/
 
+# Docker Compose 本地插值（根目录 .env，勿提交公网 IP / 密钥）
+/.env
+
 __pycache__/
 *.py[cod]
 *$py.class

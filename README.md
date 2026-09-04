@@ -306,11 +306,19 @@ docker compose down -v       # 删除 MySQL / MinIO / Neo4j 等全部数据
 | `celery_worker` | 消费 `ai_tasks`、`file_tasks` |
 | `mysql` / `redis` / `rabbitmq` / `minio` / `neo4j` / `qdrant` | 业务库、缓存、队列、对象存储、图谱、向量 |
 
+机器相关项（如浏览器访问 MinIO 的地址）写在仓库根目录 `.env`，不要改 `docker-compose.yml`。复制 `.env.example` 为 `.env` 后按本机填写；该文件已被 gitignore。
+
+```bash
+cp .env.example .env
+# 编辑 MINIO_PUBLIC_ENDPOINT=公网IP:9000
+docker compose up -d backend celery_worker
+```
+
 上线前建议：
 
 1. 修改 `SECRET_KEY`、`ENCRYPTION_KEY`，以及 MySQL / MinIO / RabbitMQ / Neo4j 密码（同时改 compose 的 `environment`）。
 2. 将 `ENABLE_REGIST` 设为 `false`，禁止公网自助注册（见 [注册开关](#注册开关-enable_regist)）。
-3. 后端、Celery **不要**把宿主机 `.env` 的 `localhost` 带进容器；compose 已用服务名（`mysql`、`redis` 等）注入。
+3. 后端、Celery **不要**把宿主机 `backend/.env` 的 `localhost` 带进容器；compose 已用服务名（`mysql`、`redis` 等）注入。根目录 `.env` 只做 compose 变量插值。
 4. 用反向代理终结 HTTPS，把 443 转到 `frontend:80`；WebSocket 路径 `/api/v1/ws/task/{task_id}` 需要升级头。
 5. 生产关闭后端 `--reload`，前端构建参数用生产 API 源（当前 nginx 已走容器网络 `backend:8000`）。
 6. 数据卷定期备份：`mysql_data`、`minio_data`、`neo4j_data`、`qdrant_data`。

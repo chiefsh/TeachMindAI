@@ -24,8 +24,6 @@
         <el-button-group>
           <el-button :loading="downloadingPage" :icon="Link" @click="downloadLessonPage">下载 HTML</el-button>
           <el-button :loading="exporting === 'pptx'" :icon="Download" @click="doExport('pptx')">导出 PPT</el-button>
-          <el-button :loading="exporting === 'docx'" :icon="Document" @click="doExport('docx')">导出 Word</el-button>
-          <el-button :loading="exporting === 'pdf'" :icon="Tickets" @click="doExport('pdf')">导出 PDF</el-button>
         </el-button-group>
       </div>
     </div>
@@ -300,7 +298,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { coursewareApi, textbookApi, interactionApi } from '@/api/modules'
 import {
-  ArrowLeft, ArrowRight, Loading, CircleClose, Download, Document, Tickets, FullScreen,
+  ArrowLeft, ArrowRight, Loading, CircleClose, Download, FullScreen,
   VideoPlay, Connection, Plus, CopyDocument, DataAnalysis, Delete, Refresh, Printer,
   Monitor, Link,
 } from '@element-plus/icons-vue'

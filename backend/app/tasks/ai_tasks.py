@@ -6,6 +6,7 @@ from app.services.ai_service import (
     do_ocr_grades,
     do_analyze_grades,
     do_analyze_questions,
+    do_optimize_courseware_slide,
 )
 import asyncio
 
@@ -28,6 +29,14 @@ def generate_courseware_task(self, courseware_id: int):
         _run(do_generate_courseware(courseware_id))
     except Exception as exc:
         raise self.retry(exc=exc, countdown=30)
+
+
+@celery_app.task(name="app.tasks.ai_tasks.optimize_courseware_slide_task", bind=True)
+def optimize_courseware_slide_task(
+    self, courseware_id: int, index: int, instruction: str, mode: str,
+):
+    # 不做自动重试：失败写 slide.edit_status，重试会覆盖教师中途改动
+    return _run(do_optimize_courseware_slide(courseware_id, index, instruction, mode))
 
 
 @celery_app.task(name="app.tasks.ai_tasks.generate_homework_task", bind=True, max_retries=2)

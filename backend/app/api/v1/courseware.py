@@ -17,7 +17,11 @@ from app.models.courseware import Courseware
 from app.models.homework import HomeworkPaper
 from app.models.interaction import CoursewareSession, InteractionRecord
 from app.models.textbook import ParseStatus, TextbookImage, Textbook
-from app.schemas.courseware import CoursewareCreate, CoursewareOut, CoursewareDetail, CoursewareUpdate
+from app.schemas.courseware import (
+    CoursewareCreate, CoursewareOut, CoursewareDetail, CoursewareUpdate,
+    SlidePatch, SlideInsert, SlideReorder, SlideOptimizeIn,
+)
+from app.services.courseware_theme import PAGE_LABELS, page_kind
 from app.api.deps import get_current_teacher
 from app.services.export_service import build_export
 
@@ -217,6 +221,208 @@ async def copy_courseware(
     await db.commit()
     await db.refresh(clone)
     return clone
+
+
+# ─── 按页编辑 ─────────────────────────────────────────────────────────
+
+_EDITABLE = (
+    "type", "title", "subtitle", "bullets", "content", "notes",
+    "prompt", "solution", "left_title", "right_title",
+)
+
+
+def _ensure_slides(cw: Courseware) -> list:
+    if not isinstance(cw.content, dict):
+        cw.content = {"meta": {"title": cw.title}, "slides": []}
+    slides = cw.content.get("slides")
+    if not isinstance(slides, list):
+        cw.content["slides"] = []
+        slides = cw.content["slides"]
+    return slides
+
+
+def _reindex(slides: list) -> None:
+    for i, s in enumerate(slides):
+        if isinstance(s, dict):
+            s["index"] = i + 1
+
+
+def _get_slide(cw: Courseware, index: int) -> dict:
+    slides = _ensure_slides(cw)
+    if index < 0 or index >= len(slides) or not isinstance(slides[index], dict):
+        raise HTTPException(status_code=404, detail="页面不存在")
+    return slides[index]
+
+
+def _blank_slide(kind: str) -> dict:
+    k = page_kind(kind)
+    return {
+        "index": 1,
+        "type": k,
+        "title": PAGE_LABELS.get(k, "新页面"),
+        "subtitle": "",
+        "bullets": [],
+        "content": "",
+        "notes": "",
+    }
+
+
+def _require_editable(cw: Courseware) -> None:
+    if cw.gen_status != ParseStatus.done or not cw.content:
+        raise HTTPException(status_code=400, detail="课件尚未生成完成，无法编辑页面")
+
+
+def _any_slide_optimizing(slides: list) -> bool:
+    return any(isinstance(s, dict) and s.get("edit_status") == "processing" for s in slides)
+
+
+async def _has_open_session(cw_id: int, db: AsyncSession) -> bool:
+    n = (
+        await db.execute(
+            select(func.count()).select_from(CoursewareSession).where(
+                CoursewareSession.courseware_id == cw_id,
+                CoursewareSession.is_open == True,  # noqa: E712
+            )
+        )
+    ).scalar() or 0
+    return n > 0
+
+
+async def _require_structure_ok(cw: Courseware, db: AsyncSession) -> None:
+    if await _has_open_session(cw.id, db):
+        raise HTTPException(status_code=409, detail="有进行中的课堂互动，无法增删或重排页面")
+    if _any_slide_optimizing(_ensure_slides(cw)):
+        raise HTTPException(status_code=409, detail="有页面正在 AI 优化，请稍后再改结构")
+
+
+@router.put("/{cw_id}/slides/reorder")
+async def reorder_slides(
+    cw_id: int,
+    data: SlideReorder,
+    teacher: Teacher = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+):
+    cw = await _get_or_404(cw_id, teacher.id, db)
+    _require_editable(cw)
+    await _require_structure_ok(cw, db)
+    slides = _ensure_slides(cw)
+    n = len(slides)
+    if sorted(data.order) != list(range(n)):
+        raise HTTPException(status_code=400, detail="排序必须覆盖全部页面且不重复")
+    cw.content["slides"] = [slides[i] for i in data.order]
+    _reindex(cw.content["slides"])
+    flag_modified(cw, "content")
+    await db.commit()
+    return {"count": n}
+
+
+@router.post("/{cw_id}/slides")
+async def insert_slide(
+    cw_id: int,
+    data: SlideInsert,
+    teacher: Teacher = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+):
+    cw = await _get_or_404(cw_id, teacher.id, db)
+    _require_editable(cw)
+    await _require_structure_ok(cw, db)
+    slides = _ensure_slides(cw)
+    at = len(slides) if data.index is None else data.index
+    at = max(0, min(at, len(slides)))
+    slide = _blank_slide(data.type)
+    slides.insert(at, slide)
+    _reindex(slides)
+    flag_modified(cw, "content")
+    await db.commit()
+    return {"index": at, "slide": slide}
+
+
+@router.get("/{cw_id}/slides/{index}")
+async def get_slide(
+    cw_id: int,
+    index: int,
+    teacher: Teacher = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+):
+    cw = await _get_or_404(cw_id, teacher.id, db)
+    slide = _get_slide(cw, index)
+    return {
+        "index": index,
+        "edit_status": slide.get("edit_status") or "idle",
+        "task_id": slide.get("task_id"),
+        "slide": slide,
+    }
+
+
+@router.patch("/{cw_id}/slides/{index}")
+async def patch_slide(
+    cw_id: int,
+    index: int,
+    data: SlidePatch,
+    teacher: Teacher = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+):
+    cw = await _get_or_404(cw_id, teacher.id, db)
+    _require_editable(cw)
+    slide = _get_slide(cw, index)
+    if slide.get("edit_status") == "processing":
+        raise HTTPException(status_code=409, detail="本页正在 AI 优化，请稍后再保存")
+    payload = data.model_dump(exclude_unset=True)
+    if "type" in payload and payload["type"]:
+        payload["type"] = page_kind(payload["type"])
+    for k, v in payload.items():
+        if k in _EDITABLE:
+            slide[k] = v
+    flag_modified(cw, "content")
+    await db.commit()
+    return {"index": index, "slide": slide}
+
+
+@router.delete("/{cw_id}/slides/{index}", status_code=204)
+async def delete_slide(
+    cw_id: int,
+    index: int,
+    teacher: Teacher = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+):
+    cw = await _get_or_404(cw_id, teacher.id, db)
+    _require_editable(cw)
+    await _require_structure_ok(cw, db)
+    slides = _ensure_slides(cw)
+    if index < 0 or index >= len(slides):
+        raise HTTPException(status_code=404, detail="页面不存在")
+    if len(slides) <= 1:
+        raise HTTPException(status_code=400, detail="至少保留一页")
+    slides.pop(index)
+    _reindex(slides)
+    flag_modified(cw, "content")
+    await db.commit()
+
+
+@router.post("/{cw_id}/slides/{index}/optimize")
+async def optimize_slide(
+    cw_id: int,
+    index: int,
+    data: SlideOptimizeIn,
+    teacher: Teacher = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+):
+    cw = await _get_or_404(cw_id, teacher.id, db)
+    _require_editable(cw)
+    slide = _get_slide(cw, index)
+    if slide.get("edit_status") == "processing":
+        raise HTTPException(status_code=409, detail="本页正在优化，请稍候")
+    slide["edit_status"] = "processing"
+    slide["edit_error"] = None
+    flag_modified(cw, "content")
+    await db.commit()
+
+    from app.tasks.ai_tasks import optimize_courseware_slide_task
+    task = optimize_courseware_slide_task.delay(cw.id, index, data.instruction, data.mode)
+    slide["task_id"] = task.id
+    flag_modified(cw, "content")
+    await db.commit()
+    return {"index": index, "task_id": task.id, "edit_status": "processing"}
 
 
 def _collect_image_ids(content: dict) -> list[int]:

@@ -1,4 +1,5 @@
 """AI 生成服务：课件、作业、OCR、成绩分析"""
+import copy
 import json
 import logging
 from sqlalchemy import select
@@ -725,6 +726,193 @@ async def _generate_interactive_html_for_point(
         html = f'<div class="stage">{html}</div>'
 
     return html
+
+
+# ─── 单页 AI 优化（不走整课生成，不改 gen_status） ─────────────────────
+
+_OPTIMIZE_HINTS = {
+    "rewrite": "改写本页，语言更适合课堂讲授，保留原意与知识点，不要新增无关内容。",
+    "shorten": "压缩本页，只留最核心的要点，适合老师口述；句子短、条目少。",
+    "expand": "扩充本页，补充解释、过渡语和生活化例子，适合学生阅读。",
+    "examples": "为本页补充生活化例子或例题解析；保留原有知识点，可改写 bullets/content/prompt/solution。",
+    "notes": "只重写 notes 教师讲稿（课堂怎么讲、提问、板书提示），不要改其他字段。",
+    "interactive": "重新生成本页互动 HTML。",
+}
+
+_SLIDE_TEXT_KEYS = (
+    "title", "subtitle", "bullets", "content", "notes",
+    "prompt", "solution", "left_title", "right_title", "columns", "steps",
+)
+
+
+def _slide_prompt_payload(slide: dict) -> dict:
+    return {k: slide.get(k) for k in ("type", *_SLIDE_TEXT_KEYS)}
+
+
+async def _mark_slide_edit(courseware_id: int, index: int, status: str, error: str | None = None):
+    from sqlalchemy.orm.attributes import flag_modified
+    async with AsyncSessionLocal() as db:
+        cw = (await db.execute(select(Courseware).where(Courseware.id == courseware_id))).scalar_one_or_none()
+        if not cw or not isinstance(cw.content, dict):
+            return
+        slides = cw.content.get("slides") or []
+        if index < 0 or index >= len(slides) or not isinstance(slides[index], dict):
+            return
+        slides[index]["edit_status"] = status
+        if error:
+            slides[index]["edit_error"] = error[:500]
+        else:
+            slides[index].pop("edit_error", None)
+        if status != "processing":
+            slides[index].pop("task_id", None)
+        flag_modified(cw, "content")
+        await db.commit()
+
+
+async def do_optimize_courseware_slide(
+    courseware_id: int, index: int, instruction: str, mode: str,
+):
+    """只重写一页。整课 gen_status 保持不变。"""
+    from sqlalchemy.orm.attributes import flag_modified
+    from app.services.courseware_theme import page_kind
+
+    async with AsyncSessionLocal() as db:
+        cw = (await db.execute(select(Courseware).where(Courseware.id == courseware_id))).scalar_one_or_none()
+        if not cw or not isinstance(cw.content, dict):
+            return
+        slides = cw.content.get("slides") or []
+        if index < 0 or index >= len(slides) or not isinstance(slides[index], dict):
+            slides_err = "页面不存在"
+            # 仍尝试把状态写回（若页还在）
+            logger.warning("课件 %s 单页优化：%s index=%s", courseware_id, slides_err, index)
+            return
+        cfg = await _get_default_llm(cw.teacher_id, db)
+        if not cfg:
+            slides[index]["edit_status"] = "failed"
+            slides[index]["edit_error"] = "未配置默认大模型"
+            slides[index].pop("task_id", None)
+            flag_modified(cw, "content")
+            await db.commit()
+            return
+
+        slide_snap = copy.deepcopy(slides[index])
+        title = cw.title
+        subject_name = subject_block = subject_interactive = ""
+        if cw.textbook_id:
+            tb = (await db.execute(select(Textbook).where(Textbook.id == cw.textbook_id))).scalar_one_or_none()
+            if tb:
+                subject_name, subject_block, subject_interactive = await _resolve_subject_prompt(
+                    db, cw.teacher_id, tb.subject_id,
+                )
+
+    try:
+        updates = await _rewrite_one_slide(
+            cfg, title, slide_snap, index, instruction, mode,
+            subject_name, subject_block, subject_interactive,
+        )
+    except Exception as e:
+        logger.exception("课件 %s 第 %s 页优化失败：%s", courseware_id, index + 1, e)
+        await _mark_slide_edit(courseware_id, index, "failed", str(e))
+        return
+
+    async with AsyncSessionLocal() as db:
+        cw = (await db.execute(select(Courseware).where(Courseware.id == courseware_id))).scalar_one_or_none()
+        if not cw or not isinstance(cw.content, dict):
+            return
+        slides = cw.content.get("slides") or []
+        if index < 0 or index >= len(slides) or not isinstance(slides[index], dict):
+            return
+        slide = slides[index]
+        if mode == "notes":
+            if isinstance(updates.get("notes"), str):
+                slide["notes"] = updates["notes"]
+        elif mode == "interactive":
+            html = updates.get("html") or ""
+            if html:
+                slide["html"] = html
+                slide["type"] = "interactive"
+        else:
+            for k in _SLIDE_TEXT_KEYS:
+                if k in updates and updates[k] is not None:
+                    slide[k] = updates[k]
+            if updates.get("title"):
+                slide["title"] = updates["title"]
+            kind = page_kind(slide.get("type"))
+            slide["type"] = kind
+        slide["edit_status"] = "idle"
+        slide.pop("task_id", None)
+        slide.pop("edit_error", None)
+        flag_modified(cw, "content")
+        await db.commit()
+
+
+async def _rewrite_one_slide(
+    cfg, cw_title: str, slide: dict, index: int, instruction: str, mode: str,
+    subject_name: str, subject_block: str, subject_interactive: str,
+) -> dict:
+    if mode == "interactive":
+        from app.services import skill_service
+        from app.services.courseware_components import build_interactive_prompt
+
+        point = {
+            "name": slide.get("title") or f"第{index + 1}页",
+            "plain_explanation": slide.get("content") or "",
+            "core_concepts": slide.get("bullets") if isinstance(slide.get("bullets"), list) else [],
+            "common_mistakes": [],
+            "life_example": slide.get("prompt") or "",
+            "activity_goal": instruction or slide.get("subtitle") or "通过互动练习巩固本页知识点",
+        }
+        html = ""
+        try:
+            html = await skill_service.maybe_generate_skill_html(cfg, point, subject_name)
+        except Exception as e:
+            logger.warning("单页优化 skill 失败，回退 LLM：%s", e)
+        if not html:
+            class _Cw:
+                title = cw_title
+                id = 0
+            html = await _generate_interactive_html_for_point(
+                cfg=cfg, cw=_Cw(), point=point, point_idx=index + 1,
+                subject_name=subject_name, image_catalog="",
+                interactive_hint=build_interactive_prompt(subject_interactive),
+            )
+        if not html:
+            raise ValueError("未能生成互动页面")
+        return {"html": html}
+
+    hint = _OPTIMIZE_HINTS.get(mode, _OPTIMIZE_HINTS["rewrite"])
+    extra = f"\n教师补充要求：{instruction}" if instruction else ""
+    subject_hint = ""
+    if subject_block:
+        subject_hint = f"\n学科：{subject_name or '通用'}\n{subject_block[:1200]}"
+    payload = json.dumps(_slide_prompt_payload(slide), ensure_ascii=False)
+    schema_note = (
+        '{"title":"","subtitle":"","bullets":[""],"content":"","notes":"","prompt":"","solution":""}'
+        if mode != "notes"
+        else '{"notes":"教师讲稿全文"}'
+    )
+    prompt = f"""你是中小学课件编辑。只改当前这一页，不要输出整课。
+
+课件标题：{cw_title}
+页码：第 {index + 1} 页
+任务：{hint}{extra}{subject_hint}
+
+当前页 JSON：
+{payload}
+
+【输出】只输出一个 JSON 对象，不要 markdown 围栏，不要解释。字段：
+{schema_note}
+- 保留原知识点，语言口语化、适合课堂。
+- bullets 不超过 8 条；content 用 markdown，公式用 $...$。
+- 不要输出 html、images、type、index。
+"""
+    max_tok = max(cfg.max_tokens or 0, 2500)
+    resp = await _call_llm(cfg, [{"role": "user", "content": prompt}], max_tokens=max_tok)
+    raw = _resp_content(resp)
+    obj = _parse_json_object(raw)
+    if not obj:
+        raise ValueError("模型未返回有效 JSON")
+    return obj
 
 
 async def _generate_lesson_content(

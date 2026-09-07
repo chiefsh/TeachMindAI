@@ -20,10 +20,11 @@ const PAGE_ALIASES: Record<string, PageKind> = {
   activity: 'interactive', quiz: 'exercise', board: 'summary',
 }
 
-const KINDS: PageKind[] = [
+export const PAGE_KINDS: PageKind[] = [
   'cover', 'objectives', 'knowledge', 'example', 'interactive',
   'comparison', 'process', 'summary', 'exercise', 'homework',
 ]
+const KINDS = PAGE_KINDS
 
 export function normalizePageKind(type?: string): PageKind {
   const t = (type || 'knowledge').trim()

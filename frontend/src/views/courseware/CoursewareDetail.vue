@@ -86,81 +86,148 @@
       <!-- 课件内容 -->
       <div class="flex gap-4">
         <!-- 幻灯片缩略图列表 -->
-        <div class="w-52 flex-shrink-0 flex flex-col gap-2 overflow-y-auto max-h-[calc(100vh-160px)]">
-          <div
-            v-for="(slide, i) in slides" :key="i"
-            class="p-2.5 rounded-lg border-2 cursor-pointer transition-all text-xs"
-            :class="activeSlide === i ? 'border-primary-500 bg-primary-50' : 'border-slate-100 bg-white hover:border-slate-300'"
-            @click="activeSlide = i"
-          >
-            <div class="flex items-center gap-1.5">
-              <span class="text-slate-400">{{ i + 1 }}</span>
-              <el-tag size="small" :type="slideTypeTag(slide.type)">{{ typeLabel(slide.type) }}</el-tag>
+        <div class="w-52 flex-shrink-0 flex flex-col gap-2 max-h-[calc(100vh-160px)]">
+          <div class="flex-1 overflow-y-auto flex flex-col gap-2 pr-0.5">
+            <div
+              v-for="(slide, i) in slides" :key="i"
+              class="p-2.5 rounded-lg border-2 cursor-pointer transition-all text-xs"
+              :class="activeSlide === i ? 'border-primary-500 bg-primary-50' : 'border-slate-100 bg-white hover:border-slate-300'"
+              @click="selectSlide(i)"
+            >
+              <div class="flex items-center gap-1.5">
+                <span class="text-slate-400">{{ i + 1 }}</span>
+                <el-tag size="small" :type="slideTypeTag(slide.type)">{{ typeLabel(slide.type) }}</el-tag>
+                <el-icon v-if="slide.edit_status === 'processing'" class="text-primary-500 animate-spin ml-auto"><Loading /></el-icon>
+                <span v-else-if="slide.edit_status === 'failed'" class="ml-auto w-1.5 h-1.5 rounded-full bg-red-500" title="优化失败" />
+              </div>
+              <p class="font-medium text-slate-700 truncate mt-1">{{ slide.title || `第 ${i+1} 页` }}</p>
             </div>
-            <p class="font-medium text-slate-700 truncate mt-1">{{ slide.title || `第 ${i+1} 页` }}</p>
           </div>
+          <el-button size="small" :icon="Plus" :disabled="structureLocked" @click="insertSlide()">插入页面</el-button>
         </div>
 
-        <!-- 幻灯片预览 -->
-        <div class="flex-1 card min-h-[520px] flex flex-col">
-          <div v-if="currentSlide" class="flex-1">
-            <div class="flex items-center gap-2 mb-4 pb-4 border-b border-slate-100">
-              <span class="text-xs text-slate-400">{{ activeSlide + 1 }} / {{ slides.length }}</span>
-              <el-tag size="small" :type="slideTypeTag(currentSlide.type)">{{ typeLabel(currentSlide.type) }}</el-tag>
-              <div class="ml-2">
-                <h2 class="text-lg font-bold text-slate-800">{{ currentSlide.title }}</h2>
-                <p v-if="currentSlide.subtitle" class="text-sm text-slate-500">{{ currentSlide.subtitle }}</p>
-              </div>
-            </div>
-
-            <!-- 要点 -->
-            <ul v-if="currentSlide.bullets?.length" class="mb-4 space-y-1.5">
-              <li v-for="(b, i) in currentSlide.bullets" :key="i" class="flex gap-2 text-slate-700">
-                <span class="text-primary-500 mt-0.5">▸</span><span>{{ b }}</span>
-              </li>
-            </ul>
-
-            <!-- 正文（markdown） -->
-            <div
-              v-if="currentSlide.content"
-              class="prose prose-sm max-w-none text-slate-700 leading-relaxed cw-content"
-              v-html="renderMarkdown(currentSlide.content)"
-            ></div>
-
-            <!-- 课本插图 -->
-            <div v-if="slideImages(currentSlide).length" class="mt-4 flex flex-wrap gap-3">
-              <img
-                v-for="url in slideImages(currentSlide)" :key="url"
-                :src="url"
-                class="max-h-56 rounded-lg border border-slate-200 object-contain bg-slate-50"
-              />
-            </div>
-
-            <!-- HTML 互动动画 -->
-            <div v-if="currentSlide.html" class="mt-5">
-              <div class="flex items-center justify-between mb-2">
-                <p class="text-xs font-semibold text-violet-600">互动动画 / 可视化</p>
-                <el-button size="small" text :icon="FullScreen" @click="openFullscreen(currentSlide.html)">全屏</el-button>
-              </div>
-              <iframe
-                v-if="currentBlobUrl"
-                :src="currentBlobUrl"
-                sandbox="allow-scripts"
-                class="w-full h-[460px] rounded-lg border border-slate-200 bg-white"
-              ></iframe>
-            </div>
-
-            <!-- 教师讲稿 -->
-            <div v-if="currentSlide.notes" class="mt-6 p-3 bg-amber-50 border border-amber-200 rounded-lg">
-              <p class="text-xs font-semibold text-amber-700 mb-1">教师讲稿 / 备注</p>
-              <p class="text-sm text-amber-800 whitespace-pre-wrap">{{ currentSlide.notes }}</p>
-            </div>
+        <!-- 幻灯片预览 / 编辑 -->
+        <div class="flex-1 card min-h-[520px] flex flex-col relative">
+          <div
+            v-if="currentBusy"
+            class="absolute inset-0 z-10 bg-white/80 rounded-xl flex flex-col items-center justify-center"
+          >
+            <el-icon class="text-4xl text-primary-500 animate-spin mb-2"><Loading /></el-icon>
+            <p class="text-sm text-slate-600 font-medium">AI 正在优化本页…</p>
+            <p class="text-xs text-slate-400 mt-1">整课状态不受影响，可先看其他页</p>
           </div>
 
-          <!-- 翻页 -->
+          <div v-if="currentSlide" class="flex-1">
+            <div class="flex items-start gap-2 mb-4 pb-4 border-b border-slate-100">
+              <span class="text-xs text-slate-400 mt-2">{{ activeSlide + 1 }} / {{ slides.length }}</span>
+              <el-tag size="small" class="mt-1.5" :type="slideTypeTag(currentSlide.type)">{{ typeLabel(currentSlide.type) }}</el-tag>
+              <div class="ml-1 min-w-0 flex-1">
+                <h2 class="text-lg font-bold text-slate-800 truncate">{{ currentSlide.title }}</h2>
+                <p v-if="currentSlide.subtitle" class="text-sm text-slate-500 truncate">{{ currentSlide.subtitle }}</p>
+              </div>
+              <div class="flex items-center gap-1 flex-shrink-0">
+                <el-button size="small" :type="panelMode === 'edit' ? 'primary' : ''" :icon="EditPen" @click="toggleEdit">编辑</el-button>
+                <el-button size="small" :type="panelMode === 'ai' ? 'primary' : ''" :icon="MagicStick" @click="toggleAi">AI 优化</el-button>
+                <el-button size="small" :icon="ArrowUp" :disabled="structureLocked || activeSlide === 0" title="上移" @click="moveSlide(-1)" />
+                <el-button size="small" :icon="ArrowDown" :disabled="structureLocked || activeSlide === slides.length - 1" title="下移" @click="moveSlide(1)" />
+                <el-button size="small" :icon="Delete" :disabled="structureLocked || slides.length <= 1" title="删除本页" @click="removeSlide" />
+              </div>
+            </div>
+
+            <!-- 编辑表单 -->
+            <div v-if="panelMode === 'edit'" class="space-y-3">
+              <div class="grid grid-cols-2 gap-3">
+                <el-select v-model="draft.type" size="small" class="w-full" @change="markDirty">
+                  <el-option v-for="k in pageKinds" :key="k" :label="typeLabel(k)" :value="k" />
+                </el-select>
+                <el-input v-model="draft.subtitle" size="small" placeholder="副标题（可选）" @input="markDirty" />
+              </div>
+              <el-input v-model="draft.title" placeholder="页面标题" @input="markDirty" />
+              <div>
+                <p class="text-xs text-slate-500 mb-1">要点（每行一条）</p>
+                <el-input v-model="draft.bulletsText" type="textarea" :rows="4" placeholder="每行一条要点" @input="markDirty" />
+              </div>
+              <div>
+                <p class="text-xs text-slate-500 mb-1">正文（支持 Markdown）</p>
+                <el-input v-model="draft.content" type="textarea" :rows="8" @input="markDirty" />
+              </div>
+              <div v-if="showExampleFields" class="grid grid-cols-1 gap-3">
+                <el-input v-model="draft.prompt" type="textarea" :rows="2" placeholder="题干 / 情境" @input="markDirty" />
+                <el-input v-model="draft.solution" type="textarea" :rows="3" placeholder="解析 / 答案" @input="markDirty" />
+              </div>
+              <div>
+                <p class="text-xs text-slate-500 mb-1">教师讲稿</p>
+                <el-input v-model="draft.notes" type="textarea" :rows="3" @input="markDirty" />
+              </div>
+              <p v-if="currentSlide.html" class="text-xs text-slate-400">互动 HTML 请用「AI 优化 → 重做互动页」重新生成，不在此处手改。</p>
+              <div class="flex justify-end gap-2">
+                <el-button size="small" @click="cancelEdit">取消</el-button>
+                <el-button size="small" type="primary" :loading="saving" :disabled="!dirty" @click="saveSlide">保存本页</el-button>
+              </div>
+            </div>
+
+            <!-- AI 优化 -->
+            <div v-else-if="panelMode === 'ai'" class="space-y-3">
+              <el-radio-group v-model="optMode" size="small">
+                <el-radio-button value="rewrite">改写</el-radio-button>
+                <el-radio-button value="shorten">精简</el-radio-button>
+                <el-radio-button value="expand">扩充</el-radio-button>
+                <el-radio-button value="examples">补例子</el-radio-button>
+                <el-radio-button value="notes">只改讲稿</el-radio-button>
+                <el-radio-button value="interactive">重做互动页</el-radio-button>
+              </el-radio-group>
+              <el-input
+                v-model="optInstruction"
+                type="textarea"
+                :rows="3"
+                placeholder="可选：补充要求，例如「语气再口语一点」「加一道选择题」"
+              />
+              <div class="flex justify-end">
+                <el-button type="primary" :icon="MagicStick" :loading="optimizing" @click="runOptimize">开始优化本页</el-button>
+              </div>
+            </div>
+
+            <!-- 只读预览 -->
+            <template v-else>
+              <ul v-if="currentSlide.bullets?.length" class="mb-4 space-y-1.5">
+                <li v-for="(b, i) in currentSlide.bullets" :key="i" class="flex gap-2 text-slate-700">
+                  <span class="text-primary-500 mt-0.5">▸</span><span>{{ b }}</span>
+                </li>
+              </ul>
+              <div
+                v-if="currentSlide.content"
+                class="prose prose-sm max-w-none text-slate-700 leading-relaxed cw-content"
+                v-html="renderMarkdown(currentSlide.content)"
+              ></div>
+              <div v-if="slideImages(currentSlide).length" class="mt-4 flex flex-wrap gap-3">
+                <img
+                  v-for="url in slideImages(currentSlide)" :key="url"
+                  :src="url"
+                  class="max-h-56 rounded-lg border border-slate-200 object-contain bg-slate-50"
+                />
+              </div>
+              <div v-if="currentSlide.html" class="mt-5">
+                <div class="flex items-center justify-between mb-2">
+                  <p class="text-xs font-semibold text-violet-600">互动动画 / 可视化</p>
+                  <el-button size="small" text :icon="FullScreen" @click="openFullscreen(currentSlide.html)">全屏</el-button>
+                </div>
+                <iframe
+                  v-if="currentBlobUrl"
+                  :src="currentBlobUrl"
+                  sandbox="allow-scripts"
+                  class="w-full h-[460px] rounded-lg border border-slate-200 bg-white"
+                ></iframe>
+              </div>
+              <div v-if="currentSlide.notes" class="mt-6 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                <p class="text-xs font-semibold text-amber-700 mb-1">教师讲稿 / 备注</p>
+                <p class="text-sm text-amber-800 whitespace-pre-wrap">{{ currentSlide.notes }}</p>
+              </div>
+            </template>
+          </div>
+
           <div class="flex items-center justify-between pt-4 border-t border-slate-100 mt-4">
-            <el-button :disabled="activeSlide === 0" @click="activeSlide--" :icon="ArrowLeft">上一页</el-button>
-            <el-button :disabled="activeSlide === slides.length - 1" @click="activeSlide++" type="primary">
+            <el-button :disabled="activeSlide === 0" @click="selectSlide(activeSlide - 1)" :icon="ArrowLeft">上一页</el-button>
+            <el-button :disabled="activeSlide === slides.length - 1" @click="selectSlide(activeSlide + 1)" type="primary">
               下一页<el-icon class="ml-1"><ArrowRight /></el-icon>
             </el-button>
           </div>
@@ -307,6 +374,17 @@
         </el-tab-pane>
       </el-tabs>
     </el-dialog>
+
+    <el-dialog v-model="showInsert" title="插入页面" width="400px">
+      <p class="text-sm text-slate-500 mb-3">新页会插在当前页后面，保存后再用 AI 优化或手写内容。</p>
+      <el-select v-model="insertType" class="w-full">
+        <el-option v-for="k in pageKinds" :key="k" :label="typeLabel(k)" :value="k" />
+      </el-select>
+      <template #footer>
+        <el-button @click="showInsert = false">取消</el-button>
+        <el-button type="primary" :loading="inserting" @click="confirmInsert">插入</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -316,16 +394,16 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { coursewareApi, textbookApi, interactionApi } from '@/api/modules'
 import {
-  ArrowLeft, ArrowRight, Loading, CircleClose, Download, FullScreen,
+  ArrowLeft, ArrowRight, ArrowUp, ArrowDown, Loading, CircleClose, Download, FullScreen,
   VideoPlay, Connection, Plus, CopyDocument, DataAnalysis, Delete, Refresh, EditPen,
-  Monitor, Link,
+  Monitor, Link, MagicStick,
 } from '@element-plus/icons-vue'
 import QRCode from 'qrcode'
 import { createIframeBlob } from '@/utils/coursewareFrame'
 import { buildRevealDeck } from '@/utils/revealDeck'
 import { buildLessonPage } from '@/utils/lessonPage'
 import { getTheme } from '@/utils/coursewareTheme'
-import { pageTypeLabel } from '@/utils/coursewarePages'
+import { pageTypeLabel, PAGE_KINDS, normalizePageKind } from '@/utils/coursewarePages'
 import { useEducationStore } from '@/stores/education'
 import { renderMarkdown } from '@/utils/markdown'
 import type { Courseware, CoursewareSession, SessionBoard } from '@/types'
@@ -340,6 +418,29 @@ const copying = ref(false)
 const imageMap = ref<Record<string, string>>({})
 const showFs = ref(false)
 let pollTimer: ReturnType<typeof setInterval> | null = null
+let optTimer: ReturnType<typeof setInterval> | null = null
+
+type PanelMode = 'view' | 'edit' | 'ai'
+const panelMode = ref<PanelMode>('view')
+const pageKinds = PAGE_KINDS
+const dirty = ref(false)
+const saving = ref(false)
+const optimizing = ref(false)
+const optMode = ref('rewrite')
+const optInstruction = ref('')
+const showInsert = ref(false)
+const insertType = ref('knowledge')
+const inserting = ref(false)
+const draft = ref({
+  type: 'knowledge',
+  title: '',
+  subtitle: '',
+  bulletsText: '',
+  content: '',
+  notes: '',
+  prompt: '',
+  solution: '',
+})
 
 // ──────────────────────────────────────────────────
 // Blob URL 统一管理：避免 srcdoc 内嵌 script 标签被浏览器解析器截断的 bug
@@ -565,6 +666,198 @@ const slides = computed<any[]>(() => normalizedContent.value?.slides || [])
 const meta = computed<any>(() => normalizedContent.value?.meta || {})
 const hasMeta = computed(() => !!(meta.value.objectives?.length || meta.value.key_points?.length || meta.value.difficulties?.length))
 const currentSlide = computed(() => slides.value[activeSlide.value] || null)
+const currentBusy = computed(() => currentSlide.value?.edit_status === 'processing')
+const showExampleFields = computed(() => {
+  const t = normalizePageKind(draft.value.type)
+  return t === 'example' || t === 'exercise' || t === 'homework'
+})
+const structureLocked = computed(() =>
+  sessions.value.some(s => s.is_open) || slides.value.some((s: any) => s.edit_status === 'processing'),
+)
+
+function markDirty() { dirty.value = true }
+
+function syncDraft(s: any) {
+  draft.value = {
+    type: normalizePageKind(s?.type),
+    title: s?.title || '',
+    subtitle: s?.subtitle || '',
+    bulletsText: (s?.bullets || []).join('\n'),
+    content: s?.content || '',
+    notes: s?.notes || '',
+    prompt: s?.prompt || '',
+    solution: s?.solution || '',
+  }
+  dirty.value = false
+}
+
+async function selectSlide(i: number) {
+  if (i === activeSlide.value) return
+  if (dirty.value) {
+    try {
+      await ElMessageBox.confirm('当前页有未保存的修改，切换将丢弃。', '提示', { type: 'warning' })
+    } catch { return }
+  }
+  activeSlide.value = i
+  panelMode.value = 'view'
+  dirty.value = false
+  if (currentSlide.value) syncDraft(currentSlide.value)
+}
+
+function toggleEdit() {
+  if (panelMode.value === 'edit') {
+    if (dirty.value) {
+      ElMessageBox.confirm('放弃未保存的修改？', '提示', { type: 'warning' })
+        .then(() => { panelMode.value = 'view'; dirty.value = false; if (currentSlide.value) syncDraft(currentSlide.value) })
+        .catch(() => {})
+      return
+    }
+    panelMode.value = 'view'
+    return
+  }
+  if (currentSlide.value) syncDraft(currentSlide.value)
+  panelMode.value = 'edit'
+}
+
+function toggleAi() {
+  panelMode.value = panelMode.value === 'ai' ? 'view' : 'ai'
+}
+
+function cancelEdit() {
+  if (currentSlide.value) syncDraft(currentSlide.value)
+  panelMode.value = 'view'
+}
+
+function applySlide(index: number, slide: any) {
+  if (!cw.value || !slide) return
+  const content: any = { ...(cw.value.content || {}) }
+  const arr = [...(content.slides || [])]
+  if (!arr[index]) return
+  arr[index] = slide
+  content.slides = arr
+  cw.value = { ...cw.value, content }
+}
+
+async function saveSlide() {
+  if (!cw.value || !currentSlide.value) return
+  saving.value = true
+  try {
+    const payload = {
+      type: draft.value.type,
+      title: draft.value.title,
+      subtitle: draft.value.subtitle,
+      bullets: draft.value.bulletsText.split('\n').map(t => t.trim()).filter(Boolean),
+      content: draft.value.content,
+      notes: draft.value.notes,
+      prompt: draft.value.prompt,
+      solution: draft.value.solution,
+    }
+    const res = await coursewareApi.patchSlide(cw.value.id, activeSlide.value, payload)
+    applySlide(res.index, res.slide)
+    dirty.value = false
+    panelMode.value = 'view'
+    ElMessage.success('本页已保存')
+  } catch { /* interceptor */ } finally {
+    saving.value = false
+  }
+}
+
+function stopOptPoll() {
+  if (optTimer) { clearInterval(optTimer); optTimer = null }
+}
+
+function startOptPoll(index: number) {
+  stopOptPoll()
+  optTimer = setInterval(async () => {
+    if (!cw.value) return
+    try {
+      const st = await coursewareApi.getSlide(cw.value.id, index)
+      applySlide(index, st.slide)
+      const status = st.edit_status || st.slide?.edit_status
+      if (status === 'processing' || status === 'pending') return
+      stopOptPoll()
+      optimizing.value = false
+      if (status === 'failed') {
+        ElMessage.error(st.slide?.edit_error || '本页 AI 优化失败')
+      } else {
+        ElMessage.success('本页已优化')
+        panelMode.value = 'view'
+        resolveImages()
+      }
+    } catch { /* 下次再试 */ }
+  }, 2500)
+}
+
+async function runOptimize() {
+  if (!cw.value) return
+  optimizing.value = true
+  try {
+    const idx = activeSlide.value
+    await coursewareApi.optimizeSlide(cw.value.id, idx, {
+      instruction: optInstruction.value,
+      mode: optMode.value,
+    })
+    applySlide(idx, { ...currentSlide.value, edit_status: 'processing' })
+    startOptPoll(idx)
+  } catch {
+    optimizing.value = false
+  }
+}
+
+async function insertSlide() {
+  insertType.value = 'knowledge'
+  showInsert.value = true
+}
+
+async function confirmInsert() {
+  if (!cw.value) return
+  inserting.value = true
+  try {
+    const index = activeSlide.value + 1
+    const res = await coursewareApi.insertSlide(cw.value.id, { index, type: insertType.value })
+    dirty.value = false
+    showInsert.value = false
+    await load()
+    activeSlide.value = res.index
+    panelMode.value = 'edit'
+    if (currentSlide.value) syncDraft(currentSlide.value)
+    ElMessage.success('已插入空白页，可直接编辑')
+  } catch { /* interceptor */ } finally {
+    inserting.value = false
+  }
+}
+
+async function removeSlide() {
+  if (!cw.value) return
+  try {
+    await ElMessageBox.confirm('确定删除当前页？此操作不可恢复。', '删除页面', { type: 'warning' })
+  } catch { return }
+  try {
+    const idx = activeSlide.value
+    await coursewareApi.deleteSlide(cw.value.id, idx)
+    dirty.value = false
+    await load()
+    activeSlide.value = Math.min(idx, Math.max(0, slides.value.length - 1))
+    panelMode.value = 'view'
+    ElMessage.success('已删除')
+  } catch { /* interceptor */ }
+}
+
+async function moveSlide(delta: number) {
+  if (!cw.value) return
+  const from = activeSlide.value
+  const to = from + delta
+  if (to < 0 || to >= slides.value.length) return
+  const order = slides.value.map((_: any, i: number) => i)
+  const [moved] = order.splice(from, 1)
+  order.splice(to, 0, moved)
+  try {
+    await coursewareApi.reorderSlides(cw.value.id, order)
+    dirty.value = false
+    await load()
+    activeSlide.value = to
+  } catch { /* interceptor */ }
+}
 
 // 当 currentSlide.html 变化（切换 slide / 课件加载完成），刷新 Blob URL
 watch(
@@ -634,7 +927,12 @@ async function load() {
     startStatusPoll()
   } else {
     stopStatusPoll()
-    if (cw.value?.gen_status === 'done') resolveImages()
+    if (cw.value?.gen_status === 'done') {
+      resolveImages()
+      loadSessions()
+      const busyIdx = slides.value.findIndex((s: any) => s.edit_status === 'processing')
+      if (busyIdx >= 0) startOptPoll(busyIdx)
+    }
   }
 }
 
@@ -702,6 +1000,7 @@ function statusLabel(s?: string) {
 onMounted(load)
 onUnmounted(() => {
   stopStatusPoll()
+  stopOptPoll()
   // 释放所有 Blob URL，防止内存泄漏
   ;[currentBlobUrl, fsBlobUrl, deckBlobUrl, pageBlobUrl].forEach(r => {
     if (r.value) { URL.revokeObjectURL(r.value); r.value = '' }

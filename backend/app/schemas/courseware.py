@@ -55,3 +55,85 @@ class CoursewareDetail(CoursewareOut):
     custom_prompt: str | None
     chapter_range: dict | None
     page_range: dict | None
+
+
+SLIDE_TYPES = (
+    "cover", "objectives", "knowledge", "example", "interactive",
+    "comparison", "process", "summary", "exercise", "homework",
+    "title", "content", "intro", "activity", "board", "quiz",
+)
+
+OPTIMIZE_MODES = ("rewrite", "shorten", "expand", "examples", "notes", "interactive")
+
+
+class SlidePatch(BaseModel):
+    """人工按页保存：只改这些文本字段，不改 html / images / edit_status。"""
+    type: str | None = None
+    title: str | None = Field(None, max_length=200)
+    subtitle: str | None = Field(None, max_length=300)
+    bullets: list[str] | None = None
+    content: str | None = None
+    notes: str | None = None
+    prompt: str | None = None
+    solution: str | None = None
+    left_title: str | None = Field(None, max_length=200)
+    right_title: str | None = Field(None, max_length=200)
+
+    @field_validator("title", "subtitle", "content", "notes", "prompt", "solution", "left_title", "right_title")
+    @classmethod
+    def _strip_text(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        return v.strip()
+
+    @field_validator("type")
+    @classmethod
+    def _known_type(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        t = v.strip()
+        if t not in SLIDE_TYPES:
+            raise ValueError("不支持的页面类型")
+        return t
+
+    @field_validator("bullets")
+    @classmethod
+    def _clean_bullets(cls, v: list[str] | None) -> list[str] | None:
+        if v is None:
+            return v
+        return [str(x).strip() for x in v if str(x).strip()][:30]
+
+
+class SlideInsert(BaseModel):
+    index: int | None = Field(None, ge=0, description="插入位置（0 起），默认末尾")
+    type: str = "knowledge"
+
+    @field_validator("type")
+    @classmethod
+    def _known_type(cls, v: str) -> str:
+        t = (v or "knowledge").strip()
+        if t not in SLIDE_TYPES:
+            raise ValueError("不支持的页面类型")
+        return t
+
+
+class SlideReorder(BaseModel):
+    order: list[int] = Field(..., min_length=1, description="当前下标的新排列")
+
+
+class SlideOptimizeIn(BaseModel):
+    instruction: str = Field("", max_length=2000)
+    mode: str = "rewrite"
+
+    @field_validator("instruction")
+    @classmethod
+    def _strip_instruction(cls, v: str) -> str:
+        return (v or "").strip()[:2000]
+
+    @field_validator("mode")
+    @classmethod
+    def _known_mode(cls, v: str) -> str:
+        m = (v or "rewrite").strip()
+        if m not in OPTIMIZE_MODES:
+            raise ValueError("不支持的优化方式")
+        return m

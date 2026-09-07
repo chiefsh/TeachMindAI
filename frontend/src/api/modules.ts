@@ -80,6 +80,23 @@ export const coursewareApi = {
   regenerate: (id: number) => request.post<Courseware>(`/coursewares/${id}/regenerate`),
   copy: (id: number) => request.post<Courseware>(`/coursewares/${id}/copy`),
   rename: (id: number, title: string) => request.patch<Courseware>(`/coursewares/${id}`, { title }),
+  getSlide: (id: number, index: number) =>
+    request.get<{ index: number; edit_status: string; task_id?: string | null; slide: any }>(
+      `/coursewares/${id}/slides/${index}`,
+    ),
+  patchSlide: (id: number, index: number, data: Record<string, unknown>) =>
+    request.patch<{ index: number; slide: any }>(`/coursewares/${id}/slides/${index}`, data),
+  insertSlide: (id: number, data: { index?: number; type?: string }) =>
+    request.post<{ index: number; slide: any }>(`/coursewares/${id}/slides`, data),
+  deleteSlide: (id: number, index: number) =>
+    request.delete(`/coursewares/${id}/slides/${index}`),
+  reorderSlides: (id: number, order: number[]) =>
+    request.put<{ count: number }>(`/coursewares/${id}/slides/reorder`, { order }),
+  optimizeSlide: (id: number, index: number, data: { instruction?: string; mode?: string }) =>
+    request.post<{ index: number; task_id: string; edit_status: string }>(
+      `/coursewares/${id}/slides/${index}/optimize`,
+      data,
+    ),
   exportFile: (id: number, format: 'pptx' | 'docx' | 'pdf') =>
     request.get<Blob>(`/coursewares/${id}/export`, { params: { format }, responseType: 'blob' }),
   delete: (id: number) => request.delete(`/coursewares/${id}`),

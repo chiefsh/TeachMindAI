@@ -20,7 +20,13 @@ ENV LANG=C.UTF-8
 ENV TESSDATA_PREFIX=/usr/share/tesseract-ocr/5/tessdata
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt -i https://mirrors.cloud.tencent.com/pypi/simple/
+# 腾讯云镜像没有 litellm==1.49.1 等个别版本，缺包时回落到官方 PyPI
+RUN pip install --no-cache-dir -r requirements.txt \
+    -i https://mirrors.cloud.tencent.com/pypi/simple/ \
+    --extra-index-url https://pypi.org/simple \
+    --trusted-host mirrors.cloud.tencent.com \
+    --trusted-host pypi.org \
+    --trusted-host files.pythonhosted.org
 
 COPY . .
 

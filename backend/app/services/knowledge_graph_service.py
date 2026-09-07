@@ -147,7 +147,8 @@ async def add_relation(
         raise ValueError(f"不支持的关系类型：{rel_type}")
     # rel_type 已白名单化，可安全插入查询串
     await neo.run_write(
-        f"MATCH (a:KnowledgePoint {{id:$from}}), (b:KnowledgePoint {{id:$to}}) "
+        f"MATCH (a:KnowledgePoint {{id:$from}}) "
+        f"WITH a MATCH (b:KnowledgePoint {{id:$to}}) "
         f"MERGE (a)-[r:{neo_type}]->(b) "
         f"SET r.weight=$weight, r.cross_subject=$cross, r.status=$status, "
         f"    r.source=$source, r.evidence=$evidence, r.updated_at=$now",

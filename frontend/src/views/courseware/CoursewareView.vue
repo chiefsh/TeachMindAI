@@ -131,6 +131,7 @@
               class="theme-swatch"
               :class="{ active: form.theme === t.key }"
               :title="t.label"
+              :style="{ background: t.bg }"
               @click="form.theme = t.key"
             >
               <span class="theme-dot" :style="{ background: themeGradient(t.key) }" />
@@ -329,7 +330,7 @@ async function deleteCw(id: number) {
 
 function themeGradient(key?: string) {
   const t = getTheme(key)
-  return `linear-gradient(135deg, ${t.primary}, ${t.accent})`
+  return `linear-gradient(135deg, ${t.coverFrom}, ${t.coverTo})`
 }
 
 function statusLabel(s: string) {
@@ -345,11 +346,11 @@ onMounted(async () => {
 
 <style scoped>
 .theme-swatch {
-  @apply flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-200 bg-white
+  @apply flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-200
          text-xs text-slate-600 transition-all hover:border-slate-300;
 }
 .theme-swatch.active {
-  @apply border-primary-500 text-primary-700 font-medium bg-primary-50;
+  @apply border-primary-500 text-primary-700 font-medium;
 }
 .theme-dot {
   @apply w-4 h-4 rounded-full flex-shrink-0;

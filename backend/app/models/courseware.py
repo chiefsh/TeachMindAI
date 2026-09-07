@@ -33,7 +33,7 @@ class Courseware(Base, TimestampMixin):
         default=RenderStyle.ppt,
         server_default=RenderStyle.ppt.value,
     )
-    # 视觉主题 key，取值见 services/courseware_theme.py
+    # 视觉主题 key，见 services/courseware_theme.py；旧值 indigo 等会映射到现行主题
     theme: Mapped[str] = mapped_column(String(24), default="indigo", server_default="indigo")
     custom_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)   # 教师自定义提示词
     content: Mapped[dict | None] = mapped_column(JSON, nullable=True)        # 幻灯片结构 JSON

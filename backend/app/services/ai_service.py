@@ -771,9 +771,14 @@ async def _generate_lesson_content(
         )
         system_prompt = f"""你是一位资深的一线教师和课件设计专家。请基于课本内容，设计{form_hint}，时长约 40-45 分钟。{subject_hint}
 要求：
-1. 课件需有 meta + slides 结构，每页字段包含 index,type,title,bullets,content,notes。
-2. 全部中文，输出严格 JSON，不要 markdown 代码块。
-3. 若为互动课件，可在 interactive 页附 html 字段（片段）。
+1. 课件需有 meta + slides 结构。每页字段：index,type,title,subtitle,bullets,content,notes；对比页可加 columns[{{title,items}}]，过程页可加 steps[{{title,detail}}]，例题页可加 prompt/solution。
+2. type 必须从以下页面类型中选择，并按课型组合，不要所有页都用同一种：
+   cover（封面）/ objectives（学习目标）/ knowledge（新知讲解）/ example（例题精讲）/
+   interactive（互动探究）/ comparison（对比辨析）/ process（过程路径或情境导入）/
+   summary（课堂小结）/ exercise（随堂练习）/ homework（课后作业）。
+   旧别名 title/content/intro/quiz 也可，但优先用上面的标准 type。
+3. 全部中文，输出严格 JSON，不要 markdown 代码块。
+4. 若为互动课件，可在 interactive 页附 html 字段（片段）。
 {interactive_hint}
 """
         user_prompt = f"课件课题：{cw.title}\n\n课本内容：\n{chapter_content[:8000]}{image_hint}"
@@ -797,7 +802,7 @@ async def _generate_lesson_content(
     slides: list[dict] = []
     idx = 1
     slides.append({
-        "index": idx, "type": "title", "title": cw.title, "subtitle": f"{subject_name} · 知识点互动课",
+        "index": idx, "type": "cover", "title": cw.title, "subtitle": f"{subject_name} · 知识点互动课",
         "bullets": [], "content": "", "notes": "开场：抛出本节核心问题，说明学习目标。"
     })
     idx += 1
@@ -808,9 +813,14 @@ async def _generate_lesson_content(
         "notes": "用学生听得懂的话解释“学什么、为什么学、怎么学”。",
     })
     idx += 1
+    intro_steps = []
+    for p in points:
+        if p.get("life_example"):
+            intro_steps.append({"title": p["name"], "detail": p["life_example"]})
     slides.append({
-        "index": idx, "type": "intro", "title": "情境导入", "subtitle": "从生活现象切入",
+        "index": idx, "type": "process", "title": "情境导入", "subtitle": "从生活现象切入",
         "bullets": [p.get("life_example") for p in points if p.get("life_example")][:3],
+        "steps": intro_steps[:4] or [{"title": "观察", "detail": "从熟悉的生活场景出发，引出本节知识点。"}],
         "content": "先从熟悉的生活场景出发，引出本节知识点，激发学习兴趣。",
         "notes": "引导学生先观察、再表达自己的判断，不急于给标准答案。",
     })
@@ -834,7 +844,7 @@ async def _generate_lesson_content(
 
         slides.append({
             "index": idx,
-            "type": "content",
+            "type": "knowledge",
             "title": f"{point_i}. {p['name']}",
             "subtitle": "知识点讲解",
             "bullets": bullets[:5],
@@ -842,6 +852,19 @@ async def _generate_lesson_content(
             "notes": "讲解要短句、直白。让学生先说自己的理解，再做纠偏。",
         })
         idx += 1
+
+        if p.get("life_example") and point_i <= 2:
+            slides.append({
+                "index": idx,
+                "type": "example",
+                "title": f"{point_i}. {p['name']} · 例题",
+                "subtitle": "把知识用起来",
+                "prompt": p["life_example"],
+                "bullets": [p["life_example"]],
+                "content": p.get("plain_explanation") or "",
+                "notes": "先让学生尝试，再对照解析。",
+            })
+            idx += 1
 
         interactive_slide = {
             "index": idx,
@@ -885,6 +908,26 @@ async def _generate_lesson_content(
             if html:
                 slides[slide_i]["html"] = html
 
+    mistakes = [m for p in points for m in (p.get("common_mistakes") or [])][:4]
+    if mistakes:
+        corrects = [p.get("plain_explanation") or p["name"] for p in points[:4]]
+        slides.append({
+            "index": idx,
+            "type": "comparison",
+            "title": "易错对照",
+            "subtitle": "把误区掰过来",
+            "left_title": "常见误区",
+            "right_title": "正确理解",
+            "columns": [
+                {"title": "常见误区", "items": mistakes},
+                {"title": "正确理解", "items": corrects},
+            ],
+            "bullets": mistakes + corrects,
+            "content": "",
+            "notes": "先让学生指出错在哪里，再对照正确说法。",
+        })
+        idx += 1
+
     slides.append({
         "index": idx,
         "type": "summary",
@@ -893,6 +936,16 @@ async def _generate_lesson_content(
         "bullets": [p["name"] for p in points[:4]],
         "content": "回顾每个知识点：是什么、怎么判断、容易错在哪里、怎么在生活中应用。",
         "notes": "让学生复述“今天最重要的三个收获”。",
+    })
+    idx += 1
+    slides.append({
+        "index": idx,
+        "type": "exercise",
+        "title": "随堂练习",
+        "subtitle": "当堂检验",
+        "bullets": [p.get("activity_goal") or f"用自己的话解释「{p['name']}」" for p in points[:3]],
+        "content": "独立完成后再对答案，重点说清判断依据。",
+        "notes": "巡视时关注卡在概念判断上的学生。",
     })
     idx += 1
     slides.append({
@@ -908,6 +961,7 @@ async def _generate_lesson_content(
     return {
         "meta": {
             "title": cw.title,
+            "subject": subject_name or "",
             "render_style": RenderStyle.html.value if is_web else RenderStyle.ppt.value,
             "duration": "45分钟",
             "objectives": [f"掌握：{p['name']}" for p in points[:3]],

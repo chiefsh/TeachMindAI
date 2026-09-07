@@ -37,7 +37,7 @@
               v-if="activeSlide"
               :key="activeSlide.pos"
               ref="frameEl"
-              :srcdoc="wrapInteractiveHtml(activeSlide.html)"
+              :srcdoc="wrapInteractiveHtml(activeSlide.html, session?.theme || undefined)"
               sandbox="allow-scripts"
               class="w-full bg-white"
               style="height:72vh;border:0"

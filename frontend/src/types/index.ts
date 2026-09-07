@@ -168,7 +168,7 @@ export interface CoursewareSession {
 }
 
 export interface PublicSession {
-  token: string; title: string; is_open: boolean
+  token: string; title: string; is_open: boolean; theme?: string | null
   content?: { meta?: Record<string, any>; slides?: any[] } | null
 }
 

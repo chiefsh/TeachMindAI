@@ -3,22 +3,9 @@ import io
 import re
 from typing import Any
 
-# ---------- 通用工具 ----------
+from app.services.courseware_theme import get_theme, page_kind, page_label, rgb
 
-TYPE_LABELS = {
-    "title": "封面",
-    "objectives": "教学目标",
-    "intro": "情境导入",
-    "content": "新知讲解",
-    "example": "例题精讲",
-    "activity": "课堂活动",
-    "interactive": "互动环节",
-    "summary": "课堂小结",
-    "homework": "课后作业",
-    "board": "板书设计",
-    "quiz": "随堂测验",
-    "exercise": "练习",
-}
+# ---------- 通用工具 ----------
 
 
 def _strip_markdown(text: str) -> str:
@@ -120,19 +107,25 @@ def build_pptx(content: dict, title: str, images: dict[int, bytes], theme: str |
     from pptx.util import Inches, Pt
     from pptx.dml.color import RGBColor
     from pptx.enum.shapes import MSO_SHAPE
-
-    from app.services.courseware_theme import get_theme, rgb
+    from pptx.enum.text import PP_ALIGN
 
     th = get_theme(theme)
     c_primary = RGBColor(*rgb(th["primary"]))
     c_accent = RGBColor(*rgb(th["accent"]))
     c_text = RGBColor(*rgb(th["text"]))
+    c_muted = RGBColor(*rgb(th["muted"]))
+    c_bg = RGBColor(*rgb(th["bg"]))
+    c_card = RGBColor(*rgb(th["card"]))
+    c_surface = RGBColor(*rgb(th["surface"]))
+    c_cover_from = RGBColor(*rgb(th["cover_from"]))
     c_white = RGBColor(0xFF, 0xFF, 0xFF)
+    cover_style = th.get("cover_style") or "diagonal"
 
     prs = Presentation()
     prs.slide_width = Inches(13.333)
     prs.slide_height = Inches(7.5)
     blank = prs.slide_layouts[6]
+    W, H = prs.slide_width, prs.slide_height
 
     meta = content.get("meta") or {}
     slides = content.get("slides") or []
@@ -146,90 +139,187 @@ def build_pptx(content: dict, title: str, images: dict[int, bytes], theme: str |
         except Exception:
             pass
 
-    def add_cover_slide(heading: str, lines: list[str]):
-        """封面整页铺主题色，让不同主题一眼可辨。"""
-        slide = prs.slides.add_slide(blank)
-        bg = slide.background.fill
-        bg.solid()
-        bg.fore_color.rgb = c_primary
-        # 底部强调色条，呼应主题的辅助色
-        _fill(slide.shapes.add_shape(
-            MSO_SHAPE.RECTANGLE, 0, Inches(6.9), prs.slide_width, Inches(0.6)
-        ), c_accent)
+    def _bg(slide, color):
+        fill = slide.background.fill
+        fill.solid()
+        fill.fore_color.rgb = color
 
-        tb = slide.shapes.add_textbox(Inches(1.0), Inches(2.4), Inches(11.3), Inches(2.4))
+    def _deco(slide):
+        style = th.get("deco_style") or "circles"
+        if style in ("circles", "leaves"):
+            oval = slide.shapes.add_shape(MSO_SHAPE.OVAL, Inches(11.2), Inches(-0.6), Inches(3.2), Inches(3.2))
+            _fill(oval, c_accent)
+            oval = slide.shapes.add_shape(MSO_SHAPE.OVAL, Inches(-1.0), Inches(5.8), Inches(2.6), Inches(2.6))
+            _fill(oval, c_primary)
+        elif style == "lines":
+            _fill(slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, 0, Inches(0.12), H), c_primary)
+        else:
+            _fill(slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(12.6), 0, Inches(0.74), H), c_surface)
+
+    def _textbox(slide, l, t, w, h, text, size, color, bold=False):
+        tb = slide.shapes.add_textbox(l, t, w, h)
         tf = tb.text_frame
         tf.word_wrap = True
         p = tf.paragraphs[0]
-        p.text = heading
-        p.font.size = Pt(44)
-        p.font.bold = True
-        p.font.color.rgb = c_white
-        for line in [l for l in lines if l]:
-            sub = tf.add_paragraph()
-            sub.text = line
-            sub.font.size = Pt(18)
-            sub.font.color.rgb = c_white
+        p.text = text
+        p.font.size = Pt(size)
+        p.font.bold = bold
+        p.font.color.rgb = color
+        return tf
 
-    def add_text_slide(heading: str, lines: list[str], notes: str = "", img_ids: list[int] | None = None):
+    def add_cover_slide(heading: str, lines: list[str]):
         slide = prs.slides.add_slide(blank)
-        # 顶部主题色条
-        _fill(slide.shapes.add_shape(
-            MSO_SHAPE.RECTANGLE, 0, 0, prs.slide_width, Inches(0.16)
-        ), c_primary)
+        dark = cover_style in ("diagonal", "split")
+        title_color = c_white if dark else c_text
+        if cover_style == "split":
+            _bg(slide, c_bg)
+            _fill(slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, 0, Inches(5.6), H), c_cover_from)
+            tf = _textbox(slide, Inches(0.6), Inches(2.3), Inches(4.4), Inches(3.2), heading, 36, c_white, True)
+            for line in [x for x in lines if x]:
+                sub = tf.add_paragraph()
+                sub.text = line
+                sub.font.size = Pt(16)
+                sub.font.color.rgb = c_white
+            _textbox(slide, Inches(6.2), Inches(3.0), Inches(6.4), Inches(1.2), "智课星教学课件", 18, c_muted)
+        elif cover_style == "ribbon":
+            _bg(slide, c_bg)
+            _deco(slide)
+            _fill(slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, Inches(2.3), W, Inches(2.8),), c_cover_from)
+            tf = _textbox(slide, Inches(0.8), Inches(2.6), Inches(11.6), Inches(2.2), heading, 40, c_white, True)
+            for line in [x for x in lines if x]:
+                sub = tf.add_paragraph()
+                sub.text = line
+                sub.font.size = Pt(16)
+                sub.font.color.rgb = c_white
+        elif cover_style == "panel":
+            _bg(slide, c_bg)
+            _deco(slide)
+            card = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(1.6), Inches(1.8), Inches(10.1), Inches(3.8))
+            _fill(card, c_card)
+            _fill(slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(1.6), Inches(1.8), Inches(10.1), Inches(0.12)), c_primary)
+            tf = _textbox(slide, Inches(2.0), Inches(2.4), Inches(9.2), Inches(2.6), heading, 36, c_text, True)
+            for line in [x for x in lines if x]:
+                sub = tf.add_paragraph()
+                sub.text = line
+                sub.font.size = Pt(16)
+                sub.font.color.rgb = c_muted
+        elif cover_style == "minimal":
+            _bg(slide, c_bg)
+            _fill(slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0.8), Inches(2.5), Inches(0.12), Inches(2.2)), c_primary)
+            tf = _textbox(slide, Inches(1.2), Inches(2.5), Inches(11), Inches(2.6), heading, 40, c_text, True)
+            for line in [x for x in lines if x]:
+                sub = tf.add_paragraph()
+                sub.text = line
+                sub.font.size = Pt(16)
+                sub.font.color.rgb = c_muted
+        else:
+            _bg(slide, c_cover_from)
+            _fill(slide.shapes.add_shape(MSO_SHAPE.OVAL, Inches(10.8), Inches(-1.0), Inches(3.6), Inches(3.6)), c_accent)
+            _fill(slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, Inches(6.9), W, Inches(0.6)), c_accent)
+            tf = _textbox(slide, Inches(1.0), Inches(2.4), Inches(11.3), Inches(2.6), heading, 44, title_color, True)
+            tf.paragraphs[0].alignment = PP_ALIGN.CENTER
+            for line in [x for x in lines if x]:
+                sub = tf.add_paragraph()
+                sub.text = line
+                sub.font.size = Pt(18)
+                sub.font.color.rgb = title_color
+                sub.alignment = PP_ALIGN.CENTER
 
-        tb = slide.shapes.add_textbox(Inches(0.6), Inches(0.4), Inches(12), Inches(1))
+    def add_text_slide(heading: str, lines: list[str], notes: str = "", img_ids: list[int] | None = None, kind: str = "knowledge"):
+        slide = prs.slides.add_slide(blank)
+        _bg(slide, c_bg)
+        _deco(slide)
+        _fill(slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, 0, W, Inches(0.14)), c_primary)
+
+        tb = slide.shapes.add_textbox(Inches(0.55), Inches(0.32), Inches(12), Inches(0.9))
         p = tb.text_frame.paragraphs[0]
         p.text = heading
-        p.font.size = Pt(30)
+        p.font.size = Pt(26)
         p.font.bold = True
         p.font.color.rgb = c_primary
 
         has_img = bool(img_ids)
-        body_w = Inches(7.2) if has_img else Inches(12)
-        body = slide.shapes.add_textbox(Inches(0.6), Inches(1.6), body_w, Inches(5.4))
-        tf = body.text_frame
-        tf.word_wrap = True
-        first = True
-        for line in lines:
-            para = tf.paragraphs[0] if first else tf.add_paragraph()
-            para.text = line
-            para.font.size = Pt(18)
-            para.font.color.rgb = c_text
-            first = False
-
-        if has_img:
-            top = Inches(1.6)
-            for iid in (img_ids or [])[:2]:
-                data = images.get(iid)
-                if not data:
-                    continue
-                try:
-                    slide.shapes.add_picture(io.BytesIO(data), Inches(8.1), top, width=Inches(4.6))
-                    top = Inches(top.inches + 2.8)
-                except Exception:
-                    pass
+        if kind in ("comparison", "example") and len(lines) >= 2 and not has_img:
+            mid = max(1, len(lines) // 2)
+            for i, chunk in enumerate((lines[:mid], lines[mid:])):
+                left = Inches(0.55 + i * 6.3)
+                box = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, left, Inches(1.4), Inches(6.0), Inches(5.4))
+                _fill(box, c_card if i else c_surface)
+                _fill(slide.shapes.add_shape(
+                    MSO_SHAPE.RECTANGLE, left, Inches(1.4), Inches(6.0), Inches(0.12)
+                ), c_accent if i else c_primary)
+                body = slide.shapes.add_textbox(left + Inches(0.25), Inches(1.7), Inches(5.5), Inches(4.9))
+                tf = body.text_frame
+                tf.word_wrap = True
+                first = True
+                for line in chunk:
+                    para = tf.paragraphs[0] if first else tf.add_paragraph()
+                    para.text = line
+                    para.font.size = Pt(16)
+                    para.font.color.rgb = c_text
+                    first = False
+        elif kind in ("objectives", "summary", "exercise", "homework") and not has_img:
+            cols = 2 if kind == "objectives" else 1
+            for i, line in enumerate(lines[:8]):
+                if cols == 2:
+                    row, col = divmod(i, 2)
+                    left = Inches(0.55 + col * 6.3)
+                    top = Inches(1.4 + row * 1.4)
+                    box = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, left, top, Inches(6.0), Inches(1.25))
+                    _fill(box, c_card)
+                    oval = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, left + Inches(0.18), top + Inches(0.35), Inches(0.5), Inches(0.5))
+                    _fill(oval, c_primary)
+                    _textbox(slide, left + Inches(0.8), top + Inches(0.28), Inches(5.0), Inches(0.8), line.lstrip("• "), 16, c_text)
+                else:
+                    top = Inches(1.4 + i * 0.7)
+                    box = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(0.55), top, Inches(12.2), Inches(0.62))
+                    _fill(box, c_card)
+                    _textbox(slide, Inches(0.8), top + Inches(0.08), Inches(11.7), Inches(0.5), line, 16, c_text)
+        else:
+            body_w = Inches(7.2) if has_img else Inches(12.1)
+            card = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(0.5), Inches(1.3), body_w + Inches(0.2), Inches(5.6))
+            _fill(card, c_card)
+            if kind == "knowledge":
+                _fill(slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0.5), Inches(1.3), Inches(0.12), Inches(5.6)), c_primary)
+            body = slide.shapes.add_textbox(Inches(0.75), Inches(1.5), body_w - Inches(0.2), Inches(5.3))
+            tf = body.text_frame
+            tf.word_wrap = True
+            first = True
+            for line in lines:
+                para = tf.paragraphs[0] if first else tf.add_paragraph()
+                para.text = line
+                para.font.size = Pt(17)
+                para.font.color.rgb = c_text
+                first = False
+            if has_img:
+                top = Inches(1.5)
+                for iid in (img_ids or [])[:2]:
+                    data = images.get(iid)
+                    if not data:
+                        continue
+                    try:
+                        slide.shapes.add_picture(io.BytesIO(data), Inches(8.15), top, width=Inches(4.5))
+                        top = Inches(top.inches + 2.7)
+                    except Exception:
+                        pass
 
         if notes:
             slide.notes_slide.notes_text_frame.text = notes
 
-    # 封面
     add_cover_slide(
         meta.get("title") or title,
         [meta.get("duration", ""), "智课星教学课件"],
     )
-    # 教学目标/重难点
     for h, items in _meta_blocks(meta):
-        add_text_slide(h, [f"• {x}" for x in items])
-    # 正文
+        add_text_slide(h, [f"• {x}" for x in items], kind="objectives")
     for s in slides:
-        if s.get("type") == "title":
+        if page_kind(s.get("type")) == "cover":
             continue
-        label = TYPE_LABELS.get(s.get("type"), "")
+        label = page_label(s.get("type"))
         heading = s.get("title") or label or "幻灯片"
         if label and label not in heading:
             heading = f"【{label}】{heading}"
-        add_text_slide(heading, _slide_lines(s), s.get("notes", ""), s.get("images"))
+        add_text_slide(heading, _slide_lines(s), s.get("notes", ""), s.get("images"), page_kind(s.get("type")))
 
     buf = io.BytesIO()
     prs.save(buf)
@@ -263,9 +353,9 @@ def build_docx(content: dict, title: str, images: dict[int, bytes], theme: str |
             doc.add_paragraph(x, style="List Bullet")
 
     for s in slides:
-        if s.get("type") == "title":
+        if page_kind(s.get("type")) == "cover":
             continue
-        label = TYPE_LABELS.get(s.get("type"), "")
+        label = page_label(s.get("type"))
         heading = s.get("title") or label or "幻灯片"
         if label and label not in heading:
             heading = f"【{label}】{heading}"
@@ -355,9 +445,9 @@ def build_pdf(content: dict, title: str, images: dict[int, bytes], theme: str | 
         story.append(Spacer(1, 3 * mm))
 
     for s in slides:
-        if s.get("type") == "title":
+        if page_kind(s.get("type")) == "cover":
             continue
-        label = TYPE_LABELS.get(s.get("type"), "")
+        label = page_label(s.get("type"))
         heading = s.get("title") or label or "幻灯片"
         if label and label not in heading:
             heading = f"【{label}】{heading}"
@@ -396,7 +486,16 @@ def build_pdf(content: dict, title: str, images: dict[int, bytes], theme: str | 
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=18 * mm, bottomMargin=18 * mm,
                             leftMargin=18 * mm, rightMargin=18 * mm)
-    doc.build(story)
+
+    def _paint_bg(canvas, _doc):
+        canvas.saveState()
+        canvas.setFillColor(colors.HexColor(th["bg"]))
+        canvas.rect(0, 0, A4[0], A4[1], fill=1, stroke=0)
+        canvas.setFillColor(c_primary)
+        canvas.rect(0, A4[1] - 8, A4[0], 8, fill=1, stroke=0)
+        canvas.restoreState()
+
+    doc.build(story, onFirstPage=_paint_bg, onLaterPages=_paint_bg)
     return buf.getvalue()
 
 

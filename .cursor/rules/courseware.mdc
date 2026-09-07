@@ -16,6 +16,6 @@ skill 题型分两类，都登记在 `SKILL_CAPABILITIES`：解题型（固定�
 
 呈现样式：`Courseware.render_style` 为 `ppt`（幻灯片）或 `html`（单页网页）。同一份 meta+slides 结构，两种渲染器各出一份自包含 HTML：`revealDeck.ts`（reveal.js 演示）与 `lessonPage.ts`（滚动网页 + 目录 + 下载）。html 样式在知识点抽取阶段多要一个 `deep_dive` 深入讲解段落。
 
-视觉主题：`Courseware.theme` 存主题 key（创建时选，默认 `indigo`）。调色板有两份且必须同步——后端 `services/courseware_theme.py` 供导出用，前端 `utils/coursewareTheme.ts` 供 `revealDeck.ts` / `lessonPage.ts` / 选择器用；增删主题要同时改两边的 key 与色值。未知 key 一律回退默认主题。
+视觉主题：`Courseware.theme` 存主题 key（创建时选，默认 `explore` / 蓝色探索）。Theme System 有两份且必须同步——后端 `services/courseware_theme.py` 供导出用，前端 `utils/coursewareTheme.ts` 供 `revealDeck.ts` / `lessonPage.ts` / 选择器用；增删主题要同时改两边的 key、色值、封面样式、装饰与阴影。未知或旧 key（indigo/emerald/amber/rose/sky/slate）经 ALIASES 回退。页面布局在 `utils/coursewarePages.ts`，按 type 渲染 Cover / 学习目标 / 新知 / 例题 / 互动 / 对比 / 过程 / 小结 / 练习 / 作业，不要让页面落到纯白底。
 
 前端：列表/详情 `views/courseware/`；iframe 用 `coursewareFrame.ts`。导出走 `export_service.build_export`（pptx/docx/pdf，第 5 个参数传 `cw.theme`）；网页课件由前端直接下载 .html。

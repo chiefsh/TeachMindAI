@@ -47,7 +47,7 @@ PEDAGOGY_RULES = """【互动节点克制原则（重要）】
 1. 一节课只在 1~3 个关键节点安排互动页（通常是：情境导入 / 例题精讲 / 随堂练习其中的若干处），其余环节用讲解正文、板书式小结、教师讲稿承载，不要每页都做互动。
 2. 互动要服务教学主线：让学生“真正动手做”（点击/拖拽/输入并获得即时反馈），而不是装饰性动画。能用一句话讲清的知识点，不要硬做成互动。
 3. 互动总时长建议控制在 10~15 分钟，单个互动聚焦一个明确的学习目标。
-4. 把互动放在 type 为 intro / example / interactive / activity 的幻灯片上；title / objectives / summary / homework 等页不要放互动。"""
+4. 把互动放在 type 为 process / example / interactive / activity 的幻灯片上；cover / objectives / summary / homework 等页不要放互动。"""
 
 # 学生作答数据回收：互动页通过 window.CW 把作答结果回传给上层页面
 REPORT_SPEC = """【作答数据回收（必须接入）】

@@ -309,12 +309,14 @@ import { createIframeBlob } from '@/utils/coursewareFrame'
 import { buildRevealDeck } from '@/utils/revealDeck'
 import { buildLessonPage } from '@/utils/lessonPage'
 import { getTheme } from '@/utils/coursewareTheme'
+import { pageTypeLabel } from '@/utils/coursewarePages'
 import { useEducationStore } from '@/stores/education'
 import { renderMarkdown } from '@/utils/markdown'
 import type { Courseware, CoursewareSession, SessionBoard } from '@/types'
 
 const route = useRoute()
 const router = useRouter()
+const edu = useEducationStore()
 const cw = ref<Courseware | null>(null)
 const activeSlide = ref(0)
 const exporting = ref<string>('')
@@ -345,7 +347,10 @@ const deckIframe = ref<HTMLIFrameElement | null>(null)
 function openPresent() {
   if (deckBlobUrl.value) { URL.revokeObjectURL(deckBlobUrl.value) }
   deckBlobUrl.value = makeBlobUrl(
-    buildRevealDeck(cw.value?.content, imageMap.value, { theme: cw.value?.theme })
+    buildRevealDeck(cw.value?.content, imageMap.value, {
+      theme: cw.value?.theme,
+      subject: cw.value?.subject_id ? edu.subjectName(cw.value.subject_id) : '',
+    })
   )
   showPresent.value = true
 }
@@ -358,7 +363,11 @@ function fullscreenDeck() {
 }
 
 function printDeck() {
-  const html = buildRevealDeck(cw.value?.content, imageMap.value, { print: true, theme: cw.value?.theme })
+  const html = buildRevealDeck(cw.value?.content, imageMap.value, {
+    print: true,
+    theme: cw.value?.theme,
+    subject: cw.value?.subject_id ? edu.subjectName(cw.value.subject_id) : '',
+  })
   const w = window.open('', '_blank')
   if (!w) { ElMessage.warning('请允许弹出窗口以导出 PDF'); return }
   w.document.open()
@@ -367,20 +376,23 @@ function printDeck() {
 }
 
 // 网页样式课件：单页滚动网页，可预览也可下载为独立 HTML
-const edu = useEducationStore()
 const showPage = ref(false)
 const pageBlobUrl = ref('')
 const downloadingPage = ref(false)
 const isWebStyle = computed(() => cw.value?.render_style === 'html')
 const theme = computed(() => getTheme(cw.value?.theme))
-const themeGradient = computed(() => `linear-gradient(135deg, ${theme.value.primary}, ${theme.value.accent})`)
+const themeGradient = computed(() => `linear-gradient(135deg, ${theme.value.coverFrom}, ${theme.value.coverTo})`)
 
 function lessonPageHtml(images: Record<string, string> = imageMap.value): string {
   const ctx = [
     cw.value?.grade_id ? edu.gradeName(cw.value.grade_id) : '',
     cw.value?.subject_id ? edu.subjectName(cw.value.subject_id) : '',
   ].filter(Boolean).join(' · ')
-  return buildLessonPage(cw.value?.content, images, { subtitle: ctx, theme: cw.value?.theme })
+  return buildLessonPage(cw.value?.content, images, {
+    subtitle: ctx,
+    theme: cw.value?.theme,
+    subject: cw.value?.subject_id ? edu.subjectName(cw.value.subject_id) : '',
+  })
 }
 
 function openLessonPage() {
@@ -523,7 +535,7 @@ function rateColor(rate: number) {
 
 function openFullscreen(html: string) {
   if (fsBlobUrl.value) { URL.revokeObjectURL(fsBlobUrl.value) }
-  fsBlobUrl.value = createIframeBlob(html)
+  fsBlobUrl.value = createIframeBlob(html, cw.value?.theme)
   showFs.value = true
 }
 
@@ -552,24 +564,20 @@ const currentSlide = computed(() => slides.value[activeSlide.value] || null)
 
 // 当 currentSlide.html 变化（切换 slide / 课件加载完成），刷新 Blob URL
 watch(
-  () => currentSlide.value?.html,
-  (html) => {
+  () => [currentSlide.value?.html, cw.value?.theme] as const,
+  ([html]) => {
     if (currentBlobUrl.value) { URL.revokeObjectURL(currentBlobUrl.value); currentBlobUrl.value = '' }
-    if (html) currentBlobUrl.value = createIframeBlob(html)
+    if (html) currentBlobUrl.value = createIframeBlob(html, cw.value?.theme)
   },
   { immediate: true }
 )
 
-const TYPE_LABELS: Record<string, string> = {
-  title: '封面', objectives: '教学目标', intro: '情境导入', content: '新知讲解',
-  example: '例题精讲', activity: '课堂活动', interactive: '互动环节', summary: '课堂小结',
-  homework: '课后作业', board: '板书设计', quiz: '随堂测验', exercise: '练习',
-}
-function typeLabel(t: string) { return TYPE_LABELS[t] || t || '内容' }
+function typeLabel(t: string) { return pageTypeLabel(t) }
 function slideTypeTag(t: string): any {
   return ({
-    title: 'primary', objectives: 'success', summary: 'success', homework: 'info',
+    title: 'primary', cover: 'primary', objectives: 'success', summary: 'success', homework: 'info',
     example: 'warning', interactive: 'warning', quiz: 'warning', exercise: 'info',
+    comparison: 'warning', process: 'success', knowledge: 'info', content: 'info',
   } as Record<string, string>)[t] || 'info'
 }
 

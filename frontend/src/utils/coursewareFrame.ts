@@ -1,11 +1,14 @@
 // 互动课件 iframe 统一包装器：为大模型生成的 html 片段注入统一设计系统与常用库
 // （KaTeX 公式、Chart.js 图表），保证风格一致、效果可靠。class 命名需与后端
 // backend/app/services/courseware_components.py 中的 DESIGN_SYSTEM_SPEC 保持一致。
+import { getTheme, type CoursewareTheme } from './coursewareTheme'
 
-const DESIGN_SYSTEM = `
+function designSystem(t: CoursewareTheme) {
+  return `
 :root{
-  --c-primary:#4f46e5; --c-accent:#0ea5e9; --c-ok:#16a34a; --c-bad:#dc2626;
-  --c-line:#e2e8f0; --c-bg:#ffffff; --c-text:#1e293b; --c-muted:#64748b;
+  --c-primary:${t.primary}; --c-accent:${t.accent}; --c-ok:#16a34a; --c-bad:#dc2626;
+  --c-line:${t.surface}; --c-bg:${t.bg}; --c-text:${t.text}; --c-muted:${t.muted};
+  --c-card:${t.card}; --shadow:${t.shadowSoft};
 }
 *{box-sizing:border-box}
 html,body{margin:0;padding:0}
@@ -17,12 +20,12 @@ body{
 .title{font-size:20px;font-weight:700;margin:0 0 4px}
 .subtitle{font-size:14px;color:var(--c-muted);margin:0 0 14px}
 .muted{color:var(--c-muted)}
-.card{background:#fff;border:1px solid var(--c-line);border-radius:14px;padding:16px;box-shadow:0 1px 3px rgba(15,23,42,.04)}
-.panel{background:#f8fafc;border:1px solid var(--c-line);border-radius:12px;padding:14px}
+.card{background:var(--c-card);border:1px solid var(--c-line);border-radius:14px;padding:16px;box-shadow:var(--shadow)}
+.panel{background:var(--c-line);border:1px solid var(--c-line);border-radius:12px;padding:14px}
 .row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
 .center{display:flex;align-items:center;justify-content:center}
 .grid{display:grid;grid-template-columns:repeat(var(--cols,2),minmax(0,1fr));gap:12px}
-.btn{appearance:none;border:1px solid var(--c-line);background:#fff;color:var(--c-text);
+.btn{appearance:none;border:1px solid var(--c-line);background:var(--c-card);color:var(--c-text);
   padding:8px 16px;border-radius:10px;font-size:14px;cursor:pointer;transition:all .15s;font-weight:500}
 .btn:hover{border-color:var(--c-primary);color:var(--c-primary)}
 .btn.primary{background:var(--c-primary);border-color:var(--c-primary);color:#fff}
@@ -30,7 +33,7 @@ body{
 .btn:disabled{opacity:.5;cursor:not-allowed}
 .badge{display:inline-block;padding:2px 10px;border-radius:999px;background:#eef2ff;color:var(--c-primary);font-size:12px;font-weight:600}
 .chip{display:inline-flex;align-items:center;padding:8px 14px;border-radius:10px;border:1px solid var(--c-line);
-  background:#fff;cursor:grab;user-select:none;transition:all .15s;font-size:14px}
+  background:var(--c-card);cursor:grab;user-select:none;transition:all .15s;font-size:14px}
 .chip:active{cursor:grabbing}
 .chip.dragover{border-color:var(--c-primary);background:#eef2ff}
 .correct{border-color:var(--c-ok)!important;background:#f0fdf4!important;color:var(--c-ok)!important}
@@ -44,6 +47,7 @@ canvas{max-width:100%}
 .pop{animation:pop .35s ease both}
 .float{animation:floatY 2.6s ease-in-out infinite}
 `
+}
 
 const KATEX_VERSION = '0.16.11'
 const CHARTJS_VERSION = '4.4.4'
@@ -107,9 +111,10 @@ window.addEventListener('load', function(){
  *  若调用方坚持使用 srcdoc，也可直接使用返回字符串，但 Chrome 以外的浏览器
  *  可能出现 SyntaxError。
  */
-export function wrapInteractiveHtml(fragment: string): string {
+export function wrapInteractiveHtml(fragment: string, theme?: CoursewareTheme | string): string {
   const body = (fragment || '').trim()
   if (/<html[\s>]/i.test(body)) return body
+  const t = typeof theme === 'string' || !theme ? getTheme(theme as string) : theme
   // 按内容按需注入 CDN，避免每个 iframe 都拉 KaTeX + Chart.js
   const libs = [
     needsKatex(body) ? KATEX_LIBS : '',
@@ -123,7 +128,7 @@ export function wrapInteractiveHtml(fragment: string): string {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 ${CW_BRIDGE}
 ${libs}
-<style>${DESIGN_SYSTEM}</style>
+<style>${designSystem(t)}</style>
 </head>
 <body>
 ${body}
@@ -133,8 +138,8 @@ ${boot}
 }
 
 /** 生成 Blob URL（调用方负责在组件卸载时 revokeObjectURL）。 */
-export function createIframeBlob(fragment: string): string {
-  const html = wrapInteractiveHtml(fragment)
+export function createIframeBlob(fragment: string, theme?: CoursewareTheme | string): string {
+  const html = wrapInteractiveHtml(fragment, theme)
   const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
   return URL.createObjectURL(blob)
 }

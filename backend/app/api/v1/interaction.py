@@ -51,6 +51,7 @@ class PublicSessionOut(BaseModel):
     title: str
     is_open: bool
     content: dict | None = None
+    theme: str | None = None
 
 
 # ---------- 教师端 ----------
@@ -237,6 +238,7 @@ async def public_get_session(token: str, db: AsyncSession = Depends(get_db)):
         title=s.title,
         is_open=s.is_open,
         content=_public_content(cw.content if cw else None),
+        theme=cw.theme if cw else None,
     )
 
 

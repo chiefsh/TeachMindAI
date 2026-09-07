@@ -1,133 +1,70 @@
 // 用 reveal.js 把课件内容渲染成专业演示文稿（转场动画 / 演讲者视图 / 键盘翻页）。
 // 互动页以内嵌 iframe 形式渲染，复用 wrapInteractiveHtml 保证隔离与统一样式。
-import { renderMarkdown } from './markdown'
 import { wrapInteractiveHtml } from './coursewareFrame'
 import { getTheme, type CoursewareTheme } from './coursewareTheme'
+import {
+  buildSlideInner, decoSvg, esc, mediaFromSlide, pageCss,
+} from './coursewarePages'
 
 const REVEAL_VERSION = '5.1.0'
 const KATEX_VERSION = '0.16.11'
 
-const TYPE_LABELS: Record<string, string> = {
-  title: '封面', objectives: '教学目标', intro: '情境导入', content: '新知讲解',
-  example: '例题精讲', activity: '课堂活动', interactive: '互动环节', summary: '课堂小结',
-  homework: '课后作业', board: '板书设计', quiz: '随堂测验', exercise: '练习',
-}
-
-function esc(s: string): string {
-  return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-}
-
-function escAttr(s: string): string {
-  return esc(s).replace(/"/g, '&quot;')
-}
-
-const deckStyle = (t: CoursewareTheme) => `
-:root{--c-primary:${t.primary};--c-accent:${t.accent};--c-text:${t.text};--c-muted:${t.muted};}
-.reveal{font-family:-apple-system,"PingFang SC","Microsoft YaHei","Noto Sans CJK SC",sans-serif;}
-.reveal h1,.reveal h2,.reveal h3{color:var(--c-text);text-transform:none;letter-spacing:0;}
-.reveal .slide-label{display:inline-block;font-size:.42em;font-weight:700;color:#fff;background:var(--c-primary);
-  padding:.15em .7em;border-radius:999px;margin-bottom:.4em;}
-.reveal section{text-align:left;}
-/* 仅屏幕演示：关闭垂直居中后，内容页顶部对齐、超高可滚动，避免底部内容被裁切。
-   打印(导出 PDF)时不加高度/滚动限制，让内容自然铺排到页面。 */
+const deckChrome = (t: CoursewareTheme) => `
+${pageCss(t, 'deck')}
+.reveal{font-family:-apple-system,"PingFang SC","Microsoft YaHei","Noto Sans CJK SC",sans-serif;background:var(--c-bg)}
+.reveal .slides{background:transparent}
+.reveal h1,.reveal h2,.reveal h3{color:inherit;text-transform:none;letter-spacing:0}
+.reveal .slides>section.cw-page{text-align:left;background:var(--c-bg)!important}
+.reveal ul{display:block}
 @media screen{
   .reveal .slides>section,
   .reveal .slides>section>section{
     height:720px;max-height:720px;
     overflow-y:auto;overflow-x:hidden;
-    padding:20px 40px;box-sizing:border-box;
+    padding:28px 40px;box-sizing:border-box;
     scrollbar-width:thin;
   }
-  .reveal .slides>section::-webkit-scrollbar{width:8px;}
-  .reveal .slides>section::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:4px;}
-  /* 封面页：水平居中 + 顶部留白近似垂直居中（避免用 display:flex !important 干扰 reveal 的显隐切换） */
-  .reveal .slides>section.cover{text-align:center;padding-top:200px;}
+  .reveal .slides>section.cw-cover{padding:0;overflow:hidden}
+  .reveal .slides>section.cw-cover .cw-inner{height:720px;box-sizing:border-box;padding:48px 56px;display:flex;flex-direction:column;justify-content:center}
+  .reveal .slides>section.cw-cover--split .cw-inner{display:grid;grid-template-columns:42% 1fr;padding:0;height:720px}
+  .reveal .slides>section.cw-cover--ribbon .cw-inner{padding:0;justify-content:center}
+  .reveal .slides>section::-webkit-scrollbar{width:8px}
+  .reveal .slides>section::-webkit-scrollbar-thumb{background:var(--c-muted);border-radius:4px}
 }
-/* 封面铺主题渐变（data-background-gradient），文字反白 */
-.reveal .cover h1{font-size:2.0em;color:#fff;}
-.reveal .cover .sub{color:rgba(255,255,255,.85);font-size:.9em;margin-top:.4em;}
-.reveal ul{display:block;}
-.reveal .body{font-size:.78em;line-height:1.5;}
-.reveal .body h3{font-size:1.05em;margin:.4em 0 .2em;color:var(--c-primary);}
-.reveal .body h4{font-size:.95em;margin:.3em 0 .15em;}
-.reveal .body code{background:#f1f5f9;color:#db2777;padding:.05em .3em;border-radius:4px;font-size:.85em;}
-.reveal .cw-imgs{display:flex;gap:12px;flex-wrap:wrap;margin-top:.5em;}
-.reveal .cw-imgs img{max-height:38vh;border-radius:10px;border:1px solid #e2e8f0;background:#f8fafc;object-fit:contain;}
-.reveal .cw-iframe{width:100%;height:62vh;border:1px solid #e2e8f0;border-radius:12px;background:#fff;}
-.reveal .meta-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1em;font-size:.7em;}
-.reveal .meta-grid h3{font-size:1em;}
+.reveal .meta-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1em}
 `
 
 interface DeckImageMap { [id: string]: string }
 
-function coverGradient(t: CoursewareTheme): string {
-  return `linear-gradient(135deg, ${t.primary}, ${t.accent})`
+function slideSection(slide: any, imageMap: DeckImageMap, theme: CoursewareTheme, ctx: { index: number; subject?: string }): string {
+  const media = mediaFromSlide(slide, imageMap, {
+    wrapHtml: (html) => wrapInteractiveHtml(html, theme),
+    notesMode: 'aside',
+  })
+  const view = buildSlideInner(slide, theme, media, { index: ctx.index, subject: ctx.subject })
+  return `<section class="cw-page ${view.className}">${decoSvg(theme)}${view.inner}</section>`
 }
 
-function slideSection(slide: any, imageMap: DeckImageMap, theme: CoursewareTheme): string {
-  const type = slide.type || 'content'
-  const label = TYPE_LABELS[type] || ''
-  const parts: string[] = []
-
-  if (type === 'title') {
-    parts.push(`<section class="cover" data-background-gradient="${escAttr(coverGradient(theme))}">`)
-    parts.push(`<h1>${esc(slide.title || '')}</h1>`)
-    if (slide.subtitle) parts.push(`<p class="sub">${esc(slide.subtitle)}</p>`)
-    parts.push('</section>')
-    return parts.join('')
-  }
-
-  parts.push('<section>')
-  if (label) parts.push(`<span class="slide-label">${esc(label)}</span>`)
-  if (slide.title) parts.push(`<h2>${esc(slide.title)}</h2>`)
-  if (slide.subtitle) parts.push(`<p style="color:var(--c-muted);font-size:.7em;margin-top:-.2em">${esc(slide.subtitle)}</p>`)
-
-  parts.push('<div class="body">')
-  if (Array.isArray(slide.bullets) && slide.bullets.length) {
-    parts.push('<ul>' + slide.bullets.map((b: string) => `<li>${esc(b)}</li>`).join('') + '</ul>')
-  }
-  if (slide.content) parts.push(renderMarkdown(slide.content))
-  parts.push('</div>')
-
-  // 课本插图
-  const imgs: string[] = (slide.images || [])
-    .map((id: any) => imageMap[String(id)])
-    .filter(Boolean)
-  if (imgs.length) {
-    parts.push('<div class="cw-imgs">' + imgs.map((u) => `<img src="${escAttr(u)}" />`).join('') + '</div>')
-  }
-
-  // 互动页：内嵌 iframe
-  if (slide.html) {
-    const doc = wrapInteractiveHtml(slide.html)
-    parts.push(`<iframe class="cw-iframe" sandbox="allow-scripts allow-popups" srcdoc="${escAttr(doc)}"></iframe>`)
-  }
-
-  // 教师讲稿（演讲者视图，按 S 查看）
-  if (slide.notes) {
-    parts.push(`<aside class="notes">${esc(slide.notes)}</aside>`)
-  }
-  parts.push('</section>')
-  return parts.join('')
-}
-
-function metaSection(meta: any): string {
+function metaSection(meta: any, theme: CoursewareTheme): string {
   const blocks: [string, string[]][] = []
   if (meta.objectives?.length) blocks.push(['教学目标', meta.objectives])
   if (meta.key_points?.length) blocks.push(['教学重点', meta.key_points])
   if (meta.difficulties?.length) blocks.push(['教学难点', meta.difficulties])
   if (!blocks.length) return ''
-  const cols = blocks.map(([h, items]) =>
-    `<div><h3>${esc(h)}</h3><ul>${items.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>`
+  const cols = blocks.map(([h, items], i) =>
+    `<div class="cw-block" style="border-top:4px solid ${i === 1 ? 'var(--c-accent)' : 'var(--c-primary)'}">
+      <h3 style="margin:0 0 .4em;color:var(--c-primary)">${esc(h)}</h3>
+      <ul>${items.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>`
   ).join('')
-  return `<section><span class="slide-label">课程概览</span><div class="meta-grid">${cols}</div></section>`
+  return `<section class="cw-page cw-page--objectives">${decoSvg(theme)}
+    <div class="cw-inner"><span class="cw-kicker">课程概览</span>
+    <div class="meta-grid" style="margin-top:12px">${cols}</div></div></section>`
 }
 
 interface DeckOptions {
-  /** 打印模式：用 reveal 的 view:'print' 排版并自动唤起浏览器打印（另存为 PDF）。 */
   print?: boolean
-  /** 视觉主题 key，见 coursewareTheme.ts */
   theme?: string
+  subject?: string
 }
 
 /** 由课件内容构建一份完整可独立运行的 reveal.js HTML 文档。 */
@@ -135,29 +72,27 @@ export function buildRevealDeck(content: any, imageMap: DeckImageMap = {}, opts:
   const meta = content?.meta || {}
   const slides: any[] = content?.slides || []
   const theme = getTheme(opts.theme)
+  const subject = opts.subject || meta.subject || ''
 
   const sections: string[] = []
-  // 封面：优先用 slides 里的 title 页，否则用 meta 生成
-  const hasCover = slides.some((s) => s.type === 'title')
+  const hasCover = slides.some((s) => s.type === 'title' || s.type === 'cover')
   if (!hasCover) {
-    sections.push(
-      `<section class="cover" data-background-gradient="${escAttr(coverGradient(theme))}">` +
-      `<h1>${esc(meta.title || '教学课件')}</h1>` +
-      (meta.duration ? `<p class="sub">${esc(meta.duration)}</p>` : '') + '</section>'
-    )
+    sections.push(slideSection(
+      { type: 'cover', title: meta.title || '教学课件', subtitle: meta.duration || '' },
+      {}, theme, { index: 0, subject },
+    ))
   }
-  const metaSec = metaSection(meta)
+  const metaSec = metaSection(meta, theme)
 
   let metaInserted = false
-  for (const s of slides) {
-    sections.push(slideSection(s, imageMap, theme))
-    // 在封面之后插入课程概览
-    if (!metaInserted && s.type === 'title' && metaSec) {
+  slides.forEach((s, i) => {
+    sections.push(slideSection(s, imageMap, theme, { index: i + 1, subject }))
+    if (!metaInserted && (s.type === 'title' || s.type === 'cover') && metaSec) {
       sections.push(metaSec)
       metaInserted = true
     }
-  }
-  if (!metaInserted && metaSec) sections.splice(hasCover ? 1 : 1, 0, metaSec)
+  })
+  if (!metaInserted && metaSec) sections.splice(1, 0, metaSec)
 
   return `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -168,7 +103,7 @@ export function buildRevealDeck(content: any, imageMap: DeckImageMap = {}, opts:
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@${REVEAL_VERSION}/dist/reveal.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@${REVEAL_VERSION}/dist/theme/white.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@${KATEX_VERSION}/dist/katex.min.css">
-<style>${deckStyle(theme)}</style>
+<style>${deckChrome(theme)}</style>
 </head>
 <body>
 <div class="reveal"><div class="slides">
@@ -182,7 +117,7 @@ ${sections.join('\n')}
   Reveal.initialize({
     hash: false, slideNumber: 'c/t', transition: 'slide',
     width: 1280, height: 720, margin: 0.04,
-    center: false,              // 顶部对齐，配合 CSS 让超高内容页可滚动
+    center: false,
     showSlideNumber: 'all',
     view: PRINT_MODE ? 'print' : null,
     plugins: [ RevealNotes ]
@@ -203,7 +138,6 @@ ${sections.join('\n')}
   Reveal.on('ready', function(){
     renderMath();
     if (PRINT_MODE) {
-      // 等公式/布局稳定后唤起打印对话框，用户可“另存为 PDF”
       setTimeout(function(){ try { window.print(); } catch(e){} }, 800);
     }
   });

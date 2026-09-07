@@ -2,7 +2,7 @@ from pydantic import BaseModel, field_validator
 from datetime import datetime
 from app.models.textbook import ParseStatus
 from app.models.courseware import CoursewareType, RenderStyle
-from app.services.courseware_theme import THEMES, DEFAULT_THEME
+from app.services.courseware_theme import DEFAULT_THEME, resolve_theme_key
 
 
 class CoursewareCreate(BaseModel):
@@ -19,7 +19,7 @@ class CoursewareCreate(BaseModel):
     @field_validator("theme")
     @classmethod
     def _known_theme(cls, v: str) -> str:
-        return v if v in THEMES else DEFAULT_THEME
+        return resolve_theme_key(v)
 
 
 class CoursewareOut(BaseModel):

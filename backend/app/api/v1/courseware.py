@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, delete, update
 from sqlalchemy.orm import selectinload
 from typing import Optional
 from urllib.parse import quote
@@ -12,6 +12,8 @@ from app.core.config import settings
 from app.core.minio_client import get_file_bytes
 from app.models.teacher import Teacher
 from app.models.courseware import Courseware
+from app.models.homework import HomeworkPaper
+from app.models.interaction import CoursewareSession, InteractionRecord
 from app.models.textbook import ParseStatus, TextbookImage, Textbook
 from app.schemas.courseware import CoursewareCreate, CoursewareOut, CoursewareDetail
 from app.api.deps import get_current_teacher
@@ -198,6 +200,21 @@ async def delete_courseware(
     db: AsyncSession = Depends(get_db),
 ):
     cw = await _get_or_404(cw_id, teacher.id, db)
+    session_ids = (
+        await db.execute(
+            select(CoursewareSession.id).where(CoursewareSession.courseware_id == cw_id)
+        )
+    ).scalars().all()
+    if session_ids:
+        ids = list(session_ids)
+        await db.execute(delete(InteractionRecord).where(InteractionRecord.session_id.in_(ids)))
+        await db.execute(delete(CoursewareSession).where(CoursewareSession.id.in_(ids)))
+    # 作业可独立存在，只解除对课件的引用，避免外键拦住删除
+    await db.execute(
+        update(HomeworkPaper)
+        .where(HomeworkPaper.courseware_id == cw_id)
+        .values(courseware_id=None)
+    )
     await db.delete(cw)
 
 

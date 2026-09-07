@@ -56,7 +56,7 @@
             </template>
           </el-popconfirm>
           <div class="flex-1" />
-          <el-popconfirm title="确定删除该课件？" @confirm="deleteCw(cw.id)">
+          <el-popconfirm title="确定删除该课件？关联的课堂互动会话将一并删除。" @confirm="deleteCw(cw.id)">
             <template #reference>
               <el-button size="small" link type="danger" :icon="Delete">删除</el-button>
             </template>

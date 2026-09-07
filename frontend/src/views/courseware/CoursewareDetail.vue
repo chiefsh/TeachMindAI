@@ -2,8 +2,27 @@
   <div class="page">
     <div class="flex items-center gap-3 mb-6">
       <el-button link :icon="ArrowLeft" @click="router.back()">返回</el-button>
-      <div class="flex-1">
-        <h1 class="page-title">{{ cw?.title }}</h1>
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center gap-1.5 min-w-0">
+          <h1 class="page-title truncate">{{ cw?.title }}</h1>
+          <el-button
+            v-if="cw"
+            link
+            :icon="EditPen"
+            class="!px-1"
+            title="重命名"
+            @click="renameCw"
+          />
+          <el-button
+            v-if="cw"
+            link
+            :icon="CopyDocument"
+            class="!px-1"
+            title="复制课件"
+            :loading="copying"
+            @click="copyCw"
+          />
+        </div>
         <div class="flex items-center gap-2 mt-1">
           <span v-if="cw" :class="`badge badge-${cw.gen_status}`">{{ statusLabel(cw?.gen_status) }}</span>
           <el-tag size="small" :type="isWebStyle ? 'primary' : 'info'">
@@ -185,7 +204,6 @@
           <span class="font-semibold">演示模式</span>
           <span class="text-xs text-slate-400 flex-1">方向键/空格翻页 · 按 F 全屏 · 按 S 打开演讲者视图（含讲稿） · 内容超长可在页内滚动</span>
           <el-button size="small" :icon="FullScreen" @click="fullscreenDeck">全屏演示</el-button>
-          <el-button size="small" :icon="Printer" @click="printDeck">导出 PDF（演示版）</el-button>
         </div>
       </template>
       <iframe
@@ -299,7 +317,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { coursewareApi, textbookApi, interactionApi } from '@/api/modules'
 import {
   ArrowLeft, ArrowRight, Loading, CircleClose, Download, FullScreen,
-  VideoPlay, Connection, Plus, CopyDocument, DataAnalysis, Delete, Refresh, Printer,
+  VideoPlay, Connection, Plus, CopyDocument, DataAnalysis, Delete, Refresh, EditPen,
   Monitor, Link,
 } from '@element-plus/icons-vue'
 import QRCode from 'qrcode'
@@ -318,6 +336,7 @@ const edu = useEducationStore()
 const cw = ref<Courseware | null>(null)
 const activeSlide = ref(0)
 const exporting = ref<string>('')
+const copying = ref(false)
 const imageMap = ref<Record<string, string>>({})
 const showFs = ref(false)
 let pollTimer: ReturnType<typeof setInterval> | null = null
@@ -358,19 +377,6 @@ function fullscreenDeck() {
   if (!el) return
   const req = el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen
   if (req) req.call(el)
-}
-
-function printDeck() {
-  const html = buildRevealDeck(cw.value?.content, imageMap.value, {
-    print: true,
-    theme: cw.value?.theme,
-    subject: cw.value?.subject_id ? edu.subjectName(cw.value.subject_id) : '',
-  })
-  const w = window.open('', '_blank')
-  if (!w) { ElMessage.warning('请允许弹出窗口以导出 PDF'); return }
-  w.document.open()
-  w.document.write(html)
-  w.document.close()
 }
 
 // 网页样式课件：单页滚动网页，可预览也可下载为独立 HTML
@@ -629,6 +635,44 @@ async function load() {
   } else {
     stopStatusPoll()
     if (cw.value?.gen_status === 'done') resolveImages()
+  }
+}
+
+async function renameCw() {
+  if (!cw.value) return
+  try {
+    const { value } = await ElMessageBox.prompt('请输入新的课件名称', '重命名', {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      inputValue: cw.value.title,
+      inputPattern: /\S/,
+      inputErrorMessage: '名称不能为空',
+    })
+    const title = String(value || '').trim()
+    if (!title || title === cw.value.title) return
+    const updated = await coursewareApi.rename(cw.value.id, title)
+    const keepSlide = activeSlide.value
+    await load()
+    if (cw.value) cw.value.title = updated.title
+    activeSlide.value = keepSlide
+    ElMessage.success('已重命名')
+  } catch (e: any) {
+    if (e === 'cancel' || e === 'close') return
+    ElMessage.error('重命名失败，请稍后重试')
+  }
+}
+
+async function copyCw() {
+  if (!cw.value) return
+  copying.value = true
+  try {
+    const copied = await coursewareApi.copy(cw.value.id)
+    ElMessage.success(`已复制为「${copied.title}」`)
+    router.push(`/courseware/${copied.id}`)
+  } catch {
+    ElMessage.error('复制失败，请稍后重试')
+  } finally {
+    copying.value = false
   }
 }
 

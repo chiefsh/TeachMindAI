@@ -40,6 +40,14 @@
         </div>
         <div class="flex items-center gap-2 mt-3 pt-3 border-t border-slate-50" @click.stop>
           <el-button size="small" link :icon="View" @click="router.push(`/courseware/${cw.id}`)">查看</el-button>
+          <el-button size="small" link :icon="EditPen" @click="renameCw(cw)">重命名</el-button>
+          <el-button
+            size="small"
+            link
+            :icon="CopyDocument"
+            :loading="copyingId === cw.id"
+            @click="copyCw(cw)"
+          >复制</el-button>
           <el-popconfirm
             title="重新生成将覆盖当前课件内容，确定继续吗？"
             width="240"
@@ -176,8 +184,8 @@ import { watchDebounced } from '@vueuse/core'
 import { useRouter } from 'vue-router'
 import { coursewareApi, textbookApi } from '@/api/modules'
 import { useEducationStore } from '@/stores/education'
-import { ElMessage } from 'element-plus'
-import { MagicStick, View, Delete, VideoPlay, RefreshRight } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { MagicStick, View, Delete, VideoPlay, RefreshRight, CopyDocument, EditPen } from '@element-plus/icons-vue'
 import type { Courseware, Textbook, Chapter, RenderStyle } from '@/types'
 import { THEMES, DEFAULT_THEME, getTheme } from '@/utils/coursewareTheme'
 import { isBusyStatus, useBusyPoll } from '@/utils/busyPoll'
@@ -194,6 +202,7 @@ const loading = ref(false)
 const showCreate = ref(false)
 const creating = ref(false)
 const regeneratingId = ref<number | null>(null)
+const copyingId = ref<number | null>(null)
 const formRef = ref()
 const chapterOptions = ref<{ id: number; label: string }[]>([])
 const chaptersLoading = ref(false)
@@ -309,6 +318,39 @@ async function handleCreate() {
     showCreate.value = false
     await load()
   } finally { creating.value = false }
+}
+
+async function copyCw(cw: Courseware) {
+  copyingId.value = cw.id
+  try {
+    const copied = await coursewareApi.copy(cw.id)
+    ElMessage.success(`已复制为「${copied.title}」`)
+    await load()
+  } catch {
+    ElMessage.error('复制失败，请稍后重试')
+  } finally {
+    copyingId.value = null
+  }
+}
+
+async function renameCw(cw: Courseware) {
+  try {
+    const { value } = await ElMessageBox.prompt('请输入新的课件名称', '重命名', {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      inputValue: cw.title,
+      inputPattern: /\S/,
+      inputErrorMessage: '名称不能为空',
+    })
+    const title = String(value || '').trim()
+    if (!title || title === cw.title) return
+    await coursewareApi.rename(cw.id, title)
+    ElMessage.success('已重命名')
+    await load()
+  } catch (e: any) {
+    if (e === 'cancel' || e === 'close') return
+    ElMessage.error('重命名失败，请稍后重试')
+  }
 }
 
 async function regenerateCw(cw: Courseware) {

@@ -78,6 +78,8 @@ export const coursewareApi = {
   get: (id: number) => request.get<Courseware>(`/coursewares/${id}`),
   getStatus: (id: number) => request.get(`/coursewares/${id}/status`),
   regenerate: (id: number) => request.post<Courseware>(`/coursewares/${id}/regenerate`),
+  copy: (id: number) => request.post<Courseware>(`/coursewares/${id}/copy`),
+  rename: (id: number, title: string) => request.patch<Courseware>(`/coursewares/${id}`, { title }),
   exportFile: (id: number, format: 'pptx' | 'docx' | 'pdf') =>
     request.get<Blob>(`/coursewares/${id}/export`, { params: { format }, responseType: 'blob' }),
   delete: (id: number) => request.delete(`/coursewares/${id}`),

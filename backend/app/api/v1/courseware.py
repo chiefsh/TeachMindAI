@@ -3,8 +3,10 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, delete, update
 from sqlalchemy.orm import selectinload
+from sqlalchemy.orm.attributes import flag_modified
 from typing import Optional
 from urllib.parse import quote
+import copy
 import io
 
 from app.core.database import get_db
@@ -15,7 +17,7 @@ from app.models.courseware import Courseware
 from app.models.homework import HomeworkPaper
 from app.models.interaction import CoursewareSession, InteractionRecord
 from app.models.textbook import ParseStatus, TextbookImage, Textbook
-from app.schemas.courseware import CoursewareCreate, CoursewareOut, CoursewareDetail
+from app.schemas.courseware import CoursewareCreate, CoursewareOut, CoursewareDetail, CoursewareUpdate
 from app.api.deps import get_current_teacher
 from app.services.export_service import build_export
 
@@ -129,6 +131,92 @@ async def regenerate_courseware(
 
     await db.refresh(cw)
     return cw
+
+
+def _apply_title(content: dict | None, old: str, new: str) -> dict | None:
+    """同步课件 JSON 里的封面/meta 标题。"""
+    if not content:
+        return content
+    data = copy.deepcopy(content)
+    meta = data.get("meta")
+    if isinstance(meta, dict) and (not meta.get("title") or meta.get("title") == old):
+        meta["title"] = new
+    for s in data.get("slides") or []:
+        if not isinstance(s, dict):
+            continue
+        if s.get("type") in ("title", "cover") and (not s.get("title") or s.get("title") == old):
+            s["title"] = new
+    return data
+
+
+async def _next_copy_title(base: str, teacher_id: int, db: AsyncSession) -> str:
+    """在同一教师下为 base 生成「base_副本N」，N 取已有最大序号 + 1。"""
+    prefix = f"{base}_副本"
+    rows = (
+        await db.execute(
+            select(Courseware.title).where(Courseware.teacher_id == teacher_id)
+        )
+    ).scalars().all()
+    max_n = 0
+    for t in rows:
+        rest = (t or "")[len(prefix):]
+        if (t or "").startswith(prefix) and rest.isdigit():
+            max_n = max(max_n, int(rest))
+    n = max_n + 1
+    suffix = f"_副本{n}"
+    stem = base[: max(1, 256 - len(suffix))]
+    return f"{stem}{suffix}"
+
+
+@router.patch("/{cw_id}", response_model=CoursewareOut)
+async def update_courseware(
+    cw_id: int,
+    data: CoursewareUpdate,
+    teacher: Teacher = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+):
+    cw = await _get_or_404(cw_id, teacher.id, db)
+    old = cw.title
+    cw.title = data.title
+    if cw.content and old != data.title:
+        cw.content = _apply_title(cw.content, old, data.title)
+        flag_modified(cw, "content")
+    await db.commit()
+    await db.refresh(cw)
+    return cw
+
+
+@router.post("/{cw_id}/copy", response_model=CoursewareOut, status_code=201)
+async def copy_courseware(
+    cw_id: int,
+    teacher: Teacher = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+):
+    src = await _get_or_404(cw_id, teacher.id, db)
+    title = await _next_copy_title(src.title, teacher.id, db)
+    content = _apply_title(src.content, src.title, title) if src.content else None
+    gen_status = src.gen_status
+    if gen_status == ParseStatus.processing:
+        gen_status = ParseStatus.done if content else ParseStatus.pending
+    clone = Courseware(
+        teacher_id=teacher.id,
+        textbook_id=src.textbook_id,
+        title=title,
+        chapter_range=copy.deepcopy(src.chapter_range) if src.chapter_range else None,
+        page_range=copy.deepcopy(src.page_range) if src.page_range else None,
+        courseware_type=src.courseware_type,
+        render_style=src.render_style,
+        theme=src.theme,
+        custom_prompt=src.custom_prompt,
+        content=content,
+        gen_status=gen_status,
+        is_interactive=src.is_interactive,
+        task_id=None,
+    )
+    db.add(clone)
+    await db.commit()
+    await db.refresh(clone)
+    return clone
 
 
 def _collect_image_ids(content: dict) -> list[int]:

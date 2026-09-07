@@ -1,4 +1,4 @@
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, Field
 from datetime import datetime
 from app.models.textbook import ParseStatus
 from app.models.courseware import CoursewareType, RenderStyle
@@ -20,6 +20,18 @@ class CoursewareCreate(BaseModel):
     @classmethod
     def _known_theme(cls, v: str) -> str:
         return resolve_theme_key(v)
+
+
+class CoursewareUpdate(BaseModel):
+    title: str = Field(..., min_length=1, max_length=256)
+
+    @field_validator("title")
+    @classmethod
+    def _strip_title(cls, v: str) -> str:
+        t = (v or "").strip()
+        if not t:
+            raise ValueError("课件名称不能为空")
+        return t[:256]
 
 
 class CoursewareOut(BaseModel):

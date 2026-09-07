@@ -10,7 +10,11 @@ RUN apt-get update && apt-get install -y \
     tesseract-ocr \
     tesseract-ocr-chi-sim \
     tesseract-ocr-eng \
+    tzdata \
     && rm -rf /var/lib/apt/lists/*
+
+ENV TZ=Asia/Shanghai
+ENV LANG=C.UTF-8
 
 # liteparse 的 OCR 走 tesseract，指定中文语言包所在目录（python:3.11-slim 为 tesseract 5）
 ENV TESSDATA_PREFIX=/usr/share/tesseract-ocr/5/tessdata

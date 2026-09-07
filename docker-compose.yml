@@ -1,11 +1,15 @@
 version: "3.9"
 
+x-timezone: &timezone
+  TZ: Asia/Shanghai
+
 services:
   mysql:
     image: mysql:8.0
     container_name: edu_mysql
     restart: always
     environment:
+      <<: *timezone
       MYSQL_ROOT_PASSWORD: edu_root_pass
       MYSQL_DATABASE: edu_platform
       MYSQL_USER: edu_user
@@ -14,12 +18,14 @@ services:
       - "3306:3306"
     volumes:
       - mysql_data:/var/lib/mysql
-    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci --default-time-zone=+08:00
 
   redis:
     image: redis:7-alpine
     container_name: edu_redis
     restart: always
+    environment:
+      <<: *timezone
     ports:
       - "6379:6379"
     volumes:
@@ -31,6 +37,7 @@ services:
     container_name: edu_rabbitmq
     restart: always
     environment:
+      <<: *timezone
       RABBITMQ_DEFAULT_USER: edu_user
       RABBITMQ_DEFAULT_PASS: edu_pass
     ports:
@@ -44,6 +51,7 @@ services:
     container_name: edu_minio
     restart: always
     environment:
+      <<: *timezone
       MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-edu_minio_user}
       MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-edu_minio_pass}
     ports:
@@ -58,6 +66,7 @@ services:
     container_name: edu_neo4j
     restart: always
     environment:
+      <<: *timezone
       NEO4J_AUTH: neo4j/edu_neo4j_pass
       NEO4J_server_memory_pagecache_size: 512M
       NEO4J_server_memory_heap_max__size: 1G
@@ -72,6 +81,8 @@ services:
     image: qdrant/qdrant:latest
     container_name: edu_qdrant
     restart: always
+    environment:
+      <<: *timezone
     ports:
       - "6333:6333"   # HTTP / REST
       - "6334:6334"   # gRPC
@@ -83,6 +94,7 @@ services:
     container_name: edu_backend
     restart: always
     environment:
+      <<: *timezone
       DATABASE_URL: mysql+aiomysql://edu_user:edu_pass@mysql:3306/edu_platform
       REDIS_URL: redis://redis:6379/0
       RABBITMQ_URL: amqp://edu_user:edu_pass@rabbitmq:5672/
@@ -115,6 +127,7 @@ services:
     container_name: edu_celery
     restart: always
     environment:
+      <<: *timezone
       DATABASE_URL: mysql+aiomysql://edu_user:edu_pass@mysql:3306/edu_platform
       REDIS_URL: redis://redis:6379/0
       RABBITMQ_URL: amqp://edu_user:edu_pass@rabbitmq:5672/
@@ -141,6 +154,8 @@ services:
     build: ./frontend
     container_name: edu_frontend
     restart: always
+    environment:
+      <<: *timezone
     ports:
       - "3000:80"
     depends_on:

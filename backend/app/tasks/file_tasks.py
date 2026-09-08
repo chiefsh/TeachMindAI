@@ -38,9 +38,12 @@ def parse_question_file_task(
     bucket: str,
     object_name: str,
     file_type: str,
+    import_id: int | None = None,
 ):
     try:
-        _run(parse_question_file(teacher_id, subject_id, grade_id, bucket, object_name, file_type))
+        _run(parse_question_file(
+            teacher_id, subject_id, grade_id, bucket, object_name, file_type, import_id,
+        ))
     except Exception as exc:
         raise self.retry(exc=exc, countdown=10)
 

@@ -3,7 +3,7 @@ import io
 import re
 import logging
 from typing import Optional
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import AsyncSessionLocal
@@ -651,26 +651,181 @@ def _parse_epub(data: bytes) -> list[dict]:
 
 # ─── 题库解析 ─────────────────────────────────────────────────────
 
+def _store_qimg(teacher_id: int, data: bytes, ext: str, content_type: str) -> str:
+    from app.services.question_media import store_question_image
+    return store_question_image(teacher_id, data, ext, content_type)
+
+
+def _build_images_payload(item: dict, image_by_id: dict[int, str], source_object: str | None = None) -> dict | None:
+    """把 LLM 返回的 image_id / bbox 结果收成 Question.images。"""
+    stem: list[str] = []
+    for raw_id in item.get("stem_image_ids") or []:
+        try:
+            obj = image_by_id.get(int(raw_id))
+        except (TypeError, ValueError):
+            obj = None
+        if obj:
+            stem.append(obj)
+    opt_imgs: dict[str, str] = {}
+    raw_opts = item.get("options") if isinstance(item.get("options"), dict) else {}
+    for key, val in raw_opts.items():
+        if not isinstance(val, dict):
+            continue
+        try:
+            iid = val.get("image_id")
+            obj = image_by_id.get(int(iid)) if iid is not None else None
+        except (TypeError, ValueError):
+            obj = None
+        if obj:
+            opt_imgs[str(key)] = obj
+    content = str(item.get("content") or "")
+    claimed_bbox = any(isinstance(v, dict) and v.get("bbox") for v in raw_opts.values())
+    looks_figured = (not opt_imgs) and (
+        claimed_bbox or any(x in content for x in ("如图", "下图", "图中", "图示"))
+    )
+    # 已有选项切图时不要再把整页原图塞进题干
+    if source_object and not stem and looks_figured:
+        stem.append(source_object)
+    if not stem and not opt_imgs:
+        return None
+    out: dict = {}
+    if stem:
+        out["stem"] = stem
+    if opt_imgs:
+        out["options"] = opt_imgs
+    return out
+
+
+def _plain_options(raw) -> dict | None:
+    if not isinstance(raw, dict):
+        return None
+    out = {}
+    for key, val in raw.items():
+        k = str(key).strip()
+        if not k or k.startswith("_"):
+            continue
+        if isinstance(val, dict):
+            text = str(val.get("text") or "").strip()
+        else:
+            text = str(val).strip()
+        text = re.sub(r"\[图\s*\d+\]", "", text).strip()
+        out[k] = text
+    return out or None
+
+
+def _items_to_questions(
+    items: list[dict],
+    teacher_id: int,
+    subject_id: int,
+    grade_id: int,
+    source: str,
+    image_by_id: dict[int, str] | None = None,
+    source_object: str | None = None,
+) -> list[Question]:
+    image_by_id = image_by_id or {}
+    out: list[Question] = []
+    for item in items:
+        raw_content = str(item.get("content") or "").strip()
+        content = re.sub(r"\[图\s*\d+\]", "", raw_content).strip() or raw_content or "（见图）"
+        if not content:
+            continue
+        out.append(Question(
+            teacher_id=teacher_id,
+            subject_id=subject_id,
+            grade_id=grade_id,
+            question_type=_coerce_qtype(item.get("question_type")),
+            difficulty=_coerce_difficulty(item.get("difficulty")),
+            content=content[:4000],
+            options=_plain_options(item.get("options")),
+            images=_build_images_payload(item, image_by_id, source_object),
+            answer=(item.get("answer") or None),
+            explanation=(item.get("explanation") or None),
+            source_file_path=source,
+        ))
+    return out
+
+
 async def parse_question_file(
     teacher_id: int, subject_id: int, grade_id: int,
     bucket: str, object_name: str, file_type: str,
+    import_id: int | None = None,
 ):
-    file_bytes = get_file_bytes(bucket, object_name)
+    from app.models.question import QuestionImport
+    from app.models.textbook import ParseStatus
 
-    if file_type in ("jpg", "jpeg", "png", "webp"):
-        await _parse_question_image(teacher_id, subject_id, grade_id, file_bytes, object_name)
+    async def _mark(status: str, count: int = 0, error: str | None = None):
+        if not import_id:
+            return
+        async with AsyncSessionLocal() as db:
+            rec = await db.get(QuestionImport, import_id)
+            if not rec or rec.teacher_id != teacher_id:
+                return
+            rec.parse_status = status
+            rec.question_count = count
+            rec.parse_error = error
+            await db.commit()
+
+    await _mark(ParseStatus.processing.value)
+    try:
+        file_bytes = get_file_bytes(bucket, object_name)
+
+        if file_type in ("jpg", "jpeg", "png", "webp"):
+            await _parse_question_image(teacher_id, subject_id, grade_id, file_bytes, object_name)
+        elif file_type == "pdf":
+            text, image_by_id = _extract_pdf_questions(file_bytes, teacher_id)
+            await _save_parsed_questions(
+                teacher_id, subject_id, grade_id, object_name, text, image_by_id,
+            )
+        elif file_type in ("docx", "doc"):
+            text, image_by_id = _extract_docx_questions(file_bytes, file_type, teacher_id)
+            await _save_parsed_questions(
+                teacher_id, subject_id, grade_id, object_name, text, image_by_id,
+            )
+        elif file_type == "txt":
+            text = file_bytes.decode("utf-8", errors="ignore")
+            await _save_parsed_questions(teacher_id, subject_id, grade_id, object_name, text, {})
+        else:
+            await _mark(ParseStatus.failed.value, 0, f"不支持的文件格式：{file_type}")
+            return
+
+        async with AsyncSessionLocal() as db:
+            n = (await db.execute(
+                select(func.count()).select_from(Question).where(
+                    Question.teacher_id == teacher_id,
+                    Question.source_file_path == object_name,
+                )
+            )).scalar() or 0
+        if n == 0:
+            await _mark(ParseStatus.failed.value, 0, "未能识别出有效题目")
+        else:
+            await _mark(ParseStatus.done.value, int(n))
+    except Exception as e:
+        logger.exception("题库导入失败 import_id=%s", import_id)
+        await _mark(ParseStatus.failed.value, 0, str(e)[:500])
+        raise
+
+
+async def _save_parsed_questions(
+    teacher_id: int, subject_id: int, grade_id: int,
+    object_name: str, text: str, image_by_id: dict[int, str],
+):
+    catalog = "\n".join(f"[图{i}]" for i in sorted(image_by_id)) if image_by_id else ""
+    parsed: list[dict] = []
+    from app.services.ai_service import _get_default_llm, parse_questions_from_text
+    async with AsyncSessionLocal() as db:
+        cfg = await _get_default_llm(teacher_id, db)
+    if cfg and text.strip():
+        try:
+            parsed = await parse_questions_from_text(cfg, text, catalog)
+        except Exception:
+            parsed = []
+    questions = _items_to_questions(
+        parsed, teacher_id, subject_id, grade_id, object_name, image_by_id,
+    ) if parsed else _split_questions(
+        text, teacher_id, subject_id, grade_id, object_name, image_by_id,
+    )
+    if not questions:
         return
-
-    if file_type == "pdf":
-        text = _extract_pdf_text(file_bytes)
-    elif file_type in ("docx", "doc"):
-        text = _extract_docx_text(file_bytes, file_type)
-    elif file_type == "txt":
-        text = file_bytes.decode("utf-8", errors="ignore")
-    else:
-        return
-
-    questions = _split_questions(text, teacher_id, subject_id, grade_id, object_name)
     async with AsyncSessionLocal() as db:
         db.add_all(questions)
         await db.commit()
@@ -738,15 +893,114 @@ def _extract_docx_text(data: bytes, ext: str = "docx") -> str:
     return "\n".join(p.text for p in doc.paragraphs if p.text.strip())
 
 
-def _split_questions(text: str, teacher_id: int, subject_id: int, grade_id: int, source: str) -> list[Question]:
+def _extract_docx_questions(data: bytes, ext: str, teacher_id: int) -> tuple[str, dict[int, str]]:
+    """按文档顺序抽出文字，并在插图处插入 [图N]，同时把图存进 MinIO。"""
+    from app.services.question_media import image_looks_useful
+
+    doc = _load_docx(data, ext)
+    chunks: list[str] = []
+    image_by_id: dict[int, str] = {}
+    idx = 0
+
+    def walk(el):
+        nonlocal idx
+        tag = el.tag.split("}")[-1]
+        if tag == "t":
+            if el.text:
+                chunks.append(el.text)
+            return
+        if tag == "blip":
+            rid = el.get("{http://schemas.openxmlformats.org/officeDocument/2006/relationships}embed")
+            if not rid:
+                return
+            part = doc.part.related_parts.get(rid)
+            if not part or not getattr(part, "blob", None):
+                return
+            blob = part.blob
+            if not image_looks_useful(blob):
+                return
+            ext_name = (getattr(part, "filename", "") or "png").rsplit(".", 1)[-1].lower()
+            if ext_name not in ("png", "jpg", "jpeg", "webp", "gif"):
+                ext_name = "png"
+            ctype = f"image/{'jpeg' if ext_name in ('jpg', 'jpeg') else ext_name}"
+            idx += 1
+            image_by_id[idx] = _store_qimg(teacher_id, blob, ext_name, ctype)
+            chunks.append(f"[图{idx}]")
+            return
+        for child in el:
+            walk(child)
+
+    walk(doc.element.body)
+    text = re.sub(r"[ \t]+\n", "\n", "".join(chunks))
+    text = re.sub(r"\n{3,}", "\n\n", text).strip()
+    return text, image_by_id
+
+
+def _extract_pdf_questions(data: bytes, teacher_id: int, max_images: int = 40) -> tuple[str, dict[int, str]]:
+    """抽出 PDF 正文，并提取内嵌图；扫描件则渲染整页作为图。"""
+    import fitz
+    from app.services.question_media import image_looks_useful
+
+    text = _extract_pdf_text(data)
+    image_by_id: dict[int, str] = {}
+    idx = 0
+    seen: set[int] = set()
+    doc = fitz.open(stream=data, filetype="pdf")
+    for pno in range(len(doc)):
+        page = doc[pno]
+        for img in page.get_images(full=True):
+            if idx >= max_images:
+                break
+            xref = img[0]
+            if xref in seen:
+                continue
+            seen.add(xref)
+            try:
+                base = doc.extract_image(xref)
+            except Exception:
+                continue
+            blob = base.get("image") or b""
+            if not blob or not image_looks_useful(blob):
+                continue
+            ext_name = (base.get("ext") or "png").lower()
+            ctype = f"image/{'jpeg' if ext_name in ('jpg', 'jpeg') else ext_name}"
+            idx += 1
+            image_by_id[idx] = _store_qimg(teacher_id, blob, ext_name, ctype)
+            if f"[图{idx}]" not in text:
+                text += f"\n[图{idx}]"
+        if idx >= max_images:
+            break
+
+    # 几乎无文字且无内嵌图：按页渲染，交给后续 Vision / LLM 占位
+    if idx == 0 and len(text.strip()) < 40:
+        for pno in range(min(len(doc), 8)):
+            try:
+                pix = doc[pno].get_pixmap(matrix=fitz.Matrix(1.4, 1.4), alpha=False)
+                png = pix.tobytes("png")
+            except Exception:
+                continue
+            if not image_looks_useful(png, min_side=80):
+                continue
+            idx += 1
+            image_by_id[idx] = _store_qimg(teacher_id, png, "png", "image/png")
+            text += f"\n[图{idx}]"
+    return text.strip(), image_by_id
+
+
+def _split_questions(
+    text: str, teacher_id: int, subject_id: int, grade_id: int, source: str,
+    image_by_id: dict[int, str] | None = None,
+) -> list[Question]:
     """简单按编号分割题目"""
     pattern = re.compile(r"(?:^|\n)(\d+)[.、．]\s+(.+?)(?=\n\d+[.、．]|\Z)", re.DOTALL)
     matches = pattern.findall(text)
     questions = []
-    for _, content in matches[:200]:
+    stem_all = list((image_by_id or {}).values())
+    for i, (_, content) in enumerate(matches[:200]):
         content = content.strip()
         if len(content) < 5:
             continue
+        images = {"stem": stem_all} if stem_all and i == 0 else None
         q = Question(
             teacher_id=teacher_id,
             subject_id=subject_id,
@@ -754,59 +1008,106 @@ def _split_questions(text: str, teacher_id: int, subject_id: int, grade_id: int,
             question_type=QuestionType.short_answer,
             difficulty=DifficultyLevel.medium,
             content=content[:2000],
+            images=images,
             source_file_path=source,
         )
         questions.append(q)
+    if not questions and text.strip():
+        questions.append(Question(
+            teacher_id=teacher_id,
+            subject_id=subject_id,
+            grade_id=grade_id,
+            question_type=QuestionType.short_answer,
+            difficulty=DifficultyLevel.medium,
+            content=text.strip()[:4000],
+            images={"stem": stem_all} if stem_all else None,
+            source_file_path=source,
+        ))
     return questions
 
 
 async def _parse_question_image(teacher_id, subject_id, grade_id, data, source):
-    """使用 AI Vision 识别图片中的题目"""
-    from app.services.ai_service import do_ocr_grades
-    import json
+    """Vision 识别截图/照片中的题目，并按 bbox 裁切题干/选项图。"""
+    from app.services.ai_service import _get_default_llm, parse_questions_from_image
+    from app.services.question_media import (
+        assign_figures_to_questions, crop_pixel_box, detect_option_figures,
+        refine_option_box,
+    )
+
     async with AsyncSessionLocal() as db:
-        from app.core.security import decrypt_api_key
-        from app.models.llm_config import LLMConfig
-        result = await db.execute(
-            select(LLMConfig).where(
-                LLMConfig.teacher_id == teacher_id,
-                LLMConfig.is_active == True,
-                LLMConfig.is_default == True,
-            )
-        )
-        cfg = result.scalar_one_or_none()
+        cfg = await _get_default_llm(teacher_id, db)
         if not cfg:
             return
 
-    import base64, litellm
-    from app.services.ai_service import build_litellm_kwargs
-    api_key = decrypt_api_key(cfg.api_key_encrypted) if cfg.api_key_encrypted else None
-    b64 = base64.b64encode(data).decode()
-    resp = await litellm.acompletion(
-        messages=[{"role": "user", "content": [
-            {"type": "text", "text": '请识别图片中的题目，以JSON返回：{"questions":[{"content":"题干","answer":"答案"}]}'},
-            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}},
-        ]}],
-        max_tokens=2048,
-        **build_litellm_kwargs(cfg, api_key),
-    )
+    ext = (source or "jpg").rsplit(".", 1)[-1].lower()
+    if ext not in ("jpg", "jpeg", "png", "webp"):
+        ext = "jpg"
+    ctype = "image/png" if ext == "png" else ("image/webp" if ext == "webp" else "image/jpeg")
+    source_object = _store_qimg(teacher_id, data, ext, ctype)
+
     try:
-        raw = resp.choices[0].message.content
-        parsed = json.loads(raw[raw.find("{"):raw.rfind("}")+1])
-        items = parsed.get("questions", [])
-        qs = [Question(
+        parsed = await parse_questions_from_image(cfg, data)
+    except Exception as e:
+        logger.warning("题库图片识别失败：%s", e)
+        parsed = []
+
+    figures = detect_option_figures(data)
+    use_cv = len(figures) >= 4
+    grouped = assign_figures_to_questions(figures, max(1, len(parsed))) if use_cv else []
+    logger.info(
+        "题库配图检测：整页 %d 块，分给 %d 题，模式=%s",
+        len(figures), len(parsed), "cv" if use_cv else "llm-bbox",
+    )
+
+    image_by_id: dict[int, str] = {}
+    next_id = 1
+    for qi, item in enumerate(parsed):
+        raw_opts = item.get("options") if isinstance(item.get("options"), dict) else {}
+        for val in raw_opts.values():
+            if isinstance(val, dict):
+                val.pop("image_id", None)
+        item["stem_image_ids"] = []
+        keys = [k for k in ("A", "B", "C", "D") if k in raw_opts] or list(raw_opts.keys())
+        if use_cv:
+            boxes = grouped[qi] if qi < len(grouped) else []
+            pairs = list(zip(keys, boxes))
+        else:
+            pairs = []
+            for key in keys:
+                val = raw_opts.get(key)
+                bbox = val.get("bbox") if isinstance(val, dict) else None
+                box = refine_option_box(data, bbox) if bbox else None
+                if box:
+                    pairs.append((key, box))
+        for key, box in pairs:
+            cropped = crop_pixel_box(data, box)
+            if not cropped:
+                continue
+            image_by_id[next_id] = _store_qimg(teacher_id, cropped, "jpg", "image/jpeg")
+            val = raw_opts.get(key)
+            if not isinstance(val, dict):
+                raw_opts[key] = {"text": str(val or ""), "image_id": next_id}
+            else:
+                val["image_id"] = next_id
+            next_id += 1
+        if raw_opts:
+            item["options"] = raw_opts
+
+    questions = _items_to_questions(
+        parsed, teacher_id, subject_id, grade_id, source, image_by_id, None,
+    )
+    if not questions:
+        questions = [Question(
             teacher_id=teacher_id, subject_id=subject_id, grade_id=grade_id,
             question_type=QuestionType.short_answer,
             difficulty=DifficultyLevel.medium,
-            content=q.get("content", "")[:2000],
-            answer=q.get("answer"),
+            content="（未能识别文字，已保留原图，请对照图片查看）",
+            images={"stem": [source_object]},
             source_file_path=source,
-        ) for q in items if q.get("content")]
-        async with AsyncSessionLocal() as db:
-            db.add_all(qs)
-            await db.commit()
-    except Exception:
-        pass
+        )]
+    async with AsyncSessionLocal() as db:
+        db.add_all(questions)
+        await db.commit()
 
 
 # ─── 试题分析：文件解析 ───────────────────────────────────────────

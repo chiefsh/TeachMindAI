@@ -451,6 +451,7 @@ def _normalize_knowledge_points(raw_points: list, max_points: int = 4) -> list[d
         activity_goal = str(p.get("activity_goal") or f"通过互动练习掌握{name}").strip()
         # 网页样式课件才会产出，供学生自主阅读的深入讲解段落
         deep_dive = str(p.get("deep_dive") or "").strip()
+        teacher_focus = str(p.get("teacher_focus") or "").strip()
         out.append({
             "name": name[:64],
             "plain_explanation": plain,
@@ -459,8 +460,137 @@ def _normalize_knowledge_points(raw_points: list, max_points: int = 4) -> list[d
             "life_example": life_example,
             "activity_goal": activity_goal,
             "deep_dive": deep_dive,
+            "teacher_focus": teacher_focus,
         })
     return out[:max_points]
+
+
+def _teacher_intent(cw) -> str:
+    return str(getattr(cw, "custom_prompt", None) or "").strip()
+
+
+def _interactive_teacher_intent_block(cw, point: dict) -> str:
+    intent = _teacher_intent(cw)
+    if not intent:
+        return ""
+    block = f"\n教师本课要求（互动设计必须呼应，题干、情境、反馈都要对齐）：{intent}"
+    focus = str(point.get("teacher_focus") or "").strip()
+    if focus:
+        block += f"\n本知识点落实要点：{focus}"
+    return block
+
+
+def _inject_teacher_intent(slides: list[dict], intent: str) -> None:
+    """先把教师想法写进封面、目标、练习、作业，保证课件里看得见。"""
+    if not intent:
+        return
+    for slide in slides:
+        stype = slide.get("type")
+        if stype == "cover":
+            notes = (slide.get("notes") or "").strip()
+            line = f"教师想法：{intent}"
+            if line not in notes:
+                slide["notes"] = f"{line}\n{notes}".strip() if notes else line
+        elif stype == "objectives":
+            extra = f"落实教师想法：{intent}"
+            bullets = [str(b) for b in (slide.get("bullets") or [])]
+            if not any(intent[:24] in str(b) for b in bullets):
+                bullets.append(extra)
+            slide["bullets"] = bullets[:6]
+            content = (slide.get("content") or "").strip()
+            if "教师本课要求" not in content:
+                slide["content"] = (content + f"\n\n### 教师本课要求\n{intent}").strip()
+        elif stype in ("exercise", "homework"):
+            content = (slide.get("content") or "").strip()
+            if intent not in content:
+                label = "练习需对齐教师要求" if stype == "exercise" else "作业需对齐教师要求"
+                slide["content"] = f"{content}\n\n{label}：{intent}".strip()
+
+
+def _merge_slide_patch(slide: dict, patch: dict) -> None:
+    if not isinstance(patch, dict):
+        return
+    for key in ("title", "subtitle", "content", "notes", "prompt", "solution"):
+        val = patch.get(key)
+        if isinstance(val, str) and val.strip():
+            slide[key] = val.strip()
+    bullets = patch.get("bullets")
+    if isinstance(bullets, list):
+        cleaned = [str(x).strip() for x in bullets if str(x).strip()][:8]
+        if cleaned:
+            slide["bullets"] = cleaned
+    steps = patch.get("steps")
+    if isinstance(steps, list) and steps:
+        cleaned_steps = []
+        for item in steps[:6]:
+            if isinstance(item, dict) and (item.get("title") or item.get("detail")):
+                cleaned_steps.append({
+                    "title": str(item.get("title") or "").strip(),
+                    "detail": str(item.get("detail") or "").strip(),
+                })
+        if cleaned_steps:
+            slide["steps"] = cleaned_steps
+
+
+async def _apply_teacher_intent(cfg, cw, lesson: dict, intent: str) -> dict:
+    """按教师想法改写页文案，不增删页、不改 type/html/images。"""
+    if not intent:
+        return lesson
+    slides = lesson.get("slides") or []
+    if not slides:
+        return lesson
+    _inject_teacher_intent(slides, intent)
+
+    slim = []
+    for slide in slides:
+        slim.append({
+            "index": slide.get("index"),
+            "type": slide.get("type"),
+            "title": slide.get("title"),
+            "subtitle": slide.get("subtitle"),
+            "bullets": slide.get("bullets") or [],
+            "content": (slide.get("content") or "")[:800],
+            "notes": slide.get("notes") or "",
+            "prompt": slide.get("prompt") or "",
+            "solution": slide.get("solution") or "",
+        })
+    system = """你是一线教研员。按教师想法改写已有课件文案。
+硬性规则：
+1. 不增删页，不改 index/type，不要输出 html/images/skill。
+2. 只改 title/subtitle/bullets/content/notes/prompt/solution，必须落实教师想法。
+3. 封面 notes、学习目标、讲解、例题、练习、作业必须明显体现教师要求（难度、侧重、例题、节奏）。
+4. 只输出 JSON：{"slides":[{...}]}，不要 markdown。"""
+    user = (
+        f"课题：{cw.title}\n\n【教师想法——必须落实】\n{intent}\n\n"
+        f"现有页面：\n{json.dumps(slim, ensure_ascii=False)}"
+    )
+    try:
+        resp = await _call_llm(
+            cfg,
+            [{"role": "system", "content": system}, {"role": "user", "content": user}],
+            max_tokens=max(cfg.max_tokens or 0, 6000),
+        )
+        raw = _resp_content(resp)
+        data = _parse_json_object(raw)
+        patches = (data or {}).get("slides")
+        if not isinstance(patches, list):
+            logger.warning("课件 %s 教师想法改写未返回 slides", getattr(cw, "id", "?"))
+        else:
+            by_index = {
+                p.get("index"): p
+                for p in patches
+                if isinstance(p, dict) and p.get("index") is not None
+            }
+            for slide in slides:
+                patch = by_index.get(slide.get("index"))
+                if patch:
+                    _merge_slide_patch(slide, patch)
+            logger.info("课件 %s 已按教师想法改写文案", getattr(cw, "id", "?"))
+        lesson.setdefault("meta", {})["teacher_intent"] = intent
+    except Exception as e:
+        logger.warning("课件 %s 教师想法改写失败，保留直写内容：%s", getattr(cw, "id", "?"), e)
+        lesson.setdefault("meta", {})["teacher_intent"] = intent
+    return lesson
 
 
 async def _extract_knowledge_points(
@@ -490,13 +620,23 @@ async def _extract_knowledge_points(
             "并额外给 deep_dive —— 150~300 字的深入讲解，讲清原理、使用方法与典型场景，可分成若干短段（用换行分段）。"
         )
         deep_dive_field = ',\n      "deep_dive": "适合自主阅读的深入讲解段落"'
+    intent = _teacher_intent(cw)
+    intent_rule = ""
+    focus_field = ""
+    if intent:
+        intent_rule = (
+            "\n6. 【教师想法是硬约束】选题、讲解侧重、例题和生活例子必须对齐教师想法；"
+            "教师点名要讲的概念必须单独成点或写入该点的 teacher_focus；"
+            "教师对难度、节奏、练习的要求写进 activity_goal。"
+        )
+        focus_field = ',\n      "teacher_focus": "本点如何落实教师想法（一两句）"'
     system_prompt = f"""你是资深教研专家。请先分析课本内容，抽取可直接用于上课的知识点，输出 JSON。{subject_hint}
 
 要求：
 1. 只保留最关键、最适合课堂互动的知识点，3~4个。
 2. 解释要生动、有趣、直白，便于学生快速理解；每个知识点必须给生活化例子。
 3. 每个知识点都给一个可操作的互动目标（activity_goal），用于后续生成互动课件。
-4. 只输出 JSON，不要解释，不要 markdown 代码块。{web_rule}
+4. 只输出 JSON，不要解释，不要 markdown 代码块。{web_rule}{intent_rule}
 
 JSON 格式：
 {{
@@ -508,13 +648,16 @@ JSON 格式：
       "core_concepts": ["要点1", "要点2"],
       "common_mistakes": ["易错1"],
       "life_example": "生活中的例子",
-      "activity_goal": "该知识点互动页要达成的学习目标"{deep_dive_field}
+      "activity_goal": "该知识点互动页要达成的学习目标"{deep_dive_field}{focus_field}
     }}
   ]
 }}"""
     user_prompt = f"课件课题：{cw.title}\n\n课本内容：\n{chapter_content[:9000]}"
-    if cw.custom_prompt:
-        user_prompt += f"\n\n教师额外要求（请在知识点中体现）：{cw.custom_prompt}"
+    if intent:
+        user_prompt += (
+            f"\n\n【教师想法——必须遵守，优先于泛泛讲解】\n{intent}\n"
+            "请据此决定讲哪些点、讲到多深、用什么例子，不要只当参考。"
+        )
 
     resp = await _call_llm(
         cfg,
@@ -669,7 +812,7 @@ async def _generate_interactive_html_for_point(
 常见误区：{json.dumps(point.get("common_mistakes") or [], ensure_ascii=False)}
 生活例子：{point.get("life_example", "")}
 互动目标：{point.get("activity_goal", "")}
-学科：{subject_name or "通用"}{image_ref}
+学科：{subject_name or "通用"}{image_ref}{_interactive_teacher_intent_block(cw, point)}
 
 风格要求：
 - 生动、有趣、直白，语言口语化，句子简短。
@@ -704,12 +847,15 @@ async def _generate_interactive_html_for_point(
             "课件 %s 知识点%s 互动页第1次未提取到 HTML，原始响应（前800字）：\n%s",
             cw.id, point_idx, raw[:800],
         )
+        retry_intent = _teacher_intent(cw)
         retry_prompt = (
             f"请直接输出一个 HTML 代码块（用 ```html 包裹），"
             f"内容是围绕「{point.get('name', '')}」的互动教学页面片段，"
             f"以 <div class=\"stage\"> 开头，含1个可点击互动。"
             f"不要任何说明文字，只输出代码块。"
         )
+        if retry_intent:
+            retry_prompt += f"必须呼应教师要求：{retry_intent[:200]}"
         resp2 = await _call_llm(cfg, [{"role": "user", "content": retry_prompt}], max_tokens=max_tok)
         raw2 = _resp_content(resp2)
         html = _extract_html_from_response(raw2)
@@ -975,11 +1121,16 @@ async def _generate_lesson_content(
    旧别名 title/content/intro/quiz 也可，但优先用上面的标准 type。
 3. 全部中文，输出严格 JSON，不要 markdown 代码块。
 4. 若为互动课件，可在 interactive 页附 html 字段（片段）。
+5. 若用户给出了教师想法，必须当作硬约束：选题、讲解侧重、例题难度、练习与作业都要对齐，不能只写在备注里。
 {interactive_hint}
 """
         user_prompt = f"课件课题：{cw.title}\n\n课本内容：\n{chapter_content[:8000]}{image_hint}"
-        if cw.custom_prompt:
-            user_prompt += f"\n\n教师额外要求：{cw.custom_prompt}"
+        fallback_intent = _teacher_intent(cw)
+        if fallback_intent:
+            user_prompt += (
+                "\n\n【教师想法——硬约束，必须在学习目标、讲解侧重、例题、练习与作业中落实，不要只当参考】\n"
+                f"{fallback_intent}"
+            )
         resp = await _call_llm(
             cfg,
             [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
@@ -988,11 +1139,16 @@ async def _generate_lesson_content(
         raw = resp.choices[0].message.content
         data = _parse_lesson_json(raw)
         if data and data.get("slides"):
+            if fallback_intent:
+                data = await _apply_teacher_intent(cfg, cw, data, fallback_intent)
             return data
-        return {
+        fallback = {
             "meta": {"title": cw.title},
             "slides": [{"index": 1, "type": "content", "title": cw.title, "content": raw, "bullets": [], "notes": ""}],
         }
+        if fallback_intent:
+            fallback = await _apply_teacher_intent(cfg, cw, fallback, fallback_intent)
+        return fallback
 
     # Stage 2: 按知识点组装课件 + 生成互动页
     slides: list[dict] = []
@@ -1035,6 +1191,8 @@ async def _generate_lesson_content(
             content_parts.append(f"### 深入理解\n{p['deep_dive']}")
         if p.get("common_mistakes"):
             content_parts.append("### 常见误区\n" + "\n".join(f"- {x}" for x in p["common_mistakes"]))
+        if p.get("teacher_focus"):
+            content_parts.append(f"### 按教师要求\n{p['teacher_focus']}")
         if p.get("life_example"):
             content_parts.append(f"### 生活中的例子\n- {p['life_example']}")
 
@@ -1157,7 +1315,7 @@ async def _generate_lesson_content(
         "notes": "布置作业时强调“会说出理由”比“只选对答案”更重要。",
     })
 
-    return {
+    lesson = {
         "meta": {
             "title": cw.title,
             "subject": subject_name or "",
@@ -1171,23 +1329,42 @@ async def _generate_lesson_content(
         },
         "slides": slides,
     }
+    intent = _teacher_intent(cw)
+    if intent:
+        lesson = await _apply_teacher_intent(cfg, cw, lesson, intent)
+    return lesson
 
 
-async def parse_questions_from_text(cfg, text: str) -> list[dict]:
+async def parse_questions_from_text(cfg, text: str, image_catalog: str = "") -> list[dict]:
     """把老师手动输入的文本（可能含一道或多道题）用 LLM 拆分为结构化题目。"""
-    system_prompt = """你是题库整理助手。请把老师输入的文本拆分、整理为结构化题目。
+    image_rule = ""
+    image_fields = ""
+    if image_catalog:
+        image_rule = (
+            "\n- 文本里的 [图N] 是插图占位。题干配图填 stem_image_ids；"
+            "某个选项配图填该选项的 image_id。没有配图就空数组 / 不填 image_id。"
+            "不要把 [图N] 留在题干或选项文字里。"
+        )
+        image_fields = (
+            ',"stem_image_ids":[1],'
+            '"options":{"A":{"text":"选项文字","image_id":2},"B":{"text":"选项文字"}}'
+        )
+    system_prompt = f"""你是题库整理助手。请把老师输入的文本拆分、整理为结构化题目。
 - 文本可能包含一道题，也可能包含多道题，请逐题拆分。
 - 自动判断每道题的题型与难度。
 - question_type 取值：single_choice(单选)/multi_choice(多选)/fill_blank(填空)/true_false(判断)/short_answer(简答)/essay(作文论述)/calculation(计算)
 - difficulty 取值：easy/medium/hard/very_hard
-- 选择题把选项放进 options，如 {"A":"...","B":"...","C":"...","D":"..."}；非选择题 options 为 null。
-- 若原文给出了答案/解析，请填入 answer / explanation，没有则留空字符串。
-只输出 JSON，格式：{"questions":[{"question_type":"...","difficulty":"...","content":"题干","options":null,"answer":"","explanation":""}]}"""
+- 选择题把选项放进 options，如 {{"A":"...","B":"...","C":"...","D":"..."}}；非选择题 options 为 null。
+- 若原文给出了答案/解析，请填入 answer / explanation，没有则留空字符串。{image_rule}
+只输出 JSON，格式：{{"questions":[{{"question_type":"...","difficulty":"...","content":"题干","options":null,"answer":"","explanation":""{image_fields}}}]}}"""
+    user = text[:8000]
+    if image_catalog:
+        user += f"\n\n【可引用的插图】\n{image_catalog}"
     resp = await _call_llm(
         cfg,
         [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": text[:8000]},
+            {"role": "user", "content": user},
         ],
         max_tokens=max(cfg.max_tokens or 0, 4096),
     )
@@ -1475,10 +1652,18 @@ async def parse_questions_from_image(cfg, data: bytes) -> list[dict]:
     api_key = decrypt_api_key(cfg.api_key_encrypted) if cfg.api_key_encrypted else None
     b64 = base64.b64encode(data).decode()
     prompt = (
-        "请识别图片中的所有题目并结构化为 JSON（只输出 JSON）：\n"
+        "请识别图片中的所有题目并结构化为 JSON（只输出 JSON）。\n"
+        "规则：\n"
+        "1. 选项若带图，bbox 必须包住该选项的【整块配图】（图本身完整，不要切掉边缘）。\n"
+        "   用 [x,y,w,h]，0~1，相对整张大图左上角。宁可比图略大，不能只框一部分。\n"
+        "2. 不要把整页截图、整道题、整行选项当成一个框。\n"
+        "3. 题干本身没有独立插图时，stem_bboxes 必须是空数组，禁止把整页图当题干图。\n"
+        "4. 选项文字单独放 text；没有图时 bbox 为 null。\n"
         '{"questions":[{"question_type":"single_choice/multi_choice/fill_blank/true_false/short_answer/essay/calculation",'
-        '"difficulty":"easy/medium/hard/very_hard","content":"题干",'
-        '"options":{"A":"..","B":".."}或null,"answer":"答案(若有)"}]}'
+        '"difficulty":"easy/medium/hard/very_hard","content":"题干文字",'
+        '"stem_bboxes":[],'
+        '"options":{"A":{"text":"选项文字","bbox":[0.08,0.42,0.38,0.22]},"B":{"text":"...","bbox":null}},'
+        '"answer":"答案(若有)"}]}'
     )
     resp = await litellm.acompletion(
         messages=[{"role": "user", "content": [

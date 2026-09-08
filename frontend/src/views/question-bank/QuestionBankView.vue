@@ -6,6 +6,7 @@
         <p class="page-subtitle">管理题目，支持文件批量导入和图片 OCR 识别</p>
       </div>
       <div class="flex flex-wrap gap-2">
+        <el-button :icon="Tickets" @click="openImports">导入记录</el-button>
         <el-button :icon="Upload" @click="openImport">导入题库</el-button>
         <el-button type="primary" :icon="Plus" @click="openCreate">手动录入</el-button>
       </div>
@@ -21,19 +22,30 @@
       </el-select>
       <el-input v-model="filter.keyword" placeholder="搜索题目" size="small" clearable style="width:160px" />
       <el-button size="small" type="primary" @click="load">查询</el-button>
+      <el-button
+        v-if="selected.length"
+        size="small" type="danger"
+        @click="batchDelete"
+      >删除所选（{{ selected.length }}）</el-button>
       <span class="text-xs text-slate-400 ml-auto">共 {{ total }} 道</span>
     </div>
 
     <!-- 题目列表 -->
     <div class="card !p-0 overflow-hidden">
       <div class="table-scroll">
-      <el-table :data="questions" v-loading="loading" row-class-name="hover:bg-slate-50">
+      <el-table
+        :data="questions" v-loading="loading" row-key="id"
+        row-class-name="hover:bg-slate-50"
+        @selection-change="onSelect"
+      >
+        <el-table-column type="selection" width="42" align="center" />
         <el-table-column type="index" width="55" align="center" />
         <el-table-column label="题干" min-width="280">
           <template #default="{ row }">
             <p class="text-sm line-clamp-2 cursor-pointer hover:text-primary-600" @click="openDetail(row)">
               {{ row.content }}
             </p>
+            <el-tag v-if="hasImages(row)" size="small" type="warning" class="mt-1">含图</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="年级" width="90">
@@ -132,7 +144,7 @@
             :on-change="(f: any) => importForm.file = f.raw">
             <el-button>选择文件</el-button>
             <template #tip>
-              <p class="text-xs text-slate-400 mt-1">支持 PDF/Word/TXT/EPUB/MOBI 及图片格式</p>
+              <p class="text-xs text-slate-400 mt-1">支持 PDF/Word/TXT 及图片；题干或选项里的配图会一并导入</p>
             </template>
           </el-upload>
         </el-form-item>
@@ -143,8 +155,47 @@
       </template>
     </el-dialog>
 
+    <!-- 导入记录 -->
+    <el-dialog v-model="showImports" title="导入记录" width="720px" @open="loadImports">
+      <el-table :data="importRows" v-loading="importsLoading" empty-text="暂无导入记录">
+        <el-table-column label="文件" min-width="160" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.file_name }}</template>
+        </el-table-column>
+        <el-table-column label="年级/科目" width="140">
+          <template #default="{ row }">
+            {{ edu.gradeName(row.grade_id) || '—' }} / {{ edu.subjectName(row.subject_id) || '—' }}
+          </template>
+        </el-table-column>
+        <el-table-column label="状态" width="100">
+          <template #default="{ row }">
+            <el-tag size="small" :type="importStatusType(row.parse_status)" :title="row.parse_error || ''">
+              {{ importStatusLabel(row.parse_status) }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="题数" width="70" align="center">
+          <template #default="{ row }">{{ row.parse_status === 'done' ? row.question_count : '—' }}</template>
+        </el-table-column>
+        <el-table-column label="导入时间" width="150">
+          <template #default="{ row }">{{ formatDate(row.created_at) }}</template>
+        </el-table-column>
+      </el-table>
+      <p v-if="importRows.some((r) => r.parse_status === 'failed' && r.parse_error)" class="text-xs text-slate-400 mt-2">
+        失败记录把鼠标移到状态上可查看原因。
+      </p>
+      <div v-if="importTotal > 10" class="mt-3 flex justify-end">
+        <el-pagination
+          v-model:current-page="importPage"
+          :page-size="10"
+          :total="importTotal"
+          layout="prev, pager, next"
+          @current-change="loadImports"
+        />
+      </div>
+    </el-dialog>
+
     <!-- 题目详情弹窗 -->
-    <el-dialog v-model="showDetail" title="题目详情" width="640px">
+    <el-dialog v-model="showDetail" title="题目详情" width="720px">
       <div v-if="detail" class="space-y-4">
         <div class="flex flex-wrap items-center gap-1.5">
           <el-tag size="small" type="info">{{ edu.gradeName(detail.grade_id) || '—' }}</el-tag>
@@ -156,14 +207,35 @@
         <div>
           <p class="text-xs font-semibold text-slate-500 mb-1">题干</p>
           <div class="text-sm text-slate-800 math-text" v-html="renderMathText(detail.content)" />
+          <div v-if="detail.images?.stem?.length" class="mt-2 flex flex-wrap gap-2">
+            <img
+              v-for="(src, i) in detail.images.stem" :key="i"
+              :src="src" alt="题干配图"
+              class="q-img"
+            />
+          </div>
         </div>
 
-        <div v-if="detail.options && Object.keys(detail.options).length">
+        <div v-if="optionKeys(detail).length">
           <p class="text-xs font-semibold text-slate-500 mb-1">选项</p>
-          <div class="space-y-1">
-            <p v-for="(v, k) in detail.options" :key="k" class="text-sm text-slate-700 math-text">
-              <span class="font-medium">{{ k }}. </span><span v-html="renderMathText(String(v))" />
-            </p>
+          <div :class="hasOptionImages(detail) ? 'grid grid-cols-1 sm:grid-cols-2 gap-2' : 'space-y-1'">
+            <div
+              v-for="k in optionKeys(detail)" :key="k"
+              class="text-sm text-slate-700 min-w-0"
+              :class="hasOptionImages(detail) ? 'rounded-lg border border-slate-100 p-2 overflow-visible' : ''"
+            >
+              <p class="math-text">
+                <span class="font-medium">{{ k }}. </span>
+                <span v-html="renderMathText(String(detail.options?.[k] || ''))" />
+              </p>
+              <div v-if="detail.images?.options?.[k]" class="q-opt-frame mt-1.5">
+                <img
+                  :src="detail.images.options[k]"
+                  :alt="`选项${k}`"
+                  class="q-opt-img"
+                />
+              </div>
+            </div>
           </div>
         </div>
 
@@ -186,26 +258,34 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, watch } from 'vue'
 import { watchDebounced } from '@vueuse/core'
 import { questionApi } from '@/api/modules'
 import { useEducationStore } from '@/stores/education'
-import { ElMessage } from 'element-plus'
-import { Upload, Plus, MagicStick } from '@element-plus/icons-vue'
-import type { Question } from '@/types'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Upload, Plus, MagicStick, Tickets } from '@element-plus/icons-vue'
+import type { Question, QuestionImport } from '@/types'
 import RichEditor from '@/components/RichEditor.vue'
 import { renderMathText } from '@/utils/mathText'
+import { isBusyStatus, useBusyPoll } from '@/utils/busyPoll'
+import dayjs from 'dayjs'
 
 const edu = useEducationStore()
 const questions = ref<Question[]>([])
 const total = ref(0)
 const loading = ref(false)
 const showImport = ref(false)
+const showImports = ref(false)
 const showCreate = ref(false)
 const showDetail = ref(false)
 const detail = ref<Question | null>(null)
 const importing = ref(false)
 const creating = ref(false)
+const selected = ref<Question[]>([])
+const importRows = ref<QuestionImport[]>([])
+const importTotal = ref(0)
+const importPage = ref(1)
+const importsLoading = ref(false)
 const editorRef = ref<any>(null)
 const filter = reactive({ question_type: null as any, difficulty: null as any, keyword: '', page: 1, page_size: 20 })
 const importForm = reactive({ grade_id: null as any, subject_id: null as any, file: null as File | null })
@@ -232,11 +312,72 @@ async function load(silent = false) {
     })
     questions.value = res.items
     total.value = res.total
+    selected.value = []
   } finally { loading.value = false }
 }
 
 // 顶部全局年级/科目变化时回到第一页并刷新
 watchDebounced(() => [edu.selectedGradeId, edu.selectedSubjectId], () => { filter.page = 1; load() }, { debounce: 250 })
+
+function onSelect(rows: Question[]) {
+  selected.value = rows
+}
+
+async function loadImports(silent = false) {
+  if (!silent) importsLoading.value = true
+  const hadBusy = importRows.value.some(r => isBusyStatus(r.parse_status))
+  try {
+    const res = await questionApi.listImports({ page: importPage.value, page_size: 10 })
+    importRows.value = res.items || []
+    importTotal.value = res.total || 0
+    if (hadBusy && !importRows.value.some(r => isBusyStatus(r.parse_status))) {
+      await load(true)
+    }
+  } finally {
+    importsLoading.value = false
+    importPoll.sync()
+  }
+}
+
+const importPoll = useBusyPoll(
+  () => loadImports(true),
+  () => showImports.value && importRows.value.some(r => isBusyStatus(r.parse_status)),
+)
+
+function openImports() {
+  importPage.value = 1
+  showImports.value = true
+}
+
+function importStatusLabel(s: string) {
+  return { pending: '排队中', processing: '导入中', done: '成功', failed: '失败' }[s] || s
+}
+function importStatusType(s: string): 'info' | 'warning' | 'success' | 'danger' {
+  const map = { pending: 'info', processing: 'warning', done: 'success', failed: 'danger' } as const
+  return map[s as keyof typeof map] || 'info'
+}
+
+watch(showImports, (open) => {
+  if (!open) importPoll.stop()
+})
+
+function formatDate(d: string) {
+  return d ? dayjs(d).format('YYYY-MM-DD HH:mm') : '—'
+}
+
+function hasImages(q: Question) {
+  return !!(q.images?.stem?.length || (q.images?.options && Object.keys(q.images.options).length))
+}
+function hasOptionImages(q: Question) {
+  return !!(q.images?.options && Object.keys(q.images.options).length)
+}
+function optionKeys(q: Question) {
+  const keys = new Set([
+    ...Object.keys(q.options || {}),
+    ...Object.keys(q.images?.options || {}),
+  ])
+  return [...keys].sort()
+}
 
 function openDetail(row: Question) {
   detail.value = row
@@ -266,8 +407,9 @@ async function handleImport() {
     await questionApi.importFile(fd)
     ElMessage.success('导入任务已提交，正在后台处理')
     showImport.value = false
+    importPage.value = 1
+    showImports.value = true
     await load()
-    setTimeout(() => load(true), 3000)
   } finally { importing.value = false }
 }
 
@@ -298,6 +440,19 @@ async function deleteQ(id: number) {
   await load()
 }
 
+async function batchDelete() {
+  const ids = selected.value.map(q => q.id)
+  if (!ids.length) return
+  try {
+    await ElMessageBox.confirm(`确定删除选中的 ${ids.length} 道题目？`, '批量删除', { type: 'warning' })
+  } catch {
+    return
+  }
+  const res = await questionApi.batchDelete(ids)
+  ElMessage.success(`已删除 ${res.count} 道题目`)
+  await load()
+}
+
 function typeLabel(t: string) {
   return { single_choice: '单选', multi_choice: '多选', fill_blank: '填空', short_answer: '简答', essay: '作文', true_false: '判断', calculation: '计算' }[t] || t
 }
@@ -323,5 +478,25 @@ onMounted(load)
 .math-text :deep(.katex) {
   font-size: 1.02em;
   white-space: normal;
+}
+.q-img {
+  @apply max-h-40 max-w-full rounded-md border border-slate-100 object-contain bg-slate-50;
+}
+.q-opt-frame {
+  width: 100%;
+  max-width: 220px;
+  min-width: 0;
+  overflow: visible;
+}
+.q-opt-img {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 7.5rem;
+  object-fit: contain;
+  object-position: left center;
+  border-radius: 0.375rem;
+  border: 1px solid #f1f5f9;
+  background: #f8fafc;
 }
 </style>

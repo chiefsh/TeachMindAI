@@ -1,6 +1,6 @@
 import request from './index'
 import type {
-  Textbook, Chapter, Question, Courseware, HomeworkPaper,
+  Textbook, Chapter, Question, QuestionImport, Courseware, HomeworkPaper,
   Student, ExamResult, ExamSummary, GradeReport, LLMConfig, TeacherSubject,
   SchoolLevel, Grade, Subject, SubjectPrompt,
   CoursewareSession, SessionBoard, PublicSession,
@@ -68,6 +68,9 @@ export const questionApi = {
   importFile: (formData: FormData) => request.post('/questions/import-file', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   }),
+  listImports: (params?: { page?: number; page_size?: number }) =>
+    request.get<Paginated<QuestionImport>>('/questions/imports', { params }),
+  batchDelete: (ids: number[]) => request.post<{ count: number }>('/questions/batch-delete', { ids }),
   delete: (id: number) => request.delete(`/questions/${id}`),
 }
 

@@ -36,11 +36,30 @@ export interface Chapter {
   page_start?: number; page_end?: number; children: Chapter[]
 }
 
+export interface QuestionImages {
+  stem?: string[]
+  options?: Record<string, string>
+}
+
 export interface Question {
   id: number; question_type: QuestionType; difficulty: DifficultyLevel
   content: string; options?: Record<string, string>; answer?: string
   explanation?: string; subject_id: number; grade_id: number
   tags?: string[]; created_at: string
+  images?: QuestionImages | null
+}
+
+export interface QuestionImport {
+  id: number
+  file_name: string
+  file_type: string
+  parse_status: ParseStatus
+  parse_error?: string | null
+  question_count: number
+  grade_id: number
+  subject_id: number
+  created_at: string
+  updated_at: string
 }
 
 export type RenderStyle = 'ppt' | 'html'

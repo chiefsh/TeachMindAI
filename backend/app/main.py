@@ -24,7 +24,7 @@ _INDEX_SQL = [
     "CREATE INDEX IF NOT EXISTS ix_textbooks_teacher_id ON textbooks (teacher_id)",
     "CREATE INDEX IF NOT EXISTS ix_textbook_chapters_textbook_id ON textbook_chapters (textbook_id)",
     "CREATE INDEX IF NOT EXISTS ix_homework_papers_teacher_id ON homework_papers (teacher_id)",
-    "CREATE INDEX IF NOT EXISTS ix_homework_questions_paper_id ON homework_questions (paper_id)",
+    "CREATE INDEX IF NOT EXISTS ix_question_imports_teacher_id ON question_imports (teacher_id)",
 ]
 
 
@@ -37,6 +37,10 @@ _COLUMN_SQL = [
     (
         "coursewares", "theme",
         "ALTER TABLE coursewares ADD COLUMN theme VARCHAR(24) NOT NULL DEFAULT 'indigo'",
+    ),
+    (
+        "questions", "images",
+        "ALTER TABLE questions ADD COLUMN images JSON NULL",
     ),
 ]
 

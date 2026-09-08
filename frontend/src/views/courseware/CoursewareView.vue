@@ -38,14 +38,16 @@
             </div>
           </div>
         </div>
-        <div class="flex items-center gap-1 mt-3 pt-3 border-t border-slate-50 min-w-0" @click.stop>
-          <el-button size="small" link :icon="View" @click="router.push(`/courseware/${cw.id}`)">查看</el-button>
-          <el-button
-            v-if="cw.gen_status === 'done'"
-            size="small" link :icon="Share"
-            @click="openShare(cw)"
-          >分享</el-button>
-          <el-dropdown trigger="click" @command="(cmd: string) => onCardMore(cw, cmd)">
+        <div class="flex items-center justify-between gap-1 mt-3 pt-3 border-t border-slate-50 min-w-0" @click.stop>
+          <div class="flex items-center gap-1 min-w-0">
+            <el-button size="small" link :icon="View" @click="router.push(`/courseware/${cw.id}`)">查看</el-button>
+            <el-button
+              v-if="cw.gen_status === 'done'"
+              size="small" link :icon="Share"
+              @click="openShare(cw)"
+            >分享</el-button>
+          </div>
+          <el-dropdown trigger="click" placement="bottom-end" @command="(cmd: string) => onCardMore(cw, cmd)">
             <el-button
               size="small"
               link
@@ -158,7 +160,7 @@
             v-model="form.custom_prompt"
             type="textarea"
             :rows="3"
-            placeholder="可以输入您的教学思路、重点难点要求等，AI 会结合您的想法生成课件..."
+            placeholder="例如：多讲易错点、例题要分层、互动用生活情境、作业只要基础题……这些想法会贯穿知识点、讲解、互动和练习"
           />
         </el-form-item>
       </el-form>

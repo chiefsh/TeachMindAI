@@ -9,6 +9,7 @@ class QuestionOut(BaseModel):
     difficulty: DifficultyLevel
     content: str
     options: dict | None
+    images: dict | None = None
     answer: str | None
     explanation: str | None
     subject_id: int
@@ -23,6 +24,7 @@ class QuestionCreate(BaseModel):
     difficulty: DifficultyLevel = DifficultyLevel.medium
     content: str
     options: dict | None = None
+    images: dict | None = None
     answer: str | None = None
     explanation: str | None = None
     subject_id: int
@@ -38,3 +40,21 @@ class QuestionFilter(BaseModel):
     keyword: str | None = None
     page: int = 1
     page_size: int = 20
+
+
+class QuestionImportOut(BaseModel):
+    id: int
+    file_name: str
+    file_type: str
+    parse_status: str
+    parse_error: str | None
+    question_count: int
+    grade_id: int
+    subject_id: int
+    created_at: datetime
+    updated_at: datetime
+    model_config = {"from_attributes": True}
+
+
+class QuestionBatchDeleteIn(BaseModel):
+    ids: list[int]

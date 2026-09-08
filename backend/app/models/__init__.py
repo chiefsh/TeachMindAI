@@ -2,7 +2,7 @@ from app.models.base import TimestampMixin
 from app.models.teacher import Teacher
 from app.models.education import SchoolLevel, Grade, Subject, TeacherSubject
 from app.models.textbook import Textbook, TextbookChapter, TextbookImage
-from app.models.question import Question
+from app.models.question import Question, QuestionImport
 from app.models.courseware import Courseware
 from app.models.homework import HomeworkPaper, HomeworkQuestion
 from app.models.student import Student, ExamResult, GradeReport
@@ -15,7 +15,7 @@ __all__ = [
     "TimestampMixin", "Teacher",
     "SchoolLevel", "Grade", "Subject", "TeacherSubject",
     "Textbook", "TextbookChapter", "TextbookImage",
-    "Question",
+    "Question", "QuestionImport",
     "Courseware",
     "HomeworkPaper", "HomeworkQuestion",
     "Student", "ExamResult", "GradeReport",

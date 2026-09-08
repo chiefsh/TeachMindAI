@@ -1,0 +1,1 @@
+import{a6 as u}from"./vue-vendor-BSTfypgV.js";const r=new Set(["pending","processing"]);function a(t){return!!t&&r.has(t)}function c(t,s,i=2500){let n=null;function e(){n&&(clearInterval(n),n=null)}function o(){s()?n||(n=setInterval(()=>{t()},i)):e()}return u(e),{sync:o,stop:e}}export{a as i,c as u};

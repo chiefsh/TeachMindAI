@@ -24,9 +24,18 @@ instance.interceptors.request.use((config) => {
 
 instance.interceptors.response.use(
   (res) => res.data,
-  (err) => {
+  async (err) => {
     const status = err.response?.status
-    const msg = err.response?.data?.detail || err.message || '请求失败'
+    let payload = err.response?.data
+    if (payload instanceof Blob) {
+      try {
+        const text = await payload.text()
+        payload = JSON.parse(text)
+      } catch {
+        payload = null
+      }
+    }
+    const msg = payload?.detail || err.message || '请求失败'
     if (status === 401) {
       localStorage.removeItem('token')
       router.push('/login')

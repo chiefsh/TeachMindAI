@@ -12,6 +12,11 @@
         </div>
       </div>
       <div class="flex items-center gap-2">
+        <el-button
+          v-if="set?.parse_status === 'done' && questions.length"
+          :icon="Share"
+          @click="showShare = true"
+        >分享</el-button>
         <el-button :icon="Download" @click="exportFile('docx')">导出 Word</el-button>
         <el-button :icon="Download" @click="exportFile('pdf')">导出 PDF</el-button>
       </div>
@@ -124,6 +129,13 @@
         </div>
       </div>
     </template>
+
+    <ShareDialog
+      v-model="showShare"
+      resource-type="question_analysis"
+      :resource-id="setId"
+      :resource-title="set?.name"
+    />
   </div>
 </template>
 
@@ -134,8 +146,9 @@ import { analysisApi } from '@/api/modules'
 import { useEducationStore } from '@/stores/education'
 import { ElMessage } from 'element-plus'
 import {
-  ArrowLeft, Download, Loading, CircleClose, Collection, MagicStick, Reading, Refresh,
+  ArrowLeft, Download, Loading, CircleClose, Collection, MagicStick, Reading, Refresh, Share,
 } from '@element-plus/icons-vue'
+import ShareDialog from '@/components/ShareDialog.vue'
 import type { AnalysisSet, AnalysisQuestion } from '@/types'
 import { createIframeBlob } from '@/utils/coursewareFrame'
 import { renderMathText } from '@/utils/mathText'
@@ -157,6 +170,7 @@ const questions = ref<AnalysisQuestion[]>([])
 const checked = reactive(new Set<number>())
 const revealed = reactive(new Set<number>())
 const blobUrls = reactive<Record<number, string>>({})
+const showShare = ref(false)
 const analyzing = ref(false)
 const reparsing = ref(false)
 const parseHint = ref('')

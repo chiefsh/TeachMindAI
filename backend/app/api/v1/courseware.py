@@ -1,11 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, delete, update
 from sqlalchemy.orm import selectinload
 from sqlalchemy.orm.attributes import flag_modified
 from typing import Optional
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
+import asyncio
 import copy
 import io
 
@@ -19,7 +20,7 @@ from app.models.interaction import CoursewareSession, InteractionRecord
 from app.models.textbook import ParseStatus, TextbookImage, Textbook
 from app.schemas.courseware import (
     CoursewareCreate, CoursewareOut, CoursewareDetail, CoursewareUpdate,
-    SlidePatch, SlideInsert, SlideReorder, SlideOptimizeIn,
+    SlidePatch, SlideInsert, SlideReorder, SlideOptimizeIn, CoursewareExportIn,
 )
 from app.services.courseware_theme import PAGE_LABELS, page_kind
 from app.api.deps import get_current_teacher
@@ -436,26 +437,61 @@ def _collect_image_ids(content: dict) -> list[int]:
     return list(dict.fromkeys(ids))
 
 
-@router.get("/{cw_id}/export")
-async def export_courseware(
-    cw_id: int,
-    format: str = "pptx",
-    teacher: Teacher = Depends(get_current_teacher),
-    db: AsyncSession = Depends(get_db),
-):
-    """导出课件为 pptx / docx / pdf"""
-    fmt = (format or "pptx").lower()
+async def _courseware_play_url(cw: Courseware, request: Request, db: AsyncSession) -> str:
+    origin = (request.headers.get("origin") or "").rstrip("/")
+    if not origin:
+        ref = request.headers.get("referer") or ""
+        parsed = urlparse(ref)
+        if parsed.scheme and parsed.netloc:
+            origin = f"{parsed.scheme}://{parsed.netloc}"
+    if not origin:
+        return ""
+    token = (
+        await db.execute(
+            select(CoursewareSession.token).where(
+                CoursewareSession.courseware_id == cw.id,
+                CoursewareSession.is_open == True,  # noqa: E712
+            ).order_by(CoursewareSession.id.desc()).limit(1)
+        )
+    ).scalar()
+    if token:
+        return f"{origin}/s/{token}"
+    return f"{origin}/courseware/{cw.id}"
+
+
+def _decode_shots(raw: dict[str, str] | None) -> dict[int, bytes]:
+    import base64
+    out: dict[int, bytes] = {}
+    for key, val in (raw or {}).items():
+        try:
+            idx = int(key)
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(val, str) or len(val) > 6_000_000:
+            continue
+        payload = val.split(",", 1)[-1] if val.startswith("data:") else val
+        try:
+            data = base64.b64decode(payload, validate=False)
+        except Exception:
+            continue
+        if 80 < len(data) < 4_000_000:
+            out[idx] = data
+    return out
+
+
+async def _export_courseware(
+    cw_id: int, fmt: str, request: Request, teacher: Teacher, db: AsyncSession,
+    shots: dict[int, bytes] | None = None,
+) -> StreamingResponse:
     if fmt not in ("pptx", "docx", "pdf"):
         raise HTTPException(status_code=400, detail="仅支持 pptx / docx / pdf")
     cw = await _get_or_404(cw_id, teacher.id, db)
     if not cw.content or cw.gen_status != ParseStatus.done:
         raise HTTPException(status_code=400, detail="课件尚未生成完成，无法导出")
 
-    # 并行拉取引用图片，避免同步 MinIO 串行阻塞事件循环
     images: dict[int, bytes] = {}
     img_ids = _collect_image_ids(cw.content)
     if img_ids:
-        import asyncio
         res = await db.execute(
             select(TextbookImage).where(TextbookImage.id.in_(img_ids))
         )
@@ -474,8 +510,11 @@ async def export_courseware(
             if data:
                 images[iid] = data
 
+    play_url = await _courseware_play_url(cw, request, db) if fmt == "pptx" else ""
     try:
-        data, media_type, ext = build_export(fmt, cw.content, cw.title, images, cw.theme)
+        data, media_type, ext = await asyncio.to_thread(
+            build_export, fmt, cw.content, cw.title, images, cw.theme, play_url, shots,
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"导出失败：{e}")
 
@@ -485,6 +524,32 @@ async def export_courseware(
         media_type=media_type,
         headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"},
     )
+
+
+@router.get("/{cw_id}/export")
+async def export_courseware(
+    request: Request,
+    cw_id: int,
+    format: str = "pptx",
+    teacher: Teacher = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+):
+    """导出课件为 pptx / docx / pdf"""
+    return await _export_courseware(cw_id, (format or "pptx").lower(), request, teacher, db)
+
+
+@router.post("/{cw_id}/export")
+async def export_courseware_with_shots(
+    request: Request,
+    cw_id: int,
+    body: CoursewareExportIn,
+    teacher: Teacher = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+):
+    """导出课件；PPT 可附带互动页截图。"""
+    fmt = (body.format or "pptx").lower()
+    shots = _decode_shots(body.shots) if fmt == "pptx" else None
+    return await _export_courseware(cw_id, fmt, request, teacher, db, shots)
 
 
 @router.delete("/{cw_id}", status_code=204)

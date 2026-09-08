@@ -1,9 +1,12 @@
 """课件导出服务：将课件内容导出为 PPTX / DOCX / PDF。"""
 import io
+import logging
 import re
 from typing import Any
 
 from app.services.courseware_theme import get_theme, page_kind, page_label, rgb
+
+log = logging.getLogger(__name__)
 
 # ---------- 通用工具 ----------
 
@@ -61,6 +64,9 @@ def _convert_math(tex: str) -> str:
     return s.replace("{", "").replace("}", "").strip()
 
 
+_MATH_SPLIT = re.compile(r"\$\$(.+?)\$\$|\$(.+?)\$", re.DOTALL)
+
+
 def _latex_to_text(text: str) -> str:
     """把含 $...$ / $$...$$ 的 LaTeX 文本退化为可读 Unicode 文本。"""
     if not text:
@@ -73,6 +79,29 @@ def _latex_to_text(text: str) -> str:
 def _clean_text(text: str) -> str:
     """先去 markdown 再退化 LaTeX，得到适合 Word/PDF 的纯文本。"""
     return _latex_to_text(_strip_markdown(text or ""))
+
+
+def iter_rich_segments(text: str) -> list[tuple[str, str, str]]:
+    """拆出普通字与公式。(kind, payload, preview)，kind 为 text 或 math。"""
+    src = _strip_markdown(text or "")
+    if not src:
+        return []
+    out: list[tuple[str, str, str]] = []
+    last = 0
+    for m in _MATH_SPLIT.finditer(src):
+        if m.start() > last:
+            chunk = src[last:m.start()]
+            if chunk:
+                out.append(("text", chunk, chunk))
+        latex = (m.group(1) or m.group(2) or "").strip()
+        preview = _convert_math(latex) or latex
+        out.append(("math", latex, preview))
+        last = m.end()
+    if last < len(src):
+        chunk = src[last:]
+        if chunk:
+            out.append(("text", chunk, chunk))
+    return out or [("text", src, src)]
 
 
 def _slide_lines(slide: dict) -> list[str]:
@@ -102,7 +131,7 @@ def _meta_blocks(meta: dict) -> list[tuple[str, list[str]]]:
 
 # ---------- PPTX ----------
 
-def build_pptx(content: dict, title: str, images: dict[int, bytes], theme: str | None = None) -> bytes:
+def _build_pptx_shapes(content: dict, title: str, images: dict[int, bytes], theme: str | None = None) -> bytes:
     from pptx import Presentation
     from pptx.util import Inches, Pt
     from pptx.dml.color import RGBColor
@@ -118,6 +147,7 @@ def build_pptx(content: dict, title: str, images: dict[int, bytes], theme: str |
     c_card = RGBColor(*rgb(th["card"]))
     c_surface = RGBColor(*rgb(th["surface"]))
     c_cover_from = RGBColor(*rgb(th["cover_from"]))
+    c_on_cover = RGBColor(*rgb(th.get("on_cover") or "#FFFFFF"))
     c_white = RGBColor(0xFF, 0xFF, 0xFF)
     cover_style = th.get("cover_style") or "diagonal"
 
@@ -216,13 +246,13 @@ def build_pptx(content: dict, title: str, images: dict[int, bytes], theme: str |
             _bg(slide, c_cover_from)
             _fill(slide.shapes.add_shape(MSO_SHAPE.OVAL, Inches(10.8), Inches(-1.0), Inches(3.6), Inches(3.6)), c_accent)
             _fill(slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, Inches(6.9), W, Inches(0.6)), c_accent)
-            tf = _textbox(slide, Inches(1.0), Inches(2.4), Inches(11.3), Inches(2.6), heading, 44, title_color, True)
+            tf = _textbox(slide, Inches(1.0), Inches(2.4), Inches(11.3), Inches(2.6), heading, 44, c_on_cover, True)
             tf.paragraphs[0].alignment = PP_ALIGN.CENTER
             for line in [x for x in lines if x]:
                 sub = tf.add_paragraph()
                 sub.text = line
                 sub.font.size = Pt(18)
-                sub.font.color.rgb = title_color
+                sub.font.color.rgb = c_on_cover
                 sub.alignment = PP_ALIGN.CENTER
 
     def add_text_slide(heading: str, lines: list[str], notes: str = "", img_ids: list[int] | None = None, kind: str = "knowledge"):
@@ -324,6 +354,21 @@ def build_pptx(content: dict, title: str, images: dict[int, bytes], theme: str |
     buf = io.BytesIO()
     prs.save(buf)
     return buf.getvalue()
+
+
+def build_pptx(
+    content: dict, title: str, images: dict[int, bytes], theme: str | None = None,
+    play_url: str | None = None, shots: dict[int, bytes] | None = None,
+) -> bytes:
+    """网页布局 → 合规 SVG → ppt-master svg_to_pptx；失败则回退 python-pptx 形状排版。"""
+    try:
+        from app.services.courseware_svg import build_pptx_via_svg
+        return build_pptx_via_svg(
+            content, title, images, theme, play_url=play_url, shots=shots,
+        )
+    except Exception:
+        log.exception("SVG 导出 PPT 失败，回退为形状排版")
+        return _build_pptx_shapes(content, title, images, theme)
 
 
 # ---------- DOCX ----------
@@ -785,11 +830,12 @@ def build_homework_export(fmt: str, title: str, paper_type: str, questions: list
 
 def build_export(
     fmt: str, content: dict, title: str, images: dict[int, bytes], theme: str | None = None,
+    play_url: str | None = None, shots: dict[int, bytes] | None = None,
 ) -> tuple[bytes, str, str]:
     """返回 (bytes, media_type, filename_ext)"""
     if fmt == "pptx":
         return (
-            build_pptx(content, title, images, theme),
+            build_pptx(content, title, images, theme, play_url=play_url, shots=shots),
             "application/vnd.openxmlformats-officedocument.presentationml.presentation",
             "pptx",
         )

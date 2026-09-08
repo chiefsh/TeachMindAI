@@ -137,3 +137,9 @@ class SlideOptimizeIn(BaseModel):
         if m not in OPTIMIZE_MODES:
             raise ValueError("不支持的优化方式")
         return m
+
+
+class CoursewareExportIn(BaseModel):
+    """PPT 导出时可附带互动页截图（slide 下标 → data URL / raw base64）。"""
+    format: str = "pptx"
+    shots: dict[str, str] | None = None

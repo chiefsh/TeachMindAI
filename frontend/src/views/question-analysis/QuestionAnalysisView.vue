@@ -32,6 +32,11 @@
         </div>
         <div class="flex items-center gap-2 mt-3 pt-3 border-t border-slate-50" @click.stop>
           <el-button size="small" link :icon="View" @click="router.push(`/question-analysis/${s.id}`)">查看解析</el-button>
+          <el-button
+            v-if="s.parse_status === 'done' && s.question_count"
+            size="small" link :icon="Share"
+            @click="openShare(s)"
+          >分享</el-button>
           <el-popconfirm
             v-if="s.source_type !== 'manual'"
             title="重新解析将清空已拆题目并重新拆题，确定继续吗？"
@@ -116,6 +121,13 @@
         <el-button type="primary" :loading="submitting" @click="submit">开始导入</el-button>
       </template>
     </el-dialog>
+
+    <ShareDialog
+      v-model="showShare"
+      resource-type="question_analysis"
+      :resource-id="shareTarget?.id || 0"
+      :resource-title="shareTarget?.name"
+    />
   </div>
 </template>
 
@@ -126,7 +138,8 @@ import { useRouter } from 'vue-router'
 import { analysisApi } from '@/api/modules'
 import { useEducationStore } from '@/stores/education'
 import { ElMessage } from 'element-plus'
-import { Plus, View, Delete, DataAnalysis, UploadFilled, Refresh } from '@element-plus/icons-vue'
+import { Plus, View, Delete, DataAnalysis, UploadFilled, Refresh, Share } from '@element-plus/icons-vue'
+import ShareDialog from '@/components/ShareDialog.vue'
 import type { AnalysisSet } from '@/types'
 import { isBusyStatus, useBusyPoll } from '@/utils/busyPoll'
 import RichEditor from '@/components/RichEditor.vue'
@@ -139,6 +152,8 @@ const loading = ref(false)
 const total = ref(0)
 const page = ref(1)
 const pageSize = 12
+const showShare = ref(false)
+const shareTarget = ref<AnalysisSet | null>(null)
 const showImport = ref(false)
 const submitting = ref(false)
 const reparsingId = ref<number | null>(null)
@@ -171,6 +186,11 @@ const busyPoll = useBusyPoll(
 )
 
 watchDebounced(() => [edu.selectedGradeId, edu.selectedSubjectId], () => { page.value = 1; load() }, { debounce: 250 })
+
+function openShare(s: AnalysisSet) {
+  shareTarget.value = s
+  showShare.value = true
+}
 
 function openImport() {
   form.grade_id = edu.selectedGradeId || null

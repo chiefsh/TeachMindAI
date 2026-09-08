@@ -40,6 +40,11 @@
         </div>
         <div class="flex items-center gap-2 mt-3 pt-3 border-t border-slate-50" @click.stop>
           <el-button size="small" link :icon="View" @click="router.push(`/courseware/${cw.id}`)">查看</el-button>
+          <el-button
+            v-if="cw.gen_status === 'done'"
+            size="small" link :icon="Share"
+            @click="openShare(cw)"
+          >分享</el-button>
           <el-button size="small" link :icon="EditPen" @click="renameCw(cw)">重命名</el-button>
           <el-button
             size="small"
@@ -175,6 +180,13 @@
         </el-button>
       </template>
     </el-dialog>
+
+    <ShareDialog
+      v-model="showShare"
+      resource-type="courseware"
+      :resource-id="shareTarget?.id || 0"
+      :resource-title="shareTarget?.title"
+    />
   </div>
 </template>
 
@@ -185,7 +197,8 @@ import { useRouter } from 'vue-router'
 import { coursewareApi, textbookApi } from '@/api/modules'
 import { useEducationStore } from '@/stores/education'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { MagicStick, View, Delete, VideoPlay, RefreshRight, CopyDocument, EditPen } from '@element-plus/icons-vue'
+import { MagicStick, View, Delete, VideoPlay, RefreshRight, CopyDocument, EditPen, Share } from '@element-plus/icons-vue'
+import ShareDialog from '@/components/ShareDialog.vue'
 import type { Courseware, Textbook, Chapter, RenderStyle } from '@/types'
 import { THEMES, DEFAULT_THEME, getTheme } from '@/utils/coursewareTheme'
 import { isBusyStatus, useBusyPoll } from '@/utils/busyPoll'
@@ -199,6 +212,8 @@ const total = ref(0)
 const page = ref(1)
 const pageSize = 12
 const loading = ref(false)
+const showShare = ref(false)
+const shareTarget = ref<Courseware | null>(null)
 const showCreate = ref(false)
 const creating = ref(false)
 const regeneratingId = ref<number | null>(null)
@@ -318,6 +333,11 @@ async function handleCreate() {
     showCreate.value = false
     await load()
   } finally { creating.value = false }
+}
+
+function openShare(cw: Courseware) {
+  shareTarget.value = cw
+  showShare.value = true
 }
 
 async function copyCw(cw: Courseware) {

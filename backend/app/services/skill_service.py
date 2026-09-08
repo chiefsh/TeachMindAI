@@ -311,8 +311,8 @@ _RENDERERS = {
 # ---------------------------------------------------------------------------
 # 统一入口：供 ai_service 调用。命中并成功则返回整页 HTML，否则返回 ''。
 # ---------------------------------------------------------------------------
-async def maybe_generate_skill_html(cfg, point: dict, subject_name: str) -> str:
-    """尝试用 skill 为知识点生成整页互动 HTML；不命中或失败返回 ''。"""
+async def maybe_generate_skill(cfg, point: dict, subject_name: str) -> tuple[str, dict | None]:
+    """尝试用 skill 生成互动 HTML，并带回可导出的 routed 规格。失败返回 ('', None)。"""
     routed = None
     try:
         if _is_math(subject_name):
@@ -321,16 +321,27 @@ async def maybe_generate_skill_html(cfg, point: dict, subject_name: str) -> str:
             routed = await route_chem_point(cfg, point, subject_name)
     except Exception as e:
         logger.warning("skill 路由异常：%s", e)
-        return ""
+        return "", None
 
     if not routed:
-        return ""
+        return "", None
 
     renderer = _RENDERERS.get(routed["skill"])
     if not renderer:
-        return ""
+        return "", None
     html = await renderer(routed)
-    if html:
-        logger.info("知识点「%s」命中 skill %s/%s", point.get("name"),
-                    routed["skill"], routed["problem_type"])
+    if not html:
+        return "", None
+    logger.info("知识点「%s」命中 skill %s/%s", point.get("name"),
+                routed["skill"], routed["problem_type"])
+    return html, {
+        "skill": routed["skill"],
+        "problem_type": routed["problem_type"],
+        "spec": routed.get("spec") or {},
+    }
+
+
+async def maybe_generate_skill_html(cfg, point: dict, subject_name: str) -> str:
+    """尝试用 skill 为知识点生成整页互动 HTML；不命中或失败返回 ''。"""
+    html, _ = await maybe_generate_skill(cfg, point, subject_name)
     return html

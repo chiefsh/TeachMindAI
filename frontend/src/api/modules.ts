@@ -5,6 +5,7 @@ import type {
   SchoolLevel, Grade, Subject, SubjectPrompt,
   CoursewareSession, SessionBoard, PublicSession,
   AnalysisSet, Paginated, KgNode, KgEdge, KgGraph,
+  ShareLink, ShareMeta, SharePayload, ShareResourceType,
 } from '@/types'
 
 // ─── 工作台 ────────────────────────────────────────────────────────
@@ -97,8 +98,24 @@ export const coursewareApi = {
       `/coursewares/${id}/slides/${index}/optimize`,
       data,
     ),
-  exportFile: (id: number, format: 'pptx' | 'docx' | 'pdf') =>
-    request.get<Blob>(`/coursewares/${id}/export`, { params: { format }, responseType: 'blob' }),
+  exportFile: (
+    id: number,
+    format: 'pptx' | 'docx' | 'pdf',
+    shots?: Record<number, string>,
+  ) => {
+    if (shots && Object.keys(shots).length) {
+      return request.post<Blob>(
+        `/coursewares/${id}/export`,
+        { format, shots },
+        { responseType: 'blob', timeout: 180000 },
+      )
+    }
+    return request.get<Blob>(`/coursewares/${id}/export`, {
+      params: { format },
+      responseType: 'blob',
+      timeout: 120000,
+    })
+  },
   delete: (id: number) => request.delete(`/coursewares/${id}`),
 }
 
@@ -122,6 +139,21 @@ export const publicApi = {
     question?: string | null; answer?: string | null
     is_correct?: boolean | null; duration_ms?: number | null
   }) => request.post(`/public/sessions/${token}/records`, data),
+  shareMeta: (token: string) => request.get<ShareMeta>(`/public/shares/${token}`),
+  shareAccess: (token: string, password?: string) =>
+    request.post<SharePayload>(`/public/shares/${token}/access`, { password: password || null }),
+}
+
+export const shareApi = {
+  create: (data: {
+    resource_type: ShareResourceType
+    resource_id: number
+    expire_days?: number
+    password?: string | null
+  }) => request.post<ShareLink>('/shares', data),
+  list: (resource_type: ShareResourceType, resource_id: number) =>
+    request.get<ShareLink[]>('/shares', { params: { resource_type, resource_id } }),
+  revoke: (id: number) => request.delete(`/shares/${id}`),
 }
 
 // ─── 作业/考试 ─────────────────────────────────────────────────────

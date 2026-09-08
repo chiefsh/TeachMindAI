@@ -831,6 +831,10 @@ async def do_optimize_courseware_slide(
             if html:
                 slide["html"] = html
                 slide["type"] = "interactive"
+            if updates.get("skill"):
+                slide["skill"] = updates["skill"]
+            else:
+                slide.pop("skill", None)
         else:
             for k in _SLIDE_TEXT_KEYS:
                 if k in updates and updates[k] is not None:
@@ -863,8 +867,9 @@ async def _rewrite_one_slide(
             "activity_goal": instruction or slide.get("subtitle") or "通过互动练习巩固本页知识点",
         }
         html = ""
+        routed = None
         try:
-            html = await skill_service.maybe_generate_skill_html(cfg, point, subject_name)
+            html, routed = await skill_service.maybe_generate_skill(cfg, point, subject_name)
         except Exception as e:
             logger.warning("单页优化 skill 失败，回退 LLM：%s", e)
         if not html:
@@ -878,7 +883,10 @@ async def _rewrite_one_slide(
             )
         if not html:
             raise ValueError("未能生成互动页面")
-        return {"html": html}
+        out = {"html": html}
+        if routed:
+            out["skill"] = routed
+        return out
 
     hint = _OPTIMIZE_HINTS.get(mode, _OPTIMIZE_HINTS["rewrite"])
     extra = f"\n教师补充要求：{instruction}" if instruction else ""
@@ -1073,11 +1081,12 @@ async def _generate_lesson_content(
         from app.services import skill_service
         sem = asyncio.Semaphore(3)
 
-        async def _gen_html(point_i: int, p: dict) -> str:
+        async def _gen_html(point_i: int, p: dict) -> tuple[str, dict | None]:
             async with sem:
                 html = ""
+                routed = None
                 try:
-                    html = await skill_service.maybe_generate_skill_html(cfg, p, subject_name)
+                    html, routed = await skill_service.maybe_generate_skill(cfg, p, subject_name)
                 except Exception as e:
                     logger.warning("课件 %s 知识点 %s skill 生成失败，回退 LLM：%s", cw.id, p.get("name"), e)
                 if not html:
@@ -1089,12 +1098,14 @@ async def _generate_lesson_content(
                         )
                     except Exception as e:
                         logger.warning("课件 %s 知识点 %s 互动页生成失败：%s", cw.id, p.get("name"), e)
-                return html or ""
+                return html or "", routed
 
         htmls = await asyncio.gather(*[_gen_html(pi, p) for _, pi, p in interactive_jobs])
-        for (slide_i, _, _), html in zip(interactive_jobs, htmls):
+        for (slide_i, _, _), (html, routed) in zip(interactive_jobs, htmls):
             if html:
                 slides[slide_i]["html"] = html
+            if routed:
+                slides[slide_i]["skill"] = routed
 
     mistakes = [m for p in points for m in (p.get("common_mistakes") or [])][:4]
     if mistakes:

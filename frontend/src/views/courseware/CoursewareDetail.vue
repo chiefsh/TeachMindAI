@@ -39,6 +39,7 @@
       <div v-if="cw?.gen_status === 'done' && slides.length" class="flex items-center gap-2">
         <el-button :type="isWebStyle ? 'primary' : ''" :icon="Monitor" @click="openLessonPage">网页预览</el-button>
         <el-button :type="isWebStyle ? '' : 'primary'" :icon="VideoPlay" @click="openPresent">演示模式</el-button>
+        <el-button :icon="Share" @click="showShare = true">分享</el-button>
         <el-button :icon="Connection" @click="openInteraction">课堂互动</el-button>
         <el-button-group>
           <el-button :loading="downloadingPage" :icon="Link" @click="downloadLessonPage">下载 HTML</el-button>
@@ -213,8 +214,9 @@
                 </div>
                 <iframe
                   v-if="currentBlobUrl"
+                  ref="previewFrame"
                   :src="currentBlobUrl"
-                  sandbox="allow-scripts"
+                  sandbox="allow-scripts allow-same-origin"
                   class="w-full h-[460px] rounded-lg border border-slate-200 bg-white"
                 ></iframe>
               </div>
@@ -385,27 +387,50 @@
         <el-button type="primary" :loading="inserting" @click="confirmInsert">插入</el-button>
       </template>
     </el-dialog>
+
+    <ShareDialog
+      v-model="showShare"
+      resource-type="courseware"
+      :resource-id="cw?.id || 0"
+      :resource-title="cw?.title"
+    />
+
+    <div
+      v-if="shotProgress"
+      class="fixed inset-0 z-[300] bg-slate-900/50 flex items-center justify-center p-6"
+    >
+      <div class="bg-white rounded-2xl shadow-xl p-4 w-[min(100%,1040px)]">
+        <p class="text-sm text-slate-600 mb-3">{{ shotProgress }}</p>
+        <iframe
+          ref="shotFrame"
+          sandbox="allow-scripts allow-same-origin"
+          class="w-full h-[540px] rounded-lg border border-slate-200 bg-white"
+        ></iframe>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { coursewareApi, textbookApi, interactionApi } from '@/api/modules'
 import {
   ArrowLeft, ArrowRight, ArrowUp, ArrowDown, Loading, CircleClose, Download, FullScreen,
   VideoPlay, Connection, Plus, CopyDocument, DataAnalysis, Delete, Refresh, EditPen,
-  Monitor, Link, MagicStick,
+  Monitor, Link, MagicStick, Share,
 } from '@element-plus/icons-vue'
 import QRCode from 'qrcode'
 import { createIframeBlob } from '@/utils/coursewareFrame'
+import { armIframeLoad, captureIframe, createCaptureBlob, waitMs, waitScene } from '@/utils/interactiveShot'
 import { buildRevealDeck } from '@/utils/revealDeck'
 import { buildLessonPage } from '@/utils/lessonPage'
 import { getTheme } from '@/utils/coursewareTheme'
 import { pageTypeLabel, PAGE_KINDS, normalizePageKind } from '@/utils/coursewarePages'
 import { useEducationStore } from '@/stores/education'
 import { renderMarkdown } from '@/utils/markdown'
+import ShareDialog from '@/components/ShareDialog.vue'
 import type { Courseware, CoursewareSession, SessionBoard } from '@/types'
 
 const route = useRoute()
@@ -537,6 +562,8 @@ async function downloadLessonPage() {
     downloadingPage.value = false
   }
 }
+
+const showShare = ref(false)
 
 // 课堂互动
 const showInteraction = ref(false)
@@ -903,19 +930,81 @@ async function resolveImages() {
   } catch { /* 图片解析失败忽略 */ }
 }
 
+const previewFrame = ref<HTMLIFrameElement | null>(null)
+const shotFrame = ref<HTMLIFrameElement | null>(null)
+const shotProgress = ref('')
+
+async function capturePreviewShots(): Promise<Record<number, string>> {
+  const out: Record<number, string> = {}
+  const jobs = slides.value
+    .map((s: any, i: number) => ({ i, html: s?.html as string | undefined }))
+    .filter((j: { html?: string }) => j.html && String(j.html).length >= 20)
+  if (!jobs.length) return out
+  shotProgress.value = '正在打开互动页…'
+  await nextTick()
+  await nextTick()
+  let iframe = shotFrame.value
+  if (!iframe) {
+    await waitMs(80)
+    iframe = shotFrame.value
+  }
+  if (!iframe) return out
+  try {
+    for (let n = 0; n < jobs.length; n++) {
+      const { i, html } = jobs[n]
+      const url = createCaptureBlob(html as string, cw.value?.theme)
+      shotProgress.value = `正在截取互动页 ${n + 1} / ${jobs.length}`
+      const ready = armIframeLoad(iframe)
+      iframe.src = url
+      await ready
+      await waitScene(iframe.contentDocument)
+      try {
+        const shot = await captureIframe(iframe)
+        if (shot) out[i] = shot
+      } catch (e) {
+        console.warn('skip interactive shot', i, e)
+      }
+      URL.revokeObjectURL(url)
+    }
+  } finally {
+    iframe.src = 'about:blank'
+    shotProgress.value = ''
+  }
+  return out
+}
+
 async function doExport(fmt: 'pptx' | 'docx' | 'pdf') {
   if (!cw.value) return
   exporting.value = fmt
   try {
-    const blob = (await coursewareApi.exportFile(cw.value.id, fmt)) as unknown as Blob
+    let shots: Record<number, string> | undefined
+    if (fmt === 'pptx') {
+      try {
+        shots = await capturePreviewShots()
+      } catch (e) {
+        console.warn('capturePreviewShots', e)
+        shots = undefined
+      }
+      if (slides.value.some((s: any) => s.html) && !Object.keys(shots || {}).length) {
+        ElMessage.warning('互动页截图未成功，PPT 将使用占位画面')
+      }
+    }
+    const blob = (await coursewareApi.exportFile(cw.value.id, fmt, shots)) as unknown as Blob
+    if (blob && blob.type && blob.type.includes('json')) {
+      const text = await blob.text()
+      let detail = '导出失败'
+      try { detail = JSON.parse(text).detail || detail } catch { /* ignore */ }
+      ElMessage.error(typeof detail === 'string' ? detail : '导出失败')
+      return
+    }
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
     a.download = `${cw.value.title}.${fmt}`
     a.click()
     URL.revokeObjectURL(url)
-  } catch {
-    ElMessage.error('导出失败，请稍后重试')
+  } catch (e: any) {
+    if (!e?.response) ElMessage.error('导出失败，请稍后重试')
   } finally {
     exporting.value = ''
   }

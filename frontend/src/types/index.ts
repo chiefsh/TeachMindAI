@@ -194,3 +194,32 @@ export interface SessionBoard {
   students: SessionBoardStudent[]
   records: SessionBoardRecord[]
 }
+
+export type ShareResourceType = 'courseware' | 'question_analysis'
+
+export interface ShareLink {
+  id: number
+  token: string
+  resource_type: ShareResourceType | string
+  resource_id: number
+  title: string
+  has_password: boolean
+  expires_at: string
+  revoked: boolean
+  created_at: string
+}
+
+export interface ShareMeta {
+  status: 'ok' | 'need_password' | 'expired' | 'revoked' | 'not_found'
+  title: string
+  resource_type?: ShareResourceType | string | null
+  has_password: boolean
+  expires_at?: string | null
+}
+
+export interface SharePayload {
+  resource_type: ShareResourceType | string
+  title: string
+  expires_at: string
+  payload: Record<string, any>
+}

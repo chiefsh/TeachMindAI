@@ -9,6 +9,7 @@ from app.models.student import Student, ExamResult, GradeReport
 from app.models.llm_config import LLMConfig
 from app.models.teacher_setting import TeacherSetting
 from app.models.question_analysis import AnalysisSet, AnalysisQuestion
+from app.models.share import ShareLink
 
 __all__ = [
     "TimestampMixin", "Teacher",
@@ -21,4 +22,5 @@ __all__ = [
     "LLMConfig",
     "TeacherSetting",
     "AnalysisSet", "AnalysisQuestion",
+    "ShareLink",
 ]

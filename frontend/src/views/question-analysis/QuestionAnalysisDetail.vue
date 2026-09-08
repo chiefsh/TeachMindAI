@@ -44,10 +44,22 @@
         <div class="flex-1" />
         <el-button size="small" :icon="Collection" :disabled="!checked.size" @click="saveToBank">选中题目入库</el-button>
         <el-button size="small" type="primary" :icon="MagicStick" :loading="analyzing"
-          :disabled="!checked.size" @click="startAnalyze">
+          :disabled="!checked.size" @click="startAnalyze(false)">
           AI 解析选中题目
         </el-button>
+        <el-popconfirm
+          title="将调用 AI 重新解析选中题目，并覆盖题库中的解析"
+          confirm-button-text="重新解析"
+          @confirm="startAnalyze(true)"
+        >
+          <template #reference>
+            <el-button size="small" :icon="Refresh" :loading="analyzing" :disabled="!checked.size">
+              强制重新解析
+            </el-button>
+          </template>
+        </el-popconfirm>
       </div>
+      <p class="text-xs text-slate-400 -mt-2 mb-4">导入时已自动进入题库；题库里已有解析会直接套用。强制重新解析会覆盖题库中的解析。</p>
 
       <!-- 解析进度 -->
       <div v-if="analyzing" class="card !p-4 mb-4">
@@ -68,6 +80,7 @@
                 <span class="text-sm font-semibold text-slate-800">第 {{ q.seq }} 题</span>
                 <el-tag size="small" type="info">{{ typeLabel(q.question_type) }}</el-tag>
                 <el-tag v-if="q.analysis_status === 'processing'" size="small" type="warning">解析中</el-tag>
+                <el-tag v-else-if="q.selected && q.analysis_status === 'done' && q.analysis_source === 'bank'" size="small">题库解析</el-tag>
                 <el-tag v-else-if="q.selected && q.analysis_status === 'done'" size="small" type="success">已解析</el-tag>
                 <el-tag v-else-if="q.selected && q.analysis_status === 'failed'" size="small" type="danger">解析失败</el-tag>
               </div>
@@ -273,16 +286,24 @@ function toggleReveal(q: AnalysisQuestion) {
   }
 }
 
-async function startAnalyze() {
+async function startAnalyze(force = false) {
   const ids = [...checked]
   if (!ids.length) return
   analyzing.value = true
   progress.current = 0
   progress.total = ids.length
-  progress.hint = '任务已提交...'
+  progress.hint = force ? '正在强制重新解析...' : '任务已提交...'
   try {
-    const { task_id } = await analysisApi.analyze(setId, ids)
-    connectWs(task_id)
+    const res = await analysisApi.analyze(setId, ids, force)
+    const reused = res.reused || 0
+    if (!res.task_id) {
+      analyzing.value = false
+      await load()
+      ElMessage.success(reused ? `已从题库套用 ${reused} 道解析` : '没有需要解析的题目')
+      return
+    }
+    if (reused) progress.hint = `已套用 ${reused} 道题库解析，其余正在 AI 解析...`
+    connectWs(res.task_id)
     startAnalyzePoll()
   } catch {
     analyzing.value = false
@@ -350,7 +371,15 @@ async function saveToBank() {
   const ids = [...checked]
   if (!ids.length) return
   const res = await analysisApi.saveToBank(setId, ids)
-  ElMessage.success(`已入库 ${res.count} 道题`)
+  const created = res.created ?? res.count ?? 0
+  const skipped = res.skipped ?? 0
+  if (skipped && created) {
+    ElMessage.success(`新入库 ${created} 道，${skipped} 道已在题库中`)
+  } else if (skipped) {
+    ElMessage.success(`所选题目已在题库中（${skipped} 道），未重复录入`)
+  } else {
+    ElMessage.success(`已入库 ${created} 道题`)
+  }
 }
 
 async function exportFile(format: 'docx' | 'pdf') {

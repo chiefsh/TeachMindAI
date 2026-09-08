@@ -34,6 +34,18 @@ class CoursewareUpdate(BaseModel):
         return t[:256]
 
 
+class CoursewareCopyIn(BaseModel):
+    title: str | None = Field(None, max_length=256)
+
+    @field_validator("title")
+    @classmethod
+    def _strip_title(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        t = v.strip()
+        return t[:256] if t else None
+
+
 class CoursewareOut(BaseModel):
     id: int
     title: str

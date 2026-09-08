@@ -20,6 +20,7 @@ _INDEX_SQL = [
     "CREATE INDEX IF NOT EXISTS ix_exam_results_teacher_subject_exam ON exam_results (teacher_id, subject_id, exam_name)",
     "CREATE INDEX IF NOT EXISTS ix_exam_results_student_id ON exam_results (student_id)",
     "CREATE INDEX IF NOT EXISTS ix_questions_teacher_id ON questions (teacher_id)",
+    "CREATE INDEX IF NOT EXISTS ix_questions_teacher_content_hash ON questions (teacher_id, content_hash)",
     "CREATE INDEX IF NOT EXISTS ix_coursewares_teacher_id ON coursewares (teacher_id)",
     "CREATE INDEX IF NOT EXISTS ix_textbooks_teacher_id ON textbooks (teacher_id)",
     "CREATE INDEX IF NOT EXISTS ix_textbook_chapters_textbook_id ON textbook_chapters (textbook_id)",
@@ -42,6 +43,26 @@ _COLUMN_SQL = [
     (
         "questions", "images",
         "ALTER TABLE questions ADD COLUMN images JSON NULL",
+    ),
+    (
+        "questions", "content_hash",
+        "ALTER TABLE questions ADD COLUMN content_hash VARCHAR(64) NULL",
+    ),
+    (
+        "questions", "use_count",
+        "ALTER TABLE questions ADD COLUMN use_count INTEGER NOT NULL DEFAULT 0",
+    ),
+    (
+        "questions", "analysis_content",
+        "ALTER TABLE questions ADD COLUMN analysis_content JSON NULL",
+    ),
+    (
+        "questions", "analysis_html",
+        "ALTER TABLE questions ADD COLUMN analysis_html TEXT NULL",
+    ),
+    (
+        "analysis_questions", "analysis_source",
+        "ALTER TABLE analysis_questions ADD COLUMN analysis_source VARCHAR(16) NULL",
     ),
     (
         "homework_papers", "source_type",
@@ -110,6 +131,11 @@ async def lifespan(app: FastAPI):
         pass
     try:
         await _ensure_columns()
+    except Exception:
+        pass
+    try:
+        from app.services.question_bank_service import backfill_question_bank_meta
+        await backfill_question_bank_meta()
     except Exception:
         pass
     # 注入基础数据（学段/年级/科目）

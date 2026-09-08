@@ -61,6 +61,6 @@ def analyze_grades_task(self, report_id: int):
 
 
 @celery_app.task(name="app.tasks.ai_tasks.analyze_questions_task", bind=True)
-def analyze_questions_task(self, set_id: int, question_ids: list[int]):
+def analyze_questions_task(self, set_id: int, question_ids: list[int], force=False):
     # 不做自动重试：解析为逐题幂等写库，重试会重复推送进度
-    return _run(do_analyze_questions(set_id, question_ids, self.request.id))
+    return _run(do_analyze_questions(set_id, question_ids, self.request.id, force=force))

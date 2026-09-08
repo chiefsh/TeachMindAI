@@ -8,7 +8,10 @@ from app.core.security import verify_password, get_password_hash, create_access_
 from app.core.redis_client import get_redis
 from app.core.config import settings
 from app.models.teacher import Teacher
-from app.schemas.auth import TeacherRegister, TeacherLogin, TokenResponse, TeacherProfile, PublicAuthConfig
+from app.schemas.auth import (
+    TeacherRegister, TeacherLogin, TokenResponse, TeacherProfile,
+    TeacherProfileUpdate, ChangePasswordIn, PublicAuthConfig,
+)
 from app.api.deps import get_current_teacher, bearer_scheme
 from fastapi.security import HTTPAuthorizationCredentials
 
@@ -79,3 +82,38 @@ async def logout(
 @router.get("/me", response_model=TeacherProfile)
 async def get_me(teacher: Teacher = Depends(get_current_teacher)):
     return teacher
+
+
+@router.patch("/me", response_model=TeacherProfile)
+async def update_me(
+    data: TeacherProfileUpdate,
+    teacher: Teacher = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+):
+    if data.real_name is not None:
+        teacher.real_name = data.real_name
+    if data.email is not None and data.email != teacher.email:
+        exists = await db.execute(
+            select(Teacher).where(Teacher.email == data.email, Teacher.id != teacher.id)
+        )
+        if exists.scalar_one_or_none():
+            raise HTTPException(status_code=400, detail="邮箱已被注册")
+        teacher.email = data.email
+    await db.commit()
+    await db.refresh(teacher)
+    return teacher
+
+
+@router.post("/change-password")
+async def change_password(
+    data: ChangePasswordIn,
+    teacher: Teacher = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+):
+    if not verify_password(data.old_password, teacher.hashed_password):
+        raise HTTPException(status_code=400, detail="原密码错误")
+    if data.old_password == data.new_password:
+        raise HTTPException(status_code=400, detail="新密码不能与原密码相同")
+    teacher.hashed_password = get_password_hash(data.new_password)
+    await db.commit()
+    return {"message": "密码已更新"}

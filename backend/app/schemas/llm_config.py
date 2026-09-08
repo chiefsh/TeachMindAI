@@ -33,3 +33,22 @@ class LLMConfigOut(BaseModel):
     is_default: bool
     is_active: bool
     model_config = {"from_attributes": True}
+
+
+class EmbeddingConfigOut(BaseModel):
+    enabled: bool
+    model: str
+    base_url: str | None = None
+    dim: int = 1024
+    use_llm_gateway: bool = False
+    has_api_key: bool = False
+    source: str = "none"
+
+
+class EmbeddingConfigUpdate(BaseModel):
+    enabled: bool = True
+    model: str = ""
+    base_url: str | None = None
+    api_key: str | None = None
+    dim: int = 1024
+    use_llm_gateway: bool = False

@@ -172,6 +172,22 @@
       </template>
     </el-dialog>
 
+    <el-dialog v-model="showCopy" title="复制课件" width="440px" :close-on-click-modal="false" @opened="focusCopyInput">
+      <p class="text-sm text-slate-600 mb-2">复制后的课件名称</p>
+      <el-input
+        ref="copyInputRef"
+        v-model="copyTitle"
+        maxlength="256"
+        show-word-limit
+        placeholder="请输入课件名称"
+        @keyup.enter="confirmCopy"
+      />
+      <template #footer>
+        <el-button @click="showCopy = false">取消</el-button>
+        <el-button type="primary" :loading="copyLoading" @click="confirmCopy">确认</el-button>
+      </template>
+    </el-dialog>
+
     <ShareDialog
       v-model="showShare"
       resource-type="courseware"
@@ -182,7 +198,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, nextTick } from 'vue'
 import { watchDebounced } from '@vueuse/core'
 import { useRouter } from 'vue-router'
 import { coursewareApi, textbookApi } from '@/api/modules'
@@ -209,6 +225,11 @@ const showCreate = ref(false)
 const creating = ref(false)
 const regeneratingId = ref<number | null>(null)
 const copyingId = ref<number | null>(null)
+const showCopy = ref(false)
+const copyTarget = ref<Courseware | null>(null)
+const copyTitle = ref('')
+const copyLoading = ref(false)
+const copyInputRef = ref<{ focus?: () => void } | null>(null)
 const formRef = ref()
 const chapterOptions = ref<{ id: number; label: string }[]>([])
 const chaptersLoading = ref(false)
@@ -331,16 +352,39 @@ function openShare(cw: Courseware) {
   showShare.value = true
 }
 
-async function copyCw(cw: Courseware) {
+async function openCopy(cw: Courseware) {
   copyingId.value = cw.id
   try {
-    const copied = await coursewareApi.copy(cw.id)
+    const res = await coursewareApi.suggestCopyTitle(cw.id)
+    copyTarget.value = cw
+    copyTitle.value = res.title
+    showCopy.value = true
+  } catch {
+    ElMessage.error('复制失败，请稍后重试')
+  } finally {
+    copyingId.value = null
+  }
+}
+
+function focusCopyInput() {
+  nextTick(() => copyInputRef.value?.focus?.())
+}
+
+async function confirmCopy() {
+  const src = copyTarget.value
+  const title = copyTitle.value.trim()
+  if (!src || copyLoading.value) return
+  if (!title) { ElMessage.warning('请填写课件名称'); return }
+  copyLoading.value = true
+  try {
+    const copied = await coursewareApi.copy(src.id, title)
+    showCopy.value = false
     ElMessage.success(`已复制为「${copied.title}」`)
     await load()
   } catch {
     ElMessage.error('复制失败，请稍后重试')
   } finally {
-    copyingId.value = null
+    copyLoading.value = false
   }
 }
 
@@ -366,7 +410,7 @@ async function renameCw(cw: Courseware) {
 
 function onCardMore(cw: Courseware, cmd: string) {
   if (cmd === 'rename') void renameCw(cw)
-  else if (cmd === 'copy') void copyCw(cw)
+  else if (cmd === 'copy') void openCopy(cw)
   else if (cmd === 'regen') void regenerateCw(cw)
   else if (cmd === 'delete') void confirmDeleteCw(cw)
 }

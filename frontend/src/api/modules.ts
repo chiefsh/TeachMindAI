@@ -1,7 +1,7 @@
 import request from './index'
 import type {
   Textbook, Chapter, Question, QuestionImport, Courseware, HomeworkPaper,
-  Student, ExamResult, ExamSummary, GradeReport, LLMConfig, TeacherSubject,
+  Student, ExamResult, ExamSummary, GradeReport, LLMConfig, EmbeddingConfig, TeacherSubject,
   SchoolLevel, Grade, Subject, SubjectPrompt,
   CoursewareSession, SessionBoard, PublicSession,
   AnalysisSet, Paginated, KgNode, KgEdge, KgGraph,
@@ -25,6 +25,9 @@ export const authApi = {
   register: (data: object) => request.post('/auth/register', data),
   logout: () => request.post('/auth/logout'),
   me: () => request.get('/auth/me'),
+  updateMe: (data: { real_name?: string; email?: string }) => request.patch('/auth/me', data),
+  changePassword: (data: { old_password: string; new_password: string }) =>
+    request.post('/auth/change-password', data),
   getConfig: () => request.get<{ enable_regist: boolean }>('/auth/config'),
 }
 
@@ -62,9 +65,10 @@ export const textbookApi = {
 // ─── 题库 ──────────────────────────────────────────────────────────
 export const questionApi = {
   list: (params?: object) => request.get<{ total: number; items: Question[] }>('/questions', { params }),
+  get: (id: number) => request.get<Question>(`/questions/${id}`),
   create: (data: object) => request.post<Question>('/questions', data),
   manual: (data: { text: string; subject_id: number; grade_id: number; use_ai: boolean }) =>
-    request.post<{ count: number; items: Question[] }>('/questions/manual', data),
+    request.post<{ count: number; created?: number; skipped?: number; items: Question[] }>('/questions/manual', data),
   importFile: (formData: FormData) => request.post('/questions/import-file', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   }),
@@ -82,7 +86,8 @@ export const coursewareApi = {
   get: (id: number) => request.get<Courseware>(`/coursewares/${id}`),
   getStatus: (id: number) => request.get(`/coursewares/${id}/status`),
   regenerate: (id: number) => request.post<Courseware>(`/coursewares/${id}/regenerate`),
-  copy: (id: number) => request.post<Courseware>(`/coursewares/${id}/copy`),
+  suggestCopyTitle: (id: number) => request.get<{ title: string }>(`/coursewares/${id}/copy-title`),
+  copy: (id: number, title: string) => request.post<Courseware>(`/coursewares/${id}/copy`, { title }),
   rename: (id: number, title: string) => request.patch<Courseware>(`/coursewares/${id}`, { title }),
   getSlide: (id: number, index: number) =>
     request.get<{ index: number; edit_status: string; task_id?: string | null; slide: any }>(
@@ -223,10 +228,13 @@ export const analysisApi = {
     analysis: { pending: number; processing: number; done: number; failed: number }
   }>(`/question-analysis/${id}/status`),
   reparse: (id: number) => request.post<AnalysisSet>(`/question-analysis/${id}/reparse`),
-  analyze: (id: number, question_ids: number[]) =>
-    request.post<{ task_id: string; count: number }>(`/question-analysis/${id}/analyze`, { question_ids }),
+  analyze: (id: number, question_ids: number[], force = false) =>
+    request.post<{ task_id: string | null; count: number; reused?: number }>(
+      `/question-analysis/${id}/analyze`,
+      { question_ids, force },
+    ),
   saveToBank: (id: number, question_ids: number[]) =>
-    request.post<{ count: number }>(`/question-analysis/${id}/save-to-bank`, { question_ids }),
+    request.post<{ count: number; created?: number; skipped?: number }>(`/question-analysis/${id}/save-to-bank`, { question_ids }),
   exportFile: (id: number, format: 'docx' | 'pdf') =>
     request.get<Blob>(`/question-analysis/${id}/export`, { params: { format }, responseType: 'blob' }),
   delete: (id: number) => request.delete(`/question-analysis/${id}`),
@@ -268,6 +276,14 @@ export const settingsApi = {
   updateConfig: (id: number, data: object) => request.patch<LLMConfig>(`/settings/llm-configs/${id}`, data),
   deleteConfig: (id: number) => request.delete(`/settings/llm-configs/${id}`),
   testConfig: (id: number) => request.post(`/settings/llm-configs/${id}/test`),
+  getEmbedding: () => request.get<EmbeddingConfig>('/settings/embedding'),
+  saveEmbedding: (data: {
+    enabled: boolean; model: string; base_url?: string | null
+    api_key?: string | null; dim: number; use_llm_gateway: boolean
+  }) => request.put<EmbeddingConfig>('/settings/embedding', data),
+  testEmbedding: () => request.post<{ success: boolean; dim?: number; model?: string; error?: string }>(
+    '/settings/embedding/test',
+  ),
   // 科目课件提示词
   listSubjectPrompts: () => request.get<SubjectPrompt[]>('/settings/subject-prompts'),
   updateSubjectPrompt: (subjectName: string, data: { prompt: string; interactive_guidance?: string | null }) =>

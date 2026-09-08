@@ -16,7 +16,6 @@ from app.core.config import settings
 from app.core.minio_client import upload_file
 from app.models.teacher import Teacher
 from app.models.education import Grade, Subject
-from app.models.question import Question
 from app.models.textbook import ParseStatus
 from app.models.question_analysis import AnalysisSet, AnalysisQuestion
 from app.schemas.question_analysis import (
@@ -105,6 +104,7 @@ async def import_manual(
 
     from app.services.ai_service import _get_default_llm, parse_questions_from_text
     from app.services.file_service import _fallback_split_dicts, _coerce_qtype, _coerce_difficulty
+    from app.services.question_bank_service import strip_stem_number
 
     parsed: list[dict] = []
     cfg = await _get_default_llm(teacher.id, db)
@@ -125,20 +125,33 @@ async def import_manual(
     await db.flush()
 
     seq = 0
+    aqs: list[AnalysisQuestion] = []
     for item in parsed:
-        content = (item.get("content") or "").strip()
+        content = strip_stem_number(item.get("content") or "")
         if not content:
             continue
         seq += 1
-        db.add(AnalysisQuestion(
+        aq = AnalysisQuestion(
             set_id=aset.id, teacher_id=teacher.id, seq=seq,
             content=content[:8000], options=item.get("options") or None,
             answer=(item.get("answer") or None),
             question_type=_coerce_qtype(item.get("question_type")),
             difficulty=_coerce_difficulty(item.get("difficulty")),
-        ))
+        )
+        db.add(aq)
+        aqs.append(aq)
     if seq == 0:
         raise HTTPException(status_code=400, detail="未能识别出有效题目，请检查输入")
+
+    from app.services.question_bank_service import attach_bank_analysis, upsert_payloads
+    await upsert_payloads(
+        db,
+        teacher_id=teacher.id,
+        subject_id=data.subject_id,
+        grade_id=data.grade_id,
+        items=parsed,
+    )
+    await attach_bank_analysis(db, teacher.id, aqs)
 
     await db.commit()
     aset = await _get_set_or_404(aset.id, teacher.id, db, with_questions=True)
@@ -256,18 +269,42 @@ async def analyze(
     if not ids:
         raise HTTPException(status_code=400, detail="请至少勾选一道题目")
 
-    # 置为待解析并 commit，保证 worker 能读到
+    need_ai: list[int] = []
+    reused = 0
+    id_set = set(ids)
+    targets = [q for q in aset.questions if q.id in id_set]
+    if data.force:
+        need_ai = ids
+    else:
+        from app.services.question_bank_service import attach_bank_analysis
+        await attach_bank_analysis(db, teacher.id, targets)
+        for q in targets:
+            if q.analysis_status == ParseStatus.done and q.analysis_content:
+                reused += 1
+                continue
+            need_ai.append(q.id)
+
     for q in aset.questions:
-        if q.id in ids:
-            q.selected = True
-            q.analysis_status = ParseStatus.pending
+        if q.id not in need_ai:
+            continue
+        q.selected = True
+        q.analysis_status = ParseStatus.pending
+        q.analysis_source = None
     await db.commit()
 
+    if not need_ai:
+        try:
+            from app.tasks.knowledge_tasks import persist_analysis_kps_task
+            persist_analysis_kps_task.delay(set_id)
+        except Exception:
+            pass
+        return {"task_id": None, "count": 0, "reused": reused}
+
     from app.tasks.ai_tasks import analyze_questions_task
-    task = analyze_questions_task.delay(set_id, ids)
+    task = analyze_questions_task.delay(set_id, need_ai, force=data.force)
     aset.task_id = task.id
     await db.commit()
-    return {"task_id": task.id, "count": len(ids)}
+    return {"task_id": task.id, "count": len(need_ai), "reused": reused}
 
 
 @router.post("/{set_id}/save-to-bank")
@@ -277,10 +314,10 @@ async def save_to_bank(
     teacher: Teacher = Depends(get_current_teacher),
     db: AsyncSession = Depends(get_db),
 ):
-    """将选中的题目复用入题库（questions 表）。"""
+    """将选中的题目复用入题库（questions 表）。重复题干不重复录入。"""
     aset = await _get_set_or_404(set_id, teacher.id, db, with_questions=True)
     id_set = set(data.question_ids)
-    count = 0
+    items: list[dict] = []
     for q in aset.questions:
         if q.id not in id_set:
             continue
@@ -288,22 +325,46 @@ async def save_to_bank(
         if q.analysis_content:
             from app.services.export_service import _analysis_lines
             explanation = "\n".join(_analysis_lines(q.analysis_content)) or None
-        db.add(Question(
+        items.append({
+            "content": q.content,
+            "options": q.options,
+            "answer": q.answer,
+            "question_type": q.question_type,
+            "difficulty": q.difficulty,
+            "explanation": explanation,
+            "analysis_content": q.analysis_content,
+            "analysis_html": q.analysis_html,
+            "tags": (q.analysis_content or {}).get("知识点") if q.analysis_content else None,
+        })
+    if not items:
+        raise HTTPException(status_code=400, detail="没有可入库的题目")
+    from app.services.question_bank_service import upsert_and_write_analysis, upsert_payloads
+    _, created, skipped = await upsert_payloads(
+        db,
+        teacher_id=teacher.id,
+        subject_id=aset.subject_id,
+        grade_id=aset.grade_id,
+        items=items,
+    )
+    for q in aset.questions:
+        if q.id not in id_set or not q.analysis_content:
+            continue
+        await upsert_and_write_analysis(
+            db,
             teacher_id=teacher.id,
             subject_id=aset.subject_id,
             grade_id=aset.grade_id,
+            content=q.content,
+            options=q.options,
             question_type=q.question_type,
             difficulty=q.difficulty,
-            content=q.content[:4000],
-            options=q.options or None,
-            answer=q.answer or None,
-            explanation=explanation,
-        ))
-        count += 1
-    if count == 0:
-        raise HTTPException(status_code=400, detail="没有可入库的题目")
+            answer=q.answer,
+            analysis_content=q.analysis_content,
+            analysis_html=q.analysis_html,
+            overwrite=True,
+        )
     await db.commit()
-    return {"count": count}
+    return {"count": created, "created": created, "skipped": skipped}
 
 
 @router.get("/{set_id}/export")

@@ -19,8 +19,8 @@
             :icon="CopyDocument"
             class="!px-1"
             title="复制课件"
-            :loading="copying"
-            @click="copyCw"
+            :loading="copying || copyLoading"
+            @click="openCopy"
           />
         </div>
         <div class="flex items-center gap-2 mt-1">
@@ -388,6 +388,22 @@
       </template>
     </el-dialog>
 
+    <el-dialog v-model="showCopy" title="复制课件" width="440px" :close-on-click-modal="false" @opened="focusCopyInput">
+      <p class="text-sm text-slate-600 mb-2">复制后的课件名称</p>
+      <el-input
+        ref="copyInputRef"
+        v-model="copyTitle"
+        maxlength="256"
+        show-word-limit
+        placeholder="请输入课件名称"
+        @keyup.enter="confirmCopy"
+      />
+      <template #footer>
+        <el-button @click="showCopy = false">取消</el-button>
+        <el-button type="primary" :loading="copyLoading" @click="confirmCopy">确认</el-button>
+      </template>
+    </el-dialog>
+
     <ShareDialog
       v-model="showShare"
       resource-type="courseware"
@@ -441,6 +457,10 @@ const cw = ref<Courseware | null>(null)
 const activeSlide = ref(0)
 const exporting = ref<string>('')
 const copying = ref(false)
+const showCopy = ref(false)
+const copyTitle = ref('')
+const copyLoading = ref(false)
+const copyInputRef = ref<{ focus?: () => void } | null>(null)
 const imageMap = ref<Record<string, string>>({})
 const showFs = ref(false)
 let pollTimer: ReturnType<typeof setInterval> | null = null
@@ -1046,17 +1066,38 @@ async function renameCw() {
   }
 }
 
-async function copyCw() {
+async function openCopy() {
   if (!cw.value) return
   copying.value = true
   try {
-    const copied = await coursewareApi.copy(cw.value.id)
+    const res = await coursewareApi.suggestCopyTitle(cw.value.id)
+    copyTitle.value = res.title
+    showCopy.value = true
+  } catch {
+    ElMessage.error('复制失败，请稍后重试')
+  } finally {
+    copying.value = false
+  }
+}
+
+function focusCopyInput() {
+  nextTick(() => copyInputRef.value?.focus?.())
+}
+
+async function confirmCopy() {
+  if (!cw.value || copyLoading.value) return
+  const title = copyTitle.value.trim()
+  if (!title) { ElMessage.warning('请填写课件名称'); return }
+  copyLoading.value = true
+  try {
+    const copied = await coursewareApi.copy(cw.value.id, title)
+    showCopy.value = false
     ElMessage.success(`已复制为「${copied.title}」`)
     router.push(`/courseware/${copied.id}`)
   } catch {
     ElMessage.error('复制失败，请稍后重试')
   } finally {
-    copying.value = false
+    copyLoading.value = false
   }
 }
 

@@ -17,6 +17,7 @@ class AnalysisQuestionOut(BaseModel):
     analysis_status: ParseStatus
     analysis_content: dict | None = None
     analysis_html: str | None = None
+    analysis_source: str | None = None
     model_config = {"from_attributes": True}
 
 
@@ -47,6 +48,7 @@ class ManualImportIn(BaseModel):
 
 class AnalyzeIn(BaseModel):
     question_ids: list[int]
+    force: bool = False
 
 
 class SaveToBankIn(BaseModel):

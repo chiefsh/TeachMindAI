@@ -3,7 +3,7 @@ import io
 import re
 import logging
 from typing import Optional
-from sqlalchemy import select, func
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import AsyncSessionLocal
@@ -11,6 +11,7 @@ from app.core.minio_client import get_file_bytes, upload_file
 from app.core.config import settings
 from app.models.textbook import Textbook, TextbookChapter, TextbookImage, ParseStatus
 from app.models.question import Question, QuestionType, DifficultyLevel, coerce_tags
+from app.services.question_bank_service import strip_stem_number
 import uuid
 
 logger = logging.getLogger(__name__)
@@ -727,6 +728,7 @@ def _items_to_questions(
     for item in items:
         raw_content = str(item.get("content") or "").strip()
         content = re.sub(r"\[图\s*\d+\]", "", raw_content).strip() or raw_content or "（见图）"
+        content = strip_stem_number(content)
         if not content:
             continue
         out.append(Question(
@@ -771,31 +773,24 @@ async def parse_question_file(
         file_bytes = get_file_bytes(bucket, object_name)
 
         if file_type in ("jpg", "jpeg", "png", "webp"):
-            await _parse_question_image(teacher_id, subject_id, grade_id, file_bytes, object_name)
+            n = await _parse_question_image(teacher_id, subject_id, grade_id, file_bytes, object_name)
         elif file_type == "pdf":
             text, image_by_id = _extract_pdf_questions(file_bytes, teacher_id)
-            await _save_parsed_questions(
+            n = await _save_parsed_questions(
                 teacher_id, subject_id, grade_id, object_name, text, image_by_id,
             )
         elif file_type in ("docx", "doc"):
             text, image_by_id = _extract_docx_questions(file_bytes, file_type, teacher_id)
-            await _save_parsed_questions(
+            n = await _save_parsed_questions(
                 teacher_id, subject_id, grade_id, object_name, text, image_by_id,
             )
         elif file_type == "txt":
             text = file_bytes.decode("utf-8", errors="ignore")
-            await _save_parsed_questions(teacher_id, subject_id, grade_id, object_name, text, {})
+            n = await _save_parsed_questions(teacher_id, subject_id, grade_id, object_name, text, {})
         else:
             await _mark(ParseStatus.failed.value, 0, f"不支持的文件格式：{file_type}")
             return
 
-        async with AsyncSessionLocal() as db:
-            n = (await db.execute(
-                select(func.count()).select_from(Question).where(
-                    Question.teacher_id == teacher_id,
-                    Question.source_file_path == object_name,
-                )
-            )).scalar() or 0
         if n == 0:
             await _mark(ParseStatus.failed.value, 0, "未能识别出有效题目")
         else:
@@ -809,7 +804,7 @@ async def parse_question_file(
 async def _save_parsed_questions(
     teacher_id: int, subject_id: int, grade_id: int,
     object_name: str, text: str, image_by_id: dict[int, str],
-):
+) -> int:
     catalog = "\n".join(f"[图{i}]" for i in sorted(image_by_id)) if image_by_id else ""
     parsed: list[dict] = []
     from app.services.ai_service import _get_default_llm, parse_questions_from_text
@@ -826,10 +821,12 @@ async def _save_parsed_questions(
         text, teacher_id, subject_id, grade_id, object_name, image_by_id,
     )
     if not questions:
-        return
+        return 0
+    from app.services.question_bank_service import upsert_question_models
     async with AsyncSessionLocal() as db:
-        db.add_all(questions)
+        resolved, _, _ = await upsert_question_models(db, questions)
         await db.commit()
+        return len(resolved)
 
 
 def _extract_pdf_text(data: bytes) -> str:
@@ -998,7 +995,7 @@ def _split_questions(
     questions = []
     stem_all = list((image_by_id or {}).values())
     for i, (_, content) in enumerate(matches[:200]):
-        content = content.strip()
+        content = strip_stem_number(content)
         if len(content) < 5:
             continue
         images = {"stem": stem_all} if stem_all and i == 0 else None
@@ -1020,7 +1017,7 @@ def _split_questions(
             grade_id=grade_id,
             question_type=QuestionType.short_answer,
             difficulty=DifficultyLevel.medium,
-            content=text.strip()[:4000],
+            content=strip_stem_number(text.strip())[:4000],
             images={"stem": stem_all} if stem_all else None,
             source_file_path=source,
         ))
@@ -1034,11 +1031,12 @@ async def _parse_question_image(teacher_id, subject_id, grade_id, data, source):
         assign_figures_to_questions, crop_pixel_box, detect_option_figures,
         refine_option_box,
     )
+    from app.services.question_bank_service import question_content_hash, upsert_question_models
 
     async with AsyncSessionLocal() as db:
         cfg = await _get_default_llm(teacher_id, db)
         if not cfg:
-            return
+            return 0
 
     ext = (source or "jpg").rsplit(".", 1)[-1].lower()
     if ext not in ("jpg", "jpeg", "png", "webp"):
@@ -1106,9 +1104,14 @@ async def _parse_question_image(teacher_id, subject_id, grade_id, data, source):
             images={"stem": [source_object]},
             source_file_path=source,
         )]
+        # 各页原图不同，不能按同一句兜底文案去重
+        questions[0].content_hash = question_content_hash(
+            source_object or source, None, QuestionType.short_answer,
+        )
     async with AsyncSessionLocal() as db:
-        db.add_all(questions)
+        resolved, _, _ = await upsert_question_models(db, questions)
         await db.commit()
+        return len(resolved)
 
 
 # ─── 试题分析：文件解析 ───────────────────────────────────────────
@@ -1118,11 +1121,11 @@ def _fallback_split_dicts(text: str) -> list[dict]:
     parts = re.split(r"\n(?=\s*\d+\s*[.、．)])", text)
     items: list[dict] = []
     for p in parts:
-        c = p.strip()
+        c = strip_stem_number(p)
         if len(c) >= 4:
             items.append({"content": c})
     if not items and text.strip():
-        items = [{"content": text.strip()}]
+        items = [{"content": strip_stem_number(text)}]
     return items
 
 
@@ -1192,12 +1195,14 @@ async def parse_analysis_file(set_id: int, task_id: str | None = None):
                     parsed = _fallback_split_dicts(text)
 
             seq = 0
+            bank_items: list[dict] = []
+            aqs = []
             for item in parsed:
-                content = (item.get("content") or "").strip()
+                content = strip_stem_number(item.get("content") or "")
                 if not content:
                     continue
                 seq += 1
-                db.add(AnalysisQuestion(
+                aq = AnalysisQuestion(
                     set_id=aset.id,
                     teacher_id=aset.teacher_id,
                     seq=seq,
@@ -1206,10 +1211,28 @@ async def parse_analysis_file(set_id: int, task_id: str | None = None):
                     answer=(item.get("answer") or None),
                     question_type=_coerce_qtype(item.get("question_type")),
                     difficulty=_coerce_difficulty(item.get("difficulty")),
-                ))
+                )
+                db.add(aq)
+                aqs.append(aq)
+                bank_items.append({**item, "content": content})
 
             if seq == 0:
                 aset.parse_error = "未能识别出有效题目，请检查文件内容或稍后重试。"
+            else:
+                from app.services.question_bank_service import attach_bank_analysis, upsert_payloads
+                try:
+                    await upsert_payloads(
+                        db,
+                        teacher_id=aset.teacher_id,
+                        subject_id=aset.subject_id,
+                        grade_id=aset.grade_id,
+                        items=bank_items,
+                    )
+                    n_reuse = await attach_bank_analysis(db, aset.teacher_id, aqs)
+                    if n_reuse:
+                        logger.info("试题分析 set_id=%s 从题库套用 %s 道解析", set_id, n_reuse)
+                except Exception:
+                    logger.exception("试题分析自动入库失败 set_id=%s", set_id)
             aset.parse_status = ParseStatus.done
             await _publish_progress(task_id, {
                 "stage": "parse_completed", "question_count": seq,

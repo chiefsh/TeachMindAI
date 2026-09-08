@@ -8,6 +8,7 @@ from app.models.textbook import TextbookChapter, Textbook
 from app.models.education import Subject
 from app.models.courseware import Courseware
 from app.services import knowledge_graph_service as kg
+from app.services.embedding_service import resolve_embedding, EmbeddingGateway
 
 logger = logging.getLogger(__name__)
 
@@ -22,28 +23,18 @@ async def _subject_meta(db, subject_id: int | None):
     return sub.name, sub.school_level_id
 
 
-async def _embed_gateway(db, teacher_id: int) -> tuple[str | None, str | None]:
-    """取教师默认 LLM 网关的 (base_url, api_key)，供向量嵌入复用。
-
-    当 EMBEDDING_API_BASE/KEY 未单独配置时，嵌入即走教师现有 LLM 网关，开箱可用。
-    """
-    from app.core.security import decrypt_api_key
-    from app.services.ai_service import _get_default_llm
+async def _embed_gw(db, teacher_id: int) -> EmbeddingGateway | None:
     try:
-        cfg = await _get_default_llm(teacher_id, db)
+        return await resolve_embedding(db, teacher_id)
     except Exception:  # noqa: BLE001
-        return None, None
-    if not cfg:
-        return None, None
-    key = decrypt_api_key(cfg.api_key_encrypted) if cfg.api_key_encrypted else None
-    return (cfg.base_url or None), key
+        return None
 
 
 async def _store_points(
     points: list[dict], *, teacher_id: int, subject_id: int | None,
     subject_name: str, school_level_id: int | None, grade_id: int | None,
     source: str, courseware_id: int | None = None,
-    embed_api_base: str | None = None, embed_api_key: str | None = None,
+    embedding: EmbeddingGateway | None = None,
 ) -> list[str]:
     """把规范化后的知识点写入图谱，串联为顺序前置链，返回节点 id 列表。"""
     ids: list[str] = []
@@ -62,8 +53,9 @@ async def _store_points(
             difficulty=3,
             tags=(p.get("core_concepts") or [])[:5],
             source=source,
-            embed_api_base=embed_api_base,
-            embed_api_key=embed_api_key,
+            embed_model=embedding.model if embedding else None,
+            embed_api_base=embedding.api_base if embedding else None,
+            embed_api_key=embedding.api_key if embedding else None,
         )
         if res:
             ids.append(res["id"])
@@ -115,12 +107,12 @@ async def extract_and_store_for_chapter(chapter_id: int, teacher_id: int) -> dic
         if not (ch.content or "").strip():
             return {"stored": 0, "error": "章节无正文内容"}
         points = await _extract_knowledge_points(cfg, _CW(), content, subject_name, subject_block)
-        embed_base, embed_key = await _embed_gateway(db, teacher_id)
+        gw = await _embed_gw(db, teacher_id)
         ids = await _store_points(
             points, teacher_id=teacher_id, subject_id=tb.subject_id,
             subject_name=subject_name, school_level_id=school_level_id,
             grade_id=tb.grade_id, source="chapter",
-            embed_api_base=embed_base, embed_api_key=embed_key,
+            embedding=gw,
         )
         return {"stored": len(ids), "point_ids": ids, "names": [p["name"] for p in points]}
 
@@ -166,13 +158,13 @@ async def persist_courseware_points(courseware_id: int) -> dict:
                 subject_id, grade_id = tb.subject_id, tb.grade_id
                 subject_name, school_level_id = await _subject_meta(db, tb.subject_id)
         teacher_id = cw.teacher_id
-        embed_base, embed_key = await _embed_gateway(db, teacher_id)
+        gw = await _embed_gw(db, teacher_id)
 
     ids = await _store_points(
         points, teacher_id=teacher_id, subject_id=subject_id,
         subject_name=subject_name, school_level_id=school_level_id,
         grade_id=grade_id, source="courseware", courseware_id=courseware_id,
-        embed_api_base=embed_base, embed_api_key=embed_key,
+        embedding=gw,
     )
     return {"stored": len(ids), "point_ids": ids}
 
@@ -194,7 +186,7 @@ async def persist_analysis_points(set_id: int) -> dict:
         subject_id = aset.subject_id
         grade_id = aset.grade_id
         subject_name, school_level_id = await _subject_meta(db, subject_id)
-        embed_base, embed_key = await _embed_gateway(db, teacher_id)
+        gw = await _embed_gw(db, teacher_id)
         rows = (await db.execute(
             select(AnalysisQuestion).where(AnalysisQuestion.set_id == set_id)
         )).scalars().all()
@@ -221,8 +213,9 @@ async def persist_analysis_points(set_id: int) -> dict:
                 difficulty=3,
                 tags=[],
                 source="analysis",
-                embed_api_base=embed_base,
-                embed_api_key=embed_key,
+                embed_model=gw.model if gw else None,
+                embed_api_base=gw.api_base if gw else None,
+                embed_api_key=gw.api_key if gw else None,
             )
             if res:
                 ids.append(res["id"])
@@ -248,14 +241,14 @@ async def suggest_cross_subject_relations(
     teacher_id: int, threshold: float = 0.82, per_node: int = 3, max_nodes: int = 200
 ) -> dict:
     """用向量相似度发现跨学科关联，写入 status=pending 的 RELATED 边，待教师审核。"""
-    from app.services.embedding_service import embedding_enabled, embed_text
+    from app.services.embedding_service import embed_text
     from app.core import qdrant_client as vec
     from app.core import neo4j_client as neo
-    if not embedding_enabled():
-        return {"suggested": 0, "error": "未启用向量嵌入，无法自动发现跨学科关联"}
 
     async with AsyncSessionLocal() as db:
-        embed_base, embed_key = await _embed_gateway(db, teacher_id)
+        gw = await _embed_gw(db, teacher_id)
+    if not gw:
+        return {"suggested": 0, "error": "未启用向量嵌入，无法自动发现跨学科关联"}
 
     nodes = await neo.run_read(
         "MATCH (k:KnowledgePoint {teacher_id:$tid}) "
@@ -267,7 +260,7 @@ async def suggest_cross_subject_relations(
         n = row["node"]
         vector = await embed_text(
             f"{n['name']}。{n.get('description') or ''}",
-            api_base=embed_base, api_key=embed_key,
+            gateway=gw,
         )
         if not vector:
             continue

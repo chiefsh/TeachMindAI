@@ -8,7 +8,7 @@ from app.core.database import get_db
 from app.core.minio_client import upload_file, delete_file
 from app.core.config import settings
 from app.models.teacher import Teacher
-from app.models.question import Question, QuestionType, DifficultyLevel, QuestionImport, coerce_tags
+from app.models.question import Question, QuestionType, DifficultyLevel, QuestionImport
 from app.models.textbook import ParseStatus
 from app.schemas.question import QuestionOut, QuestionCreate, QuestionFilter, QuestionImportOut, QuestionBatchDeleteIn
 from app.api.deps import get_current_teacher
@@ -16,14 +16,18 @@ from app.services.question_media import (
     public_images, verify_asset_sig, is_safe_object_name,
     read_question_asset, guess_content_type,
 )
+from app.services.question_bank_service import strip_stem_number
 from pydantic import BaseModel
 import re
 import uuid
 
 
-def _to_out(q: Question) -> QuestionOut:
+def _to_out(q: Question, *, include_html: bool = False) -> QuestionOut:
     out = QuestionOut.model_validate(q)
     out.images = public_images(q.images, q.teacher_id)
+    out.has_diagram = bool((q.analysis_html or "").strip())
+    if not include_html:
+        out.analysis_html = None
     return out
 
 router = APIRouter(prefix="/questions", tags=["题库管理"])
@@ -31,30 +35,16 @@ router = APIRouter(prefix="/questions", tags=["题库管理"])
 ALLOWED_TYPES = {"pdf", "doc", "docx", "txt", "epub", "mobi", "jpg", "jpeg", "png", "webp"}
 
 
-def _to_question_type(val) -> QuestionType:
-    try:
-        return QuestionType(val)
-    except Exception:
-        return QuestionType.short_answer
-
-
-def _to_difficulty(val) -> DifficultyLevel:
-    try:
-        return DifficultyLevel(val)
-    except Exception:
-        return DifficultyLevel.medium
-
-
 def _fallback_split(text: str) -> list[dict]:
     """无 LLM 时的兜底：按题号或空行拆分，统一作为简答题。"""
     parts = re.split(r"\n(?=\s*\d+\s*[.、．)])", text)
     items: list[dict] = []
     for p in parts:
-        c = p.strip()
+        c = strip_stem_number(p)
         if len(c) >= 4:
             items.append({"content": c})
     if not items and text.strip():
-        items = [{"content": text.strip()}]
+        items = [{"content": strip_stem_number(text)}]
     return items
 
 
@@ -102,8 +92,12 @@ async def create_question(
     teacher: Teacher = Depends(get_current_teacher),
     db: AsyncSession = Depends(get_db),
 ):
-    q = Question(teacher_id=teacher.id, **data.model_dump())
-    db.add(q)
+    from app.services.question_bank_service import build_question, upsert_question_models
+    q = build_question(teacher_id=teacher.id, **data.model_dump())
+    if not q:
+        raise HTTPException(status_code=400, detail="题目内容不能为空")
+    resolved, _, _ = await upsert_question_models(db, [q])
+    q = resolved[0]
     await db.flush()
     await db.refresh(q)
     return _to_out(q)
@@ -139,34 +133,26 @@ async def create_questions_manual(
     if not parsed:
         parsed = _fallback_split(text)
 
-    created: list[Question] = []
-    for item in parsed:
-        content = (item.get("content") or "").strip()
-        if not content:
-            continue
-        q = Question(
-            teacher_id=teacher.id,
-            subject_id=data.subject_id,
-            grade_id=data.grade_id,
-            question_type=_to_question_type(item.get("question_type")),
-            difficulty=_to_difficulty(item.get("difficulty")),
-            content=content[:4000],
-            options=item.get("options") or None,
-            images=item.get("images") or None,
-            answer=(item.get("answer") or None),
-            explanation=(item.get("explanation") or None),
-            tags=coerce_tags(item.get("tags") or item.get("知识点")),
-        )
-        db.add(q)
-        created.append(q)
-
-    if not created:
+    from app.services.question_bank_service import upsert_payloads
+    resolved, created, skipped = await upsert_payloads(
+        db,
+        teacher_id=teacher.id,
+        subject_id=data.subject_id,
+        grade_id=data.grade_id,
+        items=parsed,
+    )
+    if not resolved:
         raise HTTPException(status_code=400, detail="未能识别出有效题目，请检查输入")
 
     await db.flush()
-    for q in created:
+    for q in resolved:
         await db.refresh(q)
-    return {"count": len(created), "items": [_to_out(q) for q in created]}
+    return {
+        "count": len(resolved),
+        "created": created,
+        "skipped": skipped,
+        "items": [_to_out(q) for q in resolved],
+    }
 
 
 @router.post("/import-file", status_code=202)
@@ -270,6 +256,21 @@ async def get_question_asset(
     except Exception:
         raise HTTPException(status_code=404, detail="图片不存在")
     return Response(content=data, media_type=guess_content_type(object_name))
+
+
+@router.get("/{question_id}", response_model=QuestionOut)
+async def get_question(
+    question_id: int,
+    teacher: Teacher = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(Question).where(Question.id == question_id, Question.teacher_id == teacher.id)
+    )
+    q = result.scalar_one_or_none()
+    if not q:
+        raise HTTPException(status_code=404, detail="题目不存在")
+    return _to_out(q, include_html=True)
 
 
 @router.delete("/{question_id}", status_code=204)

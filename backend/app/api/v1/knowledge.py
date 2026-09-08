@@ -72,14 +72,16 @@ async def create_point(
         sub = (await db.execute(select(Subject).where(Subject.id == body.subject_id))).scalar_one_or_none()
         if sub:
             subject_name, school_level_id = sub.name, sub.school_level_id
-    from app.services.knowledge_extract_service import _embed_gateway
-    embed_base, embed_key = await _embed_gateway(db, teacher.id)
+    from app.services.embedding_service import resolve_embedding
+    gw = await resolve_embedding(db, teacher.id)
     res = await kg.upsert_knowledge_point(
         teacher_id=teacher.id, name=body.name, subject_id=body.subject_id,
         subject_name=subject_name, school_level_id=school_level_id,
         grade_id=body.grade_id, description=body.description,
         difficulty=body.difficulty, tags=body.tags, source="manual",
-        embed_api_base=embed_base, embed_api_key=embed_key,
+        embed_model=gw.model if gw else None,
+        embed_api_base=gw.api_base if gw else None,
+        embed_api_key=gw.api_key if gw else None,
     )
     if not res:
         raise HTTPException(status_code=400, detail="创建失败")

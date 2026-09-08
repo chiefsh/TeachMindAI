@@ -46,6 +46,7 @@ async def upsert_knowledge_point(
     difficulty: int = 3,
     tags: list[str] | None = None,
     source: str = "llm",
+    embed_model: str | None = None,
     embed_api_base: str | None = None,
     embed_api_key: str | None = None,
 ) -> dict | None:
@@ -59,7 +60,9 @@ async def upsert_knowledge_point(
 
     vector = await embed_text(
         _embed_source(name, description),
-        api_base=embed_api_base, api_key=embed_api_key,
+        model=embed_model,
+        api_base=embed_api_base,
+        api_key=embed_api_key,
     )
 
     # ── 去重 ──

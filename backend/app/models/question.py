@@ -40,8 +40,12 @@ class Question(Base, TimestampMixin):
     images: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     answer: Mapped[str | None] = mapped_column(Text, nullable=True)     # 答案
     explanation: Mapped[str | None] = mapped_column(Text, nullable=True)# 解析
+    analysis_content: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # 试题分析结构化解析
+    analysis_html: Mapped[str | None] = mapped_column(Text, nullable=True)      # 图解 HTML
     source_file_path: Mapped[str | None] = mapped_column(String(512), nullable=True)  # 来源文件
     tags: Mapped[list | None] = mapped_column(JSON, nullable=True)      # 知识点标签
+    content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    use_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
 
     teacher = relationship("Teacher", back_populates="questions")
     subject = relationship("Subject")

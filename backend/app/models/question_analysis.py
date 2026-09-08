@@ -47,5 +47,6 @@ class AnalysisQuestion(Base, TimestampMixin):
     analysis_status: Mapped[ParseStatus] = mapped_column(SAEnum(ParseStatus), default=ParseStatus.pending)
     analysis_content: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # {思路,steps,知识点,易错点,答案}
     analysis_html: Mapped[str | None] = mapped_column(Text, nullable=True)      # 图解 HTML（在线渲染）
+    analysis_source: Mapped[str | None] = mapped_column(String(16), nullable=True)  # bank | ai
 
     analysis_set = relationship("AnalysisSet", back_populates="questions")

@@ -15,7 +15,7 @@ _collection_ready = False
 
 
 def _vector_enabled() -> bool:
-    return bool(settings.KG_ENABLED and settings.EMBEDDING_MODEL)
+    return bool(settings.KG_ENABLED)
 
 
 def _get_client():

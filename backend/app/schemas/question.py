@@ -12,9 +12,13 @@ class QuestionOut(BaseModel):
     images: dict | None = None
     answer: str | None
     explanation: str | None
+    analysis_content: dict | None = None
+    analysis_html: str | None = None
+    has_diagram: bool = False
     subject_id: int
     grade_id: int
     tags: list | None
+    use_count: int = 0
     created_at: datetime
     model_config = {"from_attributes": True}
 

@@ -35,6 +35,12 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  async function updateProfile(data: { real_name?: string; email?: string }) {
+    const res: any = await authApi.updateMe(data)
+    teacher.value = res
+    return res
+  }
+
   async function logout() {
     try { await authApi.logout() } catch {}
     token.value = ''
@@ -44,5 +50,5 @@ export const useAuthStore = defineStore('auth', () => {
 
   const isLoggedIn = () => !!token.value
 
-  return { teacher, token, login, logout, fetchMe, isLoggedIn }
+  return { teacher, token, login, logout, fetchMe, updateProfile, isLoggedIn }
 })

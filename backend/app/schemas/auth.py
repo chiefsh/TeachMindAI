@@ -41,3 +41,30 @@ class TeacherProfile(BaseModel):
     is_active: bool
 
     model_config = {"from_attributes": True}
+
+
+class TeacherProfileUpdate(BaseModel):
+    real_name: str | None = None
+    email: EmailStr | None = None
+
+    @field_validator("real_name")
+    @classmethod
+    def _strip_name(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        t = v.strip()
+        if not t:
+            raise ValueError("姓名不能为空")
+        return t[:64]
+
+
+class ChangePasswordIn(BaseModel):
+    old_password: str
+    new_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def password_min_length(cls, v: str) -> str:
+        if len(v) < 6:
+            raise ValueError("新密码至少6位")
+        return v

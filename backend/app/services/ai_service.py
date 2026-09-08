@@ -1668,10 +1668,16 @@ async def _generate_question_diagram_html(cfg, q: dict, analysis: dict, subject_
         return ""
 
 
-async def do_analyze_questions(set_id: int, question_ids: list[int], task_id: str | None = None):
+async def do_analyze_questions(
+    set_id: int, question_ids: list[int], task_id: str | None = None, force: bool = False,
+):
     """对批次中被勾选的题目做 AI 图解解析（有限并发），并通过 Redis 推送实时进度。"""
     import asyncio
     from app.models.question_analysis import AnalysisSet, AnalysisQuestion
+    from app.services.question_bank_service import (
+        apply_analysis_from_bank, find_questions_by_hashes, question_content_hash,
+        upsert_and_write_analysis,
+    )
 
     async with AsyncSessionLocal() as db:
         aset = (await db.execute(
@@ -1694,30 +1700,56 @@ async def do_analyze_questions(set_id: int, question_ids: list[int], task_id: st
             ).order_by(AnalysisQuestion.seq)
         )).scalars().all()
 
+        hashes = [
+            question_content_hash((q.content or "")[:4000], q.options, q.question_type)
+            for q in q_rows
+        ]
+        bank_by_hash = await find_questions_by_hashes(db, aset.teacher_id, hashes)
+
+        llm_rows: list[AnalysisQuestion] = []
+        reused = 0
         for q in q_rows:
             q.selected = True
+            digest = question_content_hash((q.content or "")[:4000], q.options, q.question_type)
+            bank = bank_by_hash.get(digest)
+            if not force and bank and apply_analysis_from_bank(q, bank):
+                reused += 1
+                continue
             q.analysis_status = ParseStatus.processing
+            q.analysis_source = None
+            llm_rows.append(q)
         await db.commit()
 
         total = len(q_rows)
-        await _publish_progress(task_id, {"stage": "start", "total": total, "current": 0})
+        await _publish_progress(task_id, {
+            "stage": "start", "total": total, "current": reused,
+            "message": f"已从题库套用 {reused} 道" if reused else None,
+        })
+
+        if not llm_rows:
+            await _publish_progress(task_id, {"stage": "completed", "total": total, "current": total})
+            try:
+                from app.tasks.knowledge_tasks import persist_analysis_kps_task
+                persist_analysis_kps_task.delay(set_id)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("试题批次 %s 知识点入图任务派发失败：%s", set_id, e)
+            return
 
         if not cfg:
-            for q in q_rows:
+            for q in llm_rows:
                 q.analysis_status = ParseStatus.failed
             await db.commit()
             await _publish_progress(task_id, {"stage": "error", "message": "未配置默认大模型"})
             return
 
-        # 快照题面，LLM 调用不共享 AsyncSession（会话非线程安全）
         jobs = [
             (q.id, q.seq, {"content": q.content, "options": q.options, "answer": q.answer})
-            for q in q_rows
+            for q in llm_rows
         ]
-        by_id = {q.id: q for q in q_rows}
+        by_id = {q.id: q for q in llm_rows}
         sem = asyncio.Semaphore(3)
         write_lock = asyncio.Lock()
-        done_count = 0
+        done_count = reused
 
         async def _run_one(qid: int, seq: int, qd: dict):
             async with sem:
@@ -1742,6 +1774,24 @@ async def do_analyze_questions(set_id: int, question_ids: list[int], task_id: st
                     q.analysis_content = analysis
                     q.analysis_html = html
                     q.analysis_status = ParseStatus.done
+                    q.analysis_source = "ai"
+                    try:
+                        await upsert_and_write_analysis(
+                            db,
+                            teacher_id=aset.teacher_id,
+                            subject_id=aset.subject_id,
+                            grade_id=aset.grade_id,
+                            content=q.content,
+                            options=q.options,
+                            question_type=q.question_type,
+                            difficulty=q.difficulty,
+                            answer=q.answer,
+                            analysis_content=analysis,
+                            analysis_html=html,
+                            overwrite=True,
+                        )
+                    except Exception:
+                        logger.exception("题目 %s 解析回写题库失败", qid)
                 else:
                     q.analysis_status = ParseStatus.failed
                 done_count += 1
@@ -1753,7 +1803,6 @@ async def do_analyze_questions(set_id: int, question_ids: list[int], task_id: st
 
         await _publish_progress(task_id, {"stage": "completed", "total": total, "current": total})
 
-        # 解析完成后，把题目知识点异步沉淀进知识图谱（best-effort）
         try:
             from app.tasks.knowledge_tasks import persist_analysis_kps_task
             persist_analysis_kps_task.delay(set_id)

@@ -163,24 +163,22 @@ async def _points_from_graph(teacher_id: int, courseware_ids: list[int]) -> list
 
 async def _expand_kp_aliases(
     teacher_id: int, subject_id: int | None, kp_names: list[str],
-    embed_api_base: str | None, embed_api_key: str | None,
+    embedding,
 ) -> list[str]:
     """用向量把课件/章节知识点扩成近义别名，缓解名称对不齐。"""
     aliases = list(kp_names)
     if not kp_names:
         return aliases
     try:
-        from app.services.embedding_service import embed_text, embedding_enabled
+        from app.services.embedding_service import embed_text
         from app.core import qdrant_client as vec
-        if not embedding_enabled():
+        if not embedding:
             return _uniq(aliases)
         flt: dict = {"teacher_id": teacher_id}
         if subject_id:
             flt["subject_id"] = subject_id
         for name in kp_names[:12]:
-            vector = await embed_text(
-                name, api_base=embed_api_base, api_key=embed_api_key,
-            )
+            vector = await embed_text(name, gateway=embedding)
             if not vector:
                 continue
             hits = await vec.search_similar(vector, flt=flt, limit=3)
@@ -340,14 +338,14 @@ async def resolve_scope(db, paper: HomeworkPaper, cfg) -> dict:
         extracted = await _extract_kp_names(cfg, title, content)
         kp_names = _uniq(kp_names + extracted)
 
-    embed_base = embed_key = None
+    gw = None
     try:
-        from app.services.knowledge_extract_service import _embed_gateway
-        embed_base, embed_key = await _embed_gateway(db, teacher_id)
+        from app.services.embedding_service import resolve_embedding
+        gw = await resolve_embedding(db, teacher_id)
     except Exception:  # noqa: BLE001
         pass
     aliases = await _expand_kp_aliases(
-        teacher_id, subject_id, kp_names, embed_base, embed_key,
+        teacher_id, subject_id, kp_names, gw,
     )
     return {
         "title": title,
@@ -499,9 +497,12 @@ async def generate_by_ai(
         qtype = _coerce_qtype(q.get("type") or q.get("question_type"))
         kept.append({
             "type": qtype,
+            "question_type": qtype,
             "content": content[:4000],
             "options": q.get("options") if isinstance(q.get("options"), dict) else None,
             "answer": q.get("answer"),
+            "explanation": q.get("explanation"),
+            "tags": declared,
             "score": q.get("score"),
         })
     return kept
@@ -585,13 +586,67 @@ async def generate_homework(paper_id: int):
                         cfg, paper=paper, scope=scope, remain=remain,
                     )
 
-            # 按题型配额组装，题库在前
+            # 按题型配额组装，题库在前；AI 新题写入题库（重复则复用）
+            from app.services.question_bank_service import (
+                bump_use_count, build_question, upsert_question_models,
+                question_content_hash, coerce_question_type,
+            )
+
+            subject_id = scope.get("subject_id")
+            grade_id = scope.get("grade_id")
+            if not subject_id or not grade_id:
+                for rows in bank_picked.values():
+                    if rows:
+                        subject_id = subject_id or rows[0].subject_id
+                        grade_id = grade_id or rows[0].grade_id
+                        break
+
             assembled: list[HomeworkQuestion] = []
-            ai_by_type: dict[str, list[dict]] = defaultdict(list)
-            for item in ai_items:
-                ai_by_type[_coerce_qtype(item.get("type"))].append(item)
+            ai_by_type: dict[str, list[tuple[dict, Question | None]]] = defaultdict(list)
+            if ai_items:
+                if subject_id and grade_id:
+                    models: list[Question] = []
+                    kept_items: list[dict] = []
+                    for item in ai_items:
+                        q = build_question(
+                            teacher_id=paper.teacher_id,
+                            subject_id=int(subject_id),
+                            grade_id=int(grade_id),
+                            content=item["content"],
+                            question_type=item.get("type"),
+                            difficulty=difficulty,
+                            options=item.get("options"),
+                            answer=item.get("answer"),
+                            explanation=item.get("explanation"),
+                            tags=item.get("tags"),
+                        )
+                        if not q:
+                            continue
+                        models.append(q)
+                        kept_items.append(item)
+                    resolved, _, _ = await upsert_question_models(db, models)
+                    await db.flush()
+                    pairs = list(zip(kept_items, resolved))
+                else:
+                    logger.warning("作业 %s 缺少年级/科目，AI 新题无法写入题库", paper.id)
+                    pairs = []
+                    for item in ai_items:
+                        qtype = coerce_question_type(item.get("type"))
+                        digest = question_content_hash(
+                            item.get("content"), item.get("options"), qtype,
+                        )
+                        hit = (await db.execute(
+                            select(Question).where(
+                                Question.teacher_id == paper.teacher_id,
+                                Question.content_hash == digest,
+                            )
+                        )).scalars().first()
+                        pairs.append((item, hit))
+                for item, bank_q in pairs:
+                    ai_by_type[_coerce_qtype(item.get("type"))].append((item, bank_q))
 
             order = 0
+            paper_qids: set[int] = set()
             for qtype, n in config.items():
                 slot = 0
                 for q in bank_picked.get(qtype) or []:
@@ -599,6 +654,8 @@ async def generate_homework(paper_id: int):
                         break
                     order += 1
                     slot += 1
+                    paper_qids.add(q.id)
+                    bump_use_count(q)
                     assembled.append(HomeworkQuestion(
                         paper_id=paper.id,
                         question_id=q.id,
@@ -609,13 +666,19 @@ async def generate_homework(paper_id: int):
                         score=_assign_score(is_exam, qtype, None),
                         source=QuestionSource.bank.value,
                     ))
-                for item in ai_by_type.get(qtype) or []:
+                for item, bank_q in ai_by_type.get(qtype) or []:
                     if slot >= n:
                         break
+                    if bank_q and bank_q.id and bank_q.id in paper_qids:
+                        continue
                     order += 1
                     slot += 1
+                    if bank_q and bank_q.id:
+                        paper_qids.add(bank_q.id)
+                        bump_use_count(bank_q)
                     assembled.append(HomeworkQuestion(
                         paper_id=paper.id,
+                        question_id=bank_q.id if bank_q else None,
                         sort_order=order,
                         content=item["content"],
                         options=item.get("options"),

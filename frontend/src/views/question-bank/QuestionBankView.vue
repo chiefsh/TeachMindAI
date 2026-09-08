@@ -46,6 +46,9 @@
               {{ row.content }}
             </p>
             <el-tag v-if="hasImages(row)" size="small" type="warning" class="mt-1">含图</el-tag>
+            <el-tag v-if="row.has_diagram || row.analysis_content" size="small" class="mt-1 ml-1">
+              {{ row.has_diagram ? '含图解' : '已解析' }}
+            </el-tag>
           </template>
         </el-table-column>
         <el-table-column label="年级" width="90">
@@ -66,6 +69,11 @@
         <el-table-column label="难度" width="80">
           <template #default="{ row }">
             <span :class="`text-xs font-medium ${diffColor(row.difficulty)}`">{{ diffLabel(row.difficulty) }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="使用次数" width="90" align="center">
+          <template #default="{ row }">
+            <span class="text-xs text-slate-600">{{ row.use_count ?? 0 }}</span>
           </template>
         </el-table-column>
         <el-table-column label="操作" width="140" align="center">
@@ -195,13 +203,14 @@
     </el-dialog>
 
     <!-- 题目详情弹窗 -->
-    <el-dialog v-model="showDetail" title="题目详情" width="720px">
+    <el-dialog v-model="showDetail" title="题目详情" width="800px" @closed="onDetailClosed">
       <div v-if="detail" class="space-y-4">
         <div class="flex flex-wrap items-center gap-1.5">
           <el-tag size="small" type="info">{{ edu.gradeName(detail.grade_id) || '—' }}</el-tag>
           <el-tag size="small" type="success">{{ edu.subjectName(detail.subject_id) || '—' }}</el-tag>
           <el-tag size="small" :type="typeTag(detail.question_type)">{{ typeLabel(detail.question_type) }}</el-tag>
           <span :class="`text-xs font-medium ${diffColor(detail.difficulty)}`">{{ diffLabel(detail.difficulty) }}</span>
+          <span class="text-xs text-slate-500">作业/试卷使用 {{ detail.use_count ?? 0 }} 次</span>
         </div>
 
         <div>
@@ -244,7 +253,32 @@
           <div class="text-sm text-green-600 math-text" v-html="renderMathText(detail.answer)" />
         </div>
 
-        <div v-if="detail.explanation">
+        <div v-if="detail.analysis_content || detail.analysis_html">
+          <p class="text-xs font-semibold text-slate-500 mb-1">解析</p>
+          <iframe
+            v-if="detail.analysis_html && diagramBlob"
+            :src="diagramBlob"
+            class="w-full rounded-lg border border-slate-200 bg-white mb-3"
+            style="height:360px" frameborder="0"
+          />
+          <div v-if="detail.analysis_content?.思路" class="mb-2 text-sm math-text">
+            <span class="font-semibold text-indigo-600">思路：</span>
+            <span v-html="renderMathText(detail.analysis_content.思路)" />
+          </div>
+          <div v-for="(st, i) in detail.analysis_content?.steps || []" :key="i" class="mb-2 text-sm math-text">
+            <p class="font-medium">步骤{{ i + 1 }}{{ st.title ? '：' + st.title : '' }}</p>
+            <p v-if="st.detail" class="text-slate-600" v-html="renderMathText(st.detail)" />
+          </div>
+          <div v-if="detail.analysis_content?.易错点" class="mb-2 text-sm math-text">
+            <span class="font-semibold text-amber-600">易错点：</span>
+            <span v-html="renderMathText(detail.analysis_content.易错点)" />
+          </div>
+          <div v-if="detail.analysis_content?.答案" class="text-sm math-text">
+            <span class="font-semibold text-green-600">答案：</span>
+            <span v-html="renderMathText(detail.analysis_content.答案)" />
+          </div>
+        </div>
+        <div v-else-if="detail.explanation">
           <p class="text-xs font-semibold text-slate-500 mb-1">解析</p>
           <div class="text-sm text-slate-700 math-text" v-html="renderMathText(detail.explanation)" />
         </div>
@@ -258,7 +292,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, watch } from 'vue'
+import { ref, reactive, onMounted, onBeforeUnmount, watch } from 'vue'
 import { watchDebounced } from '@vueuse/core'
 import { questionApi } from '@/api/modules'
 import { useEducationStore } from '@/stores/education'
@@ -267,6 +301,7 @@ import { Upload, Plus, MagicStick, Tickets } from '@element-plus/icons-vue'
 import type { Question, QuestionImport } from '@/types'
 import RichEditor from '@/components/RichEditor.vue'
 import { renderMathText } from '@/utils/mathText'
+import { createIframeBlob } from '@/utils/coursewareFrame'
 import { isBusyStatus, useBusyPoll } from '@/utils/busyPoll'
 import dayjs from 'dayjs'
 
@@ -279,6 +314,7 @@ const showImports = ref(false)
 const showCreate = ref(false)
 const showDetail = ref(false)
 const detail = ref<Question | null>(null)
+const diagramBlob = ref('')
 const importing = ref(false)
 const creating = ref(false)
 const selected = ref<Question[]>([])
@@ -379,9 +415,31 @@ function optionKeys(q: Question) {
   return [...keys].sort()
 }
 
-function openDetail(row: Question) {
+function revokeDiagram() {
+  if (diagramBlob.value) {
+    URL.revokeObjectURL(diagramBlob.value)
+    diagramBlob.value = ''
+  }
+}
+
+async function openDetail(row: Question) {
+  revokeDiagram()
   detail.value = row
   showDetail.value = true
+  try {
+    const full = await questionApi.get(row.id)
+    detail.value = full
+    if (full.analysis_html) {
+      diagramBlob.value = createIframeBlob(full.analysis_html)
+    }
+  } catch {
+    /* 列表行仍可展示文字 */
+  }
+}
+
+function onDetailClosed() {
+  revokeDiagram()
+  detail.value = null
 }
 
 function openCreate() {
@@ -425,7 +483,13 @@ async function handleCreate() {
       grade_id: createForm.grade_id,
       use_ai: createForm.use_ai,
     })
-    ElMessage.success(`已录入 ${res.count} 道题目`)
+    const created = res.created ?? res.count ?? 0
+    const skipped = res.skipped ?? 0
+    ElMessage.success(
+      skipped
+        ? `已录入 ${created} 道，跳过 ${skipped} 道重复题`
+        : `已录入 ${created} 道题目`,
+    )
     showCreate.value = false
     createForm.html = ''
     createForm.text = ''
@@ -467,6 +531,7 @@ function diffColor(d: string) {
 }
 
 onMounted(load)
+onBeforeUnmount(revokeDiagram)
 </script>
 
 <style scoped>

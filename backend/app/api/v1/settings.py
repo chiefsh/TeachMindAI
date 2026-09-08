@@ -1,16 +1,23 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.orm.attributes import flag_modified
 from pydantic import BaseModel
 import httpx
 
 from app.core.database import get_db
+from app.core.config import settings
 from app.core.security import encrypt_api_key, decrypt_api_key
 from app.models.teacher import Teacher
 from app.models.llm_config import LLMConfig
+from app.models.teacher_setting import TeacherSetting
 from app.models.education import Subject
 from app.models.subject_prompt import SubjectPromptTemplate
-from app.schemas.llm_config import LLMConfigCreate, LLMConfigUpdate, LLMConfigOut
+from app.schemas.llm_config import (
+    LLMConfigCreate, LLMConfigUpdate, LLMConfigOut,
+    EmbeddingConfigOut, EmbeddingConfigUpdate,
+)
+from app.services.embedding_service import EMBEDDING_SETTING_KEY, load_embedding_row, resolve_embedding, embed_text
 from app.api.deps import get_current_teacher
 
 router = APIRouter(prefix="/settings", tags=["系统设置"])
@@ -188,6 +195,95 @@ async def _get_or_404(cfg_id: int, teacher_id: int, db: AsyncSession) -> LLMConf
     if not cfg:
         raise HTTPException(status_code=404, detail="配置不存在")
     return cfg
+
+
+def _embedding_out(val: dict | None) -> EmbeddingConfigOut:
+    if val:
+        try:
+            dim = int(val.get("dim") or 1024)
+        except (TypeError, ValueError):
+            dim = 1024
+        return EmbeddingConfigOut(
+            enabled=bool(val.get("enabled", True)),
+            model=str(val.get("model") or ""),
+            base_url=str(val.get("base_url") or "") or None,
+            dim=dim,
+            use_llm_gateway=bool(val.get("use_llm_gateway")),
+            has_api_key=bool(val.get("api_key_encrypted")),
+            source="teacher",
+        )
+    model = (settings.EMBEDDING_MODEL or "").strip()
+    if model:
+        return EmbeddingConfigOut(
+            enabled=True,
+            model=model,
+            base_url=(settings.EMBEDDING_API_BASE or None) or None,
+            dim=settings.EMBEDDING_DIM or 1024,
+            use_llm_gateway=False,
+            has_api_key=bool(settings.EMBEDDING_API_KEY),
+            source="env",
+        )
+    return EmbeddingConfigOut(
+        enabled=False, model="", base_url=None, dim=1024,
+        use_llm_gateway=False, has_api_key=False, source="none",
+    )
+
+
+@router.get("/embedding", response_model=EmbeddingConfigOut)
+async def get_embedding_config(
+    teacher: Teacher = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+):
+    rec = await load_embedding_row(db, teacher.id)
+    val = rec.value if rec and isinstance(rec.value, dict) else None
+    return _embedding_out(val)
+
+
+@router.put("/embedding", response_model=EmbeddingConfigOut)
+async def save_embedding_config(
+    data: EmbeddingConfigUpdate,
+    teacher: Teacher = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+):
+    model = (data.model or "").strip()
+    if data.enabled and not model:
+        raise HTTPException(status_code=400, detail="请填写嵌入模型名称")
+    rec = await load_embedding_row(db, teacher.id)
+    prev = rec.value if rec and isinstance(rec.value, dict) else {}
+    enc = prev.get("api_key_encrypted")
+    if data.api_key:
+        enc = encrypt_api_key(data.api_key)
+    payload = {
+        "enabled": bool(data.enabled),
+        "model": model,
+        "base_url": (data.base_url or "").strip() or None,
+        "api_key_encrypted": enc,
+        "dim": max(1, int(data.dim or 1024)),
+        "use_llm_gateway": bool(data.use_llm_gateway),
+    }
+    if rec:
+        rec.value = payload
+        flag_modified(rec, "value")
+    else:
+        rec = TeacherSetting(teacher_id=teacher.id, key=EMBEDDING_SETTING_KEY, value=payload)
+        db.add(rec)
+    await db.flush()
+    await db.refresh(rec)
+    return _embedding_out(rec.value if isinstance(rec.value, dict) else payload)
+
+
+@router.post("/embedding/test")
+async def test_embedding_config(
+    teacher: Teacher = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+):
+    gw = await resolve_embedding(db, teacher.id)
+    if not gw:
+        return {"success": False, "error": "尚未配置向量嵌入模型"}
+    vec = await embed_text("向量嵌入连通测试", gateway=gw)
+    if not vec:
+        return {"success": False, "error": "嵌入调用失败，请检查模型名、接入地址和 API Key"}
+    return {"success": True, "dim": len(vec), "model": gw.model}
 
 
 # ─── 科目课件提示词 ────────────────────────────────────────────────

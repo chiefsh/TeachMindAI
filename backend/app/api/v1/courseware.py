@@ -19,7 +19,7 @@ from app.models.homework import HomeworkPaper
 from app.models.interaction import CoursewareSession, InteractionRecord
 from app.models.textbook import ParseStatus, TextbookImage, Textbook
 from app.schemas.courseware import (
-    CoursewareCreate, CoursewareOut, CoursewareDetail, CoursewareUpdate,
+    CoursewareCreate, CoursewareOut, CoursewareDetail, CoursewareUpdate, CoursewareCopyIn,
     SlidePatch, SlideInsert, SlideReorder, SlideOptimizeIn, CoursewareExportIn,
 )
 from app.services.courseware_theme import PAGE_LABELS, page_kind
@@ -191,14 +191,25 @@ async def update_courseware(
     return cw
 
 
-@router.post("/{cw_id}/copy", response_model=CoursewareOut, status_code=201)
-async def copy_courseware(
+@router.get("/{cw_id}/copy-title")
+async def suggest_copy_title(
     cw_id: int,
     teacher: Teacher = Depends(get_current_teacher),
     db: AsyncSession = Depends(get_db),
 ):
     src = await _get_or_404(cw_id, teacher.id, db)
-    title = await _next_copy_title(src.title, teacher.id, db)
+    return {"title": await _next_copy_title(src.title, teacher.id, db)}
+
+
+@router.post("/{cw_id}/copy", response_model=CoursewareOut, status_code=201)
+async def copy_courseware(
+    cw_id: int,
+    data: CoursewareCopyIn = CoursewareCopyIn(),
+    teacher: Teacher = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+):
+    src = await _get_or_404(cw_id, teacher.id, db)
+    title = data.title or await _next_copy_title(src.title, teacher.id, db)
     content = _apply_title(src.content, src.title, title) if src.content else None
     gen_status = src.gen_status
     if gen_status == ParseStatus.processing:

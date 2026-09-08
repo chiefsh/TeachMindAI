@@ -25,6 +25,16 @@ export type ParseStatus = 'pending' | 'processing' | 'done' | 'failed'
 export type QuestionType = 'single_choice' | 'multi_choice' | 'fill_blank' | 'short_answer' | 'essay' | 'true_false' | 'calculation'
 export type DifficultyLevel = 'easy' | 'medium' | 'hard' | 'very_hard'
 
+export interface AnalysisStep { title?: string; detail?: string; formula?: string }
+
+export interface AnalysisContent {
+  思路?: string
+  steps?: AnalysisStep[]
+  知识点?: string[]
+  易错点?: string
+  答案?: string
+}
+
 export interface Textbook {
   id: number; title: string; file_name: string; file_type: string
   file_size: number; parse_status: ParseStatus; total_pages?: number
@@ -47,6 +57,10 @@ export interface Question {
   explanation?: string; subject_id: number; grade_id: number
   tags?: string[]; created_at: string
   images?: QuestionImages | null
+  use_count?: number
+  analysis_content?: AnalysisContent | null
+  analysis_html?: string | null
+  has_diagram?: boolean
 }
 
 export interface QuestionImport {
@@ -128,22 +142,13 @@ export interface GradeReport {
   content?: Record<string, any> | null; gen_status: ParseStatus; created_at: string
 }
 
-export interface AnalysisStep { title?: string; detail?: string; formula?: string }
-
-export interface AnalysisContent {
-  思路?: string
-  steps?: AnalysisStep[]
-  知识点?: string[]
-  易错点?: string
-  答案?: string
-}
-
 export interface AnalysisQuestion {
   id: number; seq: number; content: string
   options?: Record<string, string> | null; answer?: string | null
   question_type: QuestionType; difficulty: DifficultyLevel
   selected: boolean; analysis_status: ParseStatus
   analysis_content?: AnalysisContent | null; analysis_html?: string | null
+  analysis_source?: 'bank' | 'ai' | null
 }
 
 export interface AnalysisSet {
@@ -157,6 +162,16 @@ export interface LLMConfig {
   id: number; provider: string; model_name: string; display_name: string
   base_url?: string; temperature: number; max_tokens: number
   is_default: boolean; is_active: boolean
+}
+
+export interface EmbeddingConfig {
+  enabled: boolean
+  model: string
+  base_url?: string | null
+  dim: number
+  use_llm_gateway: boolean
+  has_api_key: boolean
+  source: 'teacher' | 'env' | 'none'
 }
 
 // ── 知识图谱 ──

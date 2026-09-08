@@ -11,7 +11,7 @@
     <!-- 课件卡片列表 -->
     <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
       <div v-for="cw in coursewares" :key="cw.id"
-        class="card !p-4 hover:shadow-md transition-shadow cursor-pointer"
+        class="card !p-4 hover:shadow-md transition-shadow cursor-pointer overflow-hidden"
         @click="router.push(`/courseware/${cw.id}`)"
       >
         <div class="flex items-start gap-3">
@@ -38,42 +38,31 @@
             </div>
           </div>
         </div>
-        <div class="flex items-center gap-2 mt-3 pt-3 border-t border-slate-50" @click.stop>
+        <div class="flex items-center gap-1 mt-3 pt-3 border-t border-slate-50 min-w-0" @click.stop>
           <el-button size="small" link :icon="View" @click="router.push(`/courseware/${cw.id}`)">查看</el-button>
           <el-button
             v-if="cw.gen_status === 'done'"
             size="small" link :icon="Share"
             @click="openShare(cw)"
           >分享</el-button>
-          <el-button size="small" link :icon="EditPen" @click="renameCw(cw)">重命名</el-button>
-          <el-button
-            size="small"
-            link
-            :icon="CopyDocument"
-            :loading="copyingId === cw.id"
-            @click="copyCw(cw)"
-          >复制</el-button>
-          <el-popconfirm
-            title="重新生成将覆盖当前课件内容，确定继续吗？"
-            width="240"
-            @confirm="regenerateCw(cw)"
-          >
-            <template #reference>
-              <el-button
-                size="small"
-                link
-                :icon="RefreshRight"
-                :loading="regeneratingId === cw.id"
-                :disabled="cw.gen_status === 'processing'"
-              >重新生成</el-button>
+          <el-dropdown trigger="click" @command="(cmd: string) => onCardMore(cw, cmd)">
+            <el-button
+              size="small"
+              link
+              :icon="MoreFilled"
+              :loading="copyingId === cw.id || regeneratingId === cw.id"
+            />
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="rename" :icon="EditPen">重命名</el-dropdown-item>
+                <el-dropdown-item command="copy" :icon="CopyDocument">复制</el-dropdown-item>
+                <el-dropdown-item command="regen" :icon="RefreshRight" :disabled="cw.gen_status === 'processing'">
+                  重新生成
+                </el-dropdown-item>
+                <el-dropdown-item command="delete" :icon="Delete" divided>删除</el-dropdown-item>
+              </el-dropdown-menu>
             </template>
-          </el-popconfirm>
-          <div class="flex-1" />
-          <el-popconfirm title="确定删除该课件？关联的课堂互动会话将一并删除。" @confirm="deleteCw(cw.id)">
-            <template #reference>
-              <el-button size="small" link type="danger" :icon="Delete">删除</el-button>
-            </template>
-          </el-popconfirm>
+          </el-dropdown>
         </div>
       </div>
       <div v-if="!loading && !coursewares.length" class="col-span-full">
@@ -197,7 +186,7 @@ import { useRouter } from 'vue-router'
 import { coursewareApi, textbookApi } from '@/api/modules'
 import { useEducationStore } from '@/stores/education'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { MagicStick, View, Delete, VideoPlay, RefreshRight, CopyDocument, EditPen, Share } from '@element-plus/icons-vue'
+import { MagicStick, View, Delete, VideoPlay, RefreshRight, CopyDocument, EditPen, Share, MoreFilled } from '@element-plus/icons-vue'
 import ShareDialog from '@/components/ShareDialog.vue'
 import type { Courseware, Textbook, Chapter, RenderStyle } from '@/types'
 import { THEMES, DEFAULT_THEME, getTheme } from '@/utils/coursewareTheme'
@@ -223,7 +212,7 @@ const chapterOptions = ref<{ id: number; label: string }[]>([])
 const chaptersLoading = ref(false)
 const form = reactive({
   title: '', textbook_id: null as number | null, courseware_type: 'standard',
-  render_style: 'ppt' as RenderStyle,
+  render_style: 'html' as RenderStyle,
   theme: DEFAULT_THEME,
   gen_mode: 'chapter' as 'chapter' | 'page',
   chapter_ids: [] as number[],
@@ -293,7 +282,7 @@ function openCreate() {
   form.title = ''
   form.textbook_id = null
   form.courseware_type = 'standard'
-  form.render_style = 'ppt'
+  form.render_style = 'html'
   form.theme = DEFAULT_THEME
   form.gen_mode = 'chapter'
   form.chapter_ids = []
@@ -373,7 +362,28 @@ async function renameCw(cw: Courseware) {
   }
 }
 
+function onCardMore(cw: Courseware, cmd: string) {
+  if (cmd === 'rename') void renameCw(cw)
+  else if (cmd === 'copy') void copyCw(cw)
+  else if (cmd === 'regen') void regenerateCw(cw)
+  else if (cmd === 'delete') void confirmDeleteCw(cw)
+}
+
+async function confirmDeleteCw(cw: Courseware) {
+  try {
+    await ElMessageBox.confirm('确定删除该课件？关联的课堂互动会话将一并删除。', '删除课件', { type: 'warning' })
+  } catch {
+    return
+  }
+  await deleteCw(cw.id)
+}
+
 async function regenerateCw(cw: Courseware) {
+  try {
+    await ElMessageBox.confirm('重新生成将覆盖当前课件内容，确定继续吗？', '重新生成', { type: 'warning' })
+  } catch {
+    return
+  }
   regeneratingId.value = cw.id
   try {
     await coursewareApi.regenerate(cw.id)

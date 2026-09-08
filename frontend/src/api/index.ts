@@ -35,7 +35,10 @@ instance.interceptors.response.use(
         payload = null
       }
     }
-    const msg = payload?.detail || err.message || '请求失败'
+    const rawDetail = payload?.detail
+    const msg = Array.isArray(rawDetail)
+      ? rawDetail.map((d: any) => d?.msg).filter(Boolean).join('；') || '请求参数有误'
+      : (rawDetail || err.message || '请求失败')
     if (status === 401) {
       localStorage.removeItem('token')
       router.push('/login')

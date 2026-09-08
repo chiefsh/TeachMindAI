@@ -11,7 +11,7 @@ class CoursewareCreate(BaseModel):
     chapter_range: dict | None = None   # 按章节：{"chapter_ids": [12, 15, 18]}
     page_range: dict | None = None      # 按页码：{"start": 1, "end": 30}
     courseware_type: CoursewareType = CoursewareType.standard
-    render_style: RenderStyle = RenderStyle.ppt   # 呈现样式：幻灯片 / 网页
+    render_style: RenderStyle = RenderStyle.html   # 呈现样式：网页 / 幻灯片
     theme: str = DEFAULT_THEME                    # 视觉主题 key
     custom_prompt: str | None = None
     is_interactive: bool = False

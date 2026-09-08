@@ -9,21 +9,26 @@ ShareResourceType = Literal["courseware", "question_analysis"]
 class ShareCreateIn(BaseModel):
     resource_type: ShareResourceType
     resource_id: int
-    expire_days: int = 5
+    expire_days: int | None = 5
     password: str | None = None
 
-    @field_validator("expire_days")
+    @field_validator("expire_days", mode="before")
     @classmethod
-    def _days(cls, v: int) -> int:
-        n = int(v or 5)
+    def _days(cls, v):
+        if v is None or v == "":
+            return 5
+        try:
+            n = int(v)
+        except (TypeError, ValueError):
+            return 5
         if n < 1 or n > 90:
             raise ValueError("过期天数须在 1～90 天之间")
         return n
 
-    @field_validator("password")
+    @field_validator("password", mode="before")
     @classmethod
-    def _pwd(cls, v: str | None) -> str | None:
-        s = (v or "").strip()
+    def _pwd(cls, v):
+        s = str(v or "").strip()
         if not s:
             return None
         if len(s) < 4 or len(s) > 64:

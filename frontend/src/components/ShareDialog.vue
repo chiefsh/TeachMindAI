@@ -35,7 +35,12 @@
       <div class="flex gap-3 items-start">
         <img v-if="qr" :src="qr" alt="二维码" class="w-28 h-28 rounded border border-slate-200 bg-white" />
         <div class="flex-1 min-w-0 space-y-2">
-          <el-input :model-value="latestUrl" readonly size="small" />
+          <el-input
+            :model-value="latestUrl"
+            readonly
+            size="small"
+            @focus="(e: FocusEvent) => (e.target as HTMLInputElement).select()"
+          />
           <p v-if="latestPassword" class="text-xs text-amber-700">
             访问密码：<span class="font-mono font-semibold">{{ latestPassword }}</span>
             （请单独告知对方，关闭后不再显示）
@@ -78,6 +83,7 @@ import { Share } from '@element-plus/icons-vue'
 import QRCode from 'qrcode'
 import dayjs from 'dayjs'
 import { shareApi } from '@/api/modules'
+import { copyToClipboard } from '@/utils/clipboard'
 import type { ShareLink, ShareResourceType } from '@/types'
 
 const props = defineProps<{
@@ -109,12 +115,8 @@ function formatTime(v: string) {
 }
 
 async function copy(text: string) {
-  try {
-    await navigator.clipboard.writeText(text)
-    ElMessage.success('已复制到剪贴板')
-  } catch {
-    ElMessage.warning('复制失败，请手动复制')
-  }
+  if (await copyToClipboard(text)) ElMessage.success('已复制到剪贴板')
+  else ElMessage.warning('复制失败，请手动选中链接复制')
 }
 
 async function loadLinks() {
@@ -134,14 +136,20 @@ async function onOpen() {
 }
 
 async function create() {
+  const pwd = password.value.trim()
+  if (pwd && (pwd.length < 4 || pwd.length > 64)) {
+    ElMessage.warning('密码长度须为 4～64 位，或不填密码')
+    return
+  }
+  const days = Math.min(90, Math.max(1, Number(expireDays.value) || 5))
+  expireDays.value = days
   creating.value = true
   try {
-    const pwd = password.value.trim()
     const row = await shareApi.create({
       resource_type: props.resourceType,
       resource_id: props.resourceId,
-      expire_days: expireDays.value,
-      password: pwd || null,
+      expire_days: days,
+      ...(pwd ? { password: pwd } : {}),
     })
     latestUrl.value = shareUrl(row.token)
     latestPassword.value = pwd

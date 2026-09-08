@@ -430,6 +430,7 @@ import { getTheme } from '@/utils/coursewareTheme'
 import { pageTypeLabel, PAGE_KINDS, normalizePageKind } from '@/utils/coursewarePages'
 import { useEducationStore } from '@/stores/education'
 import { renderMarkdown } from '@/utils/markdown'
+import { copyToClipboard } from '@/utils/clipboard'
 import ShareDialog from '@/components/ShareDialog.vue'
 import type { Courseware, CoursewareSession, SessionBoard } from '@/types'
 
@@ -611,12 +612,8 @@ async function createSession() {
 }
 
 async function copyText(text: string) {
-  try {
-    await navigator.clipboard.writeText(text)
-    ElMessage.success('已复制到剪贴板')
-  } catch {
-    ElMessage.warning('复制失败，请手动复制')
-  }
+  if (await copyToClipboard(text)) ElMessage.success('已复制到剪贴板')
+  else ElMessage.warning('复制失败，请手动选中链接复制')
 }
 async function copyLink(row: CoursewareSession) {
   await setShare(row.token)

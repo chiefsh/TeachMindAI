@@ -10,7 +10,7 @@ from app.core.database import AsyncSessionLocal
 from app.core.minio_client import get_file_bytes, upload_file
 from app.core.config import settings
 from app.models.textbook import Textbook, TextbookChapter, TextbookImage, ParseStatus
-from app.models.question import Question, QuestionType, DifficultyLevel
+from app.models.question import Question, QuestionType, DifficultyLevel, coerce_tags
 import uuid
 
 logger = logging.getLogger(__name__)
@@ -740,6 +740,7 @@ def _items_to_questions(
             images=_build_images_payload(item, image_by_id, source_object),
             answer=(item.get("answer") or None),
             explanation=(item.get("explanation") or None),
+            tags=coerce_tags(item.get("tags") or item.get("知识点")),
             source_file_path=source,
         ))
     return out

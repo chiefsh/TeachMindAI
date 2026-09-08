@@ -318,12 +318,12 @@ docker compose up -d backend celery_worker
 
 1. 修改 `SECRET_KEY`、`ENCRYPTION_KEY`，以及 MySQL / MinIO / RabbitMQ / Neo4j 密码（同时改 compose 的 `environment`）。
 2. 将 `ENABLE_REGIST` 设为 `false`，禁止公网自助注册（见 [注册开关](#注册开关-enable_regist)）。
-3. 后端、Celery **不要**把宿主机 `backend/.env` 的 `localhost` 带进容器；compose 已用服务名（`mysql`、`redis` 等）注入。根目录 `.env` 只做 compose 变量插值。
+3. 后端、Celery **不要**把宿主机 `backend/.env` 的 `localhost` 带进容器；compose 已用服务名（`mysql`、`redis` 等）注入。根目录 `.env` 做 compose 变量插值（MinIO 公网地址、嵌入模型 Key 等），不要把密钥写进已跟踪的 `backend/.env`。
 4. 用反向代理终结 HTTPS，把 443 转到 `frontend:80`；WebSocket 路径 `/api/v1/ws/task/{task_id}` 需要升级头。
 5. 生产关闭后端 `--reload`，前端构建参数用生产 API 源（当前 nginx 已走容器网络 `backend:8000`）。
 6. 数据卷定期备份：`mysql_data`、`minio_data`、`neo4j_data`、`qdrant_data`。
 
-知识图谱向量去重可选：在运行环境配置 `EMBEDDING_MODEL` / `EMBEDDING_API_BASE` / `EMBEDDING_API_KEY`；留空则只按名称精确匹配。
+知识图谱向量去重可选：在**仓库根目录** `.env` 配置 `EMBEDDING_MODEL` / `EMBEDDING_API_BASE` / `EMBEDDING_API_KEY`（该文件已 gitignore）；留空则只按名称精确匹配。Docker 下由 compose 注入到 backend / Celery。
 
 ---
 

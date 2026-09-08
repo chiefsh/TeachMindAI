@@ -48,6 +48,26 @@ class Question(Base, TimestampMixin):
     grade = relationship("Grade")
 
 
+def coerce_tags(raw) -> list[str] | None:
+    """把 LLM/表单里的知识点字段收成短标签列表。"""
+    if raw is None:
+        return None
+    if isinstance(raw, str):
+        import re
+        parts = [p.strip() for p in re.split(r"[,，;；、/|]", raw) if p.strip()]
+    elif isinstance(raw, (list, tuple)):
+        parts = [str(t).strip() for t in raw]
+    else:
+        return None
+    out: list[str] = []
+    for s in parts:
+        if s and s not in out:
+            out.append(s[:32])
+        if len(out) >= 8:
+            break
+    return out or None
+
+
 class QuestionImport(Base, TimestampMixin):
     """题库文件导入记录。"""
     __tablename__ = "question_imports"

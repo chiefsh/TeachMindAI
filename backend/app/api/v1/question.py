@@ -8,7 +8,7 @@ from app.core.database import get_db
 from app.core.minio_client import upload_file, delete_file
 from app.core.config import settings
 from app.models.teacher import Teacher
-from app.models.question import Question, QuestionType, DifficultyLevel, QuestionImport
+from app.models.question import Question, QuestionType, DifficultyLevel, QuestionImport, coerce_tags
 from app.models.textbook import ParseStatus
 from app.schemas.question import QuestionOut, QuestionCreate, QuestionFilter, QuestionImportOut, QuestionBatchDeleteIn
 from app.api.deps import get_current_teacher
@@ -155,6 +155,7 @@ async def create_questions_manual(
             images=item.get("images") or None,
             answer=(item.get("answer") or None),
             explanation=(item.get("explanation") or None),
+            tags=coerce_tags(item.get("tags") or item.get("知识点")),
         )
         db.add(q)
         created.append(q)

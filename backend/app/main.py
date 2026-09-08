@@ -24,6 +24,7 @@ _INDEX_SQL = [
     "CREATE INDEX IF NOT EXISTS ix_textbooks_teacher_id ON textbooks (teacher_id)",
     "CREATE INDEX IF NOT EXISTS ix_textbook_chapters_textbook_id ON textbook_chapters (textbook_id)",
     "CREATE INDEX IF NOT EXISTS ix_homework_papers_teacher_id ON homework_papers (teacher_id)",
+    "CREATE INDEX IF NOT EXISTS ix_homework_papers_textbook_id ON homework_papers (textbook_id)",
     "CREATE INDEX IF NOT EXISTS ix_question_imports_teacher_id ON question_imports (teacher_id)",
 ]
 
@@ -41,6 +42,30 @@ _COLUMN_SQL = [
     (
         "questions", "images",
         "ALTER TABLE questions ADD COLUMN images JSON NULL",
+    ),
+    (
+        "homework_papers", "source_type",
+        "ALTER TABLE homework_papers ADD COLUMN source_type VARCHAR(16) NOT NULL DEFAULT 'courseware'",
+    ),
+    (
+        "homework_papers", "question_source",
+        "ALTER TABLE homework_papers ADD COLUMN question_source VARCHAR(16) NOT NULL DEFAULT 'ai'",
+    ),
+    (
+        "homework_papers", "textbook_id",
+        "ALTER TABLE homework_papers ADD COLUMN textbook_id INTEGER NULL",
+    ),
+    (
+        "homework_papers", "chapter_ids",
+        "ALTER TABLE homework_papers ADD COLUMN chapter_ids JSON NULL",
+    ),
+    (
+        "homework_papers", "courseware_ids",
+        "ALTER TABLE homework_papers ADD COLUMN courseware_ids JSON NULL",
+    ),
+    (
+        "homework_questions", "source",
+        "ALTER TABLE homework_questions ADD COLUMN source VARCHAR(16) NULL",
     ),
 ]
 
@@ -67,6 +92,11 @@ async def _ensure_columns():
                     await conn.execute(text(ddl))
             except Exception:
                 pass
+        # 作业题分值改为可空（作业不记分）
+        try:
+            await conn.execute(text("ALTER TABLE homework_questions MODIFY COLUMN score INT NULL"))
+        except Exception:
+            pass
 
 
 @asynccontextmanager

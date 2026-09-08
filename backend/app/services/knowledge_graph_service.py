@@ -114,6 +114,19 @@ async def upsert_knowledge_point(
     return {"id": kp_id, "name": name, "merged": False}
 
 
+async def points_by_courseware(teacher_id: int, courseware_ids: list[int]) -> list[dict]:
+    """按课件 id 取已关联的知识点（名称 + 标签），用于组卷范围约束。"""
+    if not settings.KG_ENABLED or not courseware_ids:
+        return []
+    rows = await neo.run_read(
+        "MATCH (k:KnowledgePoint {teacher_id:$tid}) "
+        "WHERE any(cid IN coalesce(k.courseware_ids,[]) WHERE cid IN $cids) "
+        "RETURN k.name AS name, k.id AS id, k.tags AS tags",
+        {"tid": teacher_id, "cids": list(courseware_ids)},
+    )
+    return rows or []
+
+
 async def link_source(kp_id: str, *, courseware_id: int | None = None, question_id: int | None = None):
     """把知识点关联到业务实体（课件/题目），存为节点列表属性。"""
     if not settings.KG_ENABLED or not kp_id:

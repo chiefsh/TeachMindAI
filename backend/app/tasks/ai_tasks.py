@@ -40,7 +40,7 @@ def optimize_courseware_slide_task(
 
 
 @celery_app.task(name="app.tasks.ai_tasks.generate_homework_task", bind=True, max_retries=2)
-def generate_homework_task(self, paper_id: int, courseware_ids: list[int], use_question_bank: bool):
+def generate_homework_task(self, paper_id: int, courseware_ids=None, use_question_bank=False):
     try:
         _run(do_generate_homework(paper_id, courseware_ids, use_question_bank))
     except Exception as exc:

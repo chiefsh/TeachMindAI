@@ -20,7 +20,7 @@ alwaysApply: true
 | 题库 | `api/v1/question.py`、`models/question.py`、`views/question-bank/` |
 | 课件/互动 | `api/v1/courseware.py`、`interaction.py`、`views/courseware/`、`skill_service.py` |
 | 理科 skill | `backend/skills/<name>/` + `services/skill_service.py`（不要扫其他 skill） |
-| 作业 | `api/v1/homework.py`、`views/homework/` |
+| 作业 | `api/v1/homework.py`、`services/homework_service.py`、`views/homework/` |
 | 试题分析 | `api/v1/question_analysis.py`、`views/question-analysis/` |
 | 成绩 | `api/v1/student.py`、`grade_stats.py`、`views/grades/` |
 | 知识图谱 | `api/v1/knowledge.py`、`knowledge_*_service.py`、`views/knowledge/` |

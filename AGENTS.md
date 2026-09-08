@@ -86,7 +86,7 @@ tasks/<队列>.py      → Celery 包装（薄，真正逻辑在 service）
 
 ### 作业 / 试卷
 
-- 后端：`api/v1/homework.py`、`schemas/homework.py`、`models/homework.py`、`ai_service.do_generate_homework`、`export_service.build_homework_*`
+- 后端：`api/v1/homework.py`、`schemas/homework.py`、`models/homework.py`、`services/homework_service.py`、`export_service.build_homework_*`
 - 前端：`views/homework/HomeworkView.vue`
 
 ### 试题分析

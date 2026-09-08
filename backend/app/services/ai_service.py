@@ -8,7 +8,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import AsyncSessionLocal
 from app.core.security import decrypt_api_key
 from app.models.courseware import Courseware
-from app.models.homework import HomeworkPaper, HomeworkQuestion
 from app.models.textbook import Textbook, TextbookChapter, ParseStatus
 from app.models.education import Subject
 from app.models.subject_prompt import SubjectPromptTemplate
@@ -1355,8 +1354,9 @@ async def parse_questions_from_text(cfg, text: str, image_catalog: str = "") -> 
 - question_type 取值：single_choice(单选)/multi_choice(多选)/fill_blank(填空)/true_false(判断)/short_answer(简答)/essay(作文论述)/calculation(计算)
 - difficulty 取值：easy/medium/hard/very_hard
 - 选择题把选项放进 options，如 {{"A":"...","B":"...","C":"...","D":"..."}}；非选择题 options 为 null。
-- 若原文给出了答案/解析，请填入 answer / explanation，没有则留空字符串。{image_rule}
-只输出 JSON，格式：{{"questions":[{{"question_type":"...","difficulty":"...","content":"题干","options":null,"answer":"","explanation":""{image_fields}}}]}}"""
+- 若原文给出了答案/解析，请填入 answer / explanation，没有则留空字符串。
+- tags 填写本题涉及的知识点名称（2~5 个短词）；原文看不出则给空数组。{image_rule}
+只输出 JSON，格式：{{"questions":[{{"question_type":"...","difficulty":"...","content":"题干","options":null,"answer":"","explanation":"","tags":["知识点"]{image_fields}}}]}}"""
     user = text[:8000]
     if image_catalog:
         user += f"\n\n【可引用的插图】\n{image_catalog}"
@@ -1378,93 +1378,14 @@ async def parse_questions_from_text(cfg, text: str, image_catalog: str = "") -> 
         return []
 
 
-async def do_generate_homework(paper_id: int, courseware_ids: list[int], use_question_bank: bool):
-    async with AsyncSessionLocal() as db:
-        result = await db.execute(select(HomeworkPaper).where(HomeworkPaper.id == paper_id))
-        paper = result.scalar_one_or_none()
-        if not paper:
-            raise ValueError(f"作业 {paper_id} 不存在，稍后重试")
-
-        paper.gen_status = ParseStatus.processing
-        await db.commit()
-
-        try:
-            cfg = await _get_default_llm(paper.teacher_id, db)
-            if not cfg:
-                paper.gen_status = ParseStatus.failed
-                await db.commit()
-                return
-
-            # 获取课件内容
-            cw_content = ""
-            if courseware_ids:
-                cw_result = await db.execute(
-                    select(Courseware).where(Courseware.id.in_(courseware_ids))
-                )
-                coursewares = cw_result.scalars().all()
-                for cw in coursewares:
-                    if cw.content:
-                        slides = cw.content.get("slides", [])
-                        cw_content += f"\n课件《{cw.title}》\n"
-                        cw_content += "\n".join(s.get("content", "") for s in slides[:10])
-
-            config = paper.question_config or {}
-            difficulty_map = {"easy": "简单", "medium": "中等", "hard": "较难", "very_hard": "特难"}
-            difficulty_label = difficulty_map.get(paper.difficulty, "中等")
-
-            prompt = f"""请根据以下课件内容，出一份{difficulty_label}难度的{'作业' if paper.paper_type == 'homework' else '试卷'}。
-
-课件内容：
-{cw_content[:4000]}
-
-题目配置：
-{json.dumps(config, ensure_ascii=False)}
-
-请输出 JSON 格式：
-{{
-  "questions": [
-    {{
-      "index": 1,
-      "type": "single_choice",
-      "content": "题干",
-      "options": {{"A": "选项A", "B": "选项B", "C": "选项C", "D": "选项D"}},
-      "answer": "A",
-      "explanation": "解析",
-      "score": 5
-    }}
-  ]
-}}"""
-
-            resp = await _call_llm(cfg, [{"role": "user", "content": prompt}], max_tokens=max(cfg.max_tokens or 0, 4096))
-            raw = resp.choices[0].message.content
-
-            try:
-                start = raw.find("{")
-                end = raw.rfind("}") + 1
-                data = json.loads(raw[start:end])
-                questions = data.get("questions", [])
-            except Exception:
-                questions = []
-
-            # 存储题目
-            for i, q in enumerate(questions):
-                hq = HomeworkQuestion(
-                    paper_id=paper.id,
-                    sort_order=i + 1,
-                    content=q.get("content", ""),
-                    options=q.get("options"),
-                    answer=q.get("answer"),
-                    score=q.get("score", 10),
-                )
-                db.add(hq)
-
-            paper.content = raw
-            paper.gen_status = ParseStatus.done
-        except Exception as e:
-            logger.exception("作业 %s 生成失败：%s", paper.id, e)
-            paper.gen_status = ParseStatus.failed
-        finally:
-            await db.commit()
+async def do_generate_homework(
+    paper_id: int,
+    courseware_ids: list[int] | None = None,
+    use_question_bank: bool = False,
+):
+    """组卷入口。范围/来源/是否记分均读试卷行；保留旧参数以兼容未消费完的 Celery 任务。"""
+    from app.services.homework_service import generate_homework
+    await generate_homework(paper_id)
 
 
 async def structure_textbook_toc(teacher_id: int, toc_text: str) -> list[dict]:
@@ -1663,7 +1584,7 @@ async def parse_questions_from_image(cfg, data: bytes) -> list[dict]:
         '"difficulty":"easy/medium/hard/very_hard","content":"题干文字",'
         '"stem_bboxes":[],'
         '"options":{"A":{"text":"选项文字","bbox":[0.08,0.42,0.38,0.22]},"B":{"text":"...","bbox":null}},'
-        '"answer":"答案(若有)"}]}'
+        '"answer":"答案(若有)","tags":["知识点"]}]}}'
     )
     resp = await litellm.acompletion(
         messages=[{"role": "user", "content": [

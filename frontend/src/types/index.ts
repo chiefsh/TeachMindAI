@@ -77,13 +77,23 @@ export interface Courseware {
 export interface HomeworkQuestion {
   id: number; sort_order: number; content: string
   options?: Record<string, string> | null; answer?: string | null; score?: number | null
+  source?: 'ai' | 'bank' | null
+  question_id?: number | null
 }
+
+export type HomeworkSourceType = 'courseware' | 'textbook' | 'chapters'
+export type QuestionSourceMode = 'ai' | 'bank' | 'mixed'
 
 export interface HomeworkPaper {
   id: number; title: string; paper_type: string; difficulty: DifficultyLevel
   gen_status: ParseStatus; courseware_id?: number; created_at: string
   content?: string; question_config?: Record<string, number>
   questions?: HomeworkQuestion[]
+  source_type?: HomeworkSourceType
+  question_source?: QuestionSourceMode
+  textbook_id?: number | null
+  chapter_ids?: number[] | null
+  courseware_ids?: number[] | null
 }
 
 export interface Student {

@@ -557,7 +557,10 @@ def build_homework_docx(title: str, paper_type: str, questions: list[dict]) -> b
 
     total = sum((q.get("score") or 0) for q in questions)
     type_label = "考试试卷" if paper_type == "exam" else "课后作业"
-    meta = doc.add_paragraph(f"类型：{type_label}    题量：{len(questions)} 题    满分：{total} 分")
+    meta_text = f"类型：{type_label}    题量：{len(questions)} 题"
+    if paper_type == "exam":
+        meta_text += f"    满分：{total} 分"
+    meta = doc.add_paragraph(meta_text)
     meta.alignment = WD_ALIGN_PARAGRAPH.CENTER
     info = doc.add_paragraph("姓名：____________    班级：____________    得分：____________")
     info.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -567,7 +570,7 @@ def build_homework_docx(title: str, paper_type: str, questions: list[dict]) -> b
         p = doc.add_paragraph()
         p.add_run(f"{i}. {q.get('content', '')}")
         score = q.get("score")
-        if score:
+        if paper_type == "exam" and score:
             r = p.add_run(f"（{score} 分）")
             r.font.color.rgb = RGBColor(0x88, 0x88, 0x88)
             r.font.size = Pt(9)
@@ -614,16 +617,19 @@ def build_homework_pdf(title: str, paper_type: str, questions: list[dict]) -> by
 
     total = sum((q.get("score") or 0) for q in questions)
     type_label = "考试试卷" if paper_type == "exam" else "课后作业"
+    meta_line = f"类型：{type_label}　题量：{len(questions)} 题"
+    if paper_type == "exam":
+        meta_line += f"　满分：{total} 分"
     story = [
         Paragraph(esc(title), title_style),
         Spacer(1, 4 * mm),
-        Paragraph(f"类型：{type_label}　题量：{len(questions)} 题　满分：{total} 分", meta_style),
+        Paragraph(meta_line, meta_style),
         Paragraph("姓名：____________　班级：____________　得分：____________", meta_style),
         Spacer(1, 6 * mm),
     ]
     for i, q in enumerate(questions, 1):
         score = q.get("score")
-        suffix = f"（{score} 分）" if score else ""
+        suffix = f"（{score} 分）" if paper_type == "exam" and score else ""
         story.append(Paragraph(f"{i}. {esc(q.get('content', ''))} {suffix}", body))
         opts = q.get("options") or {}
         if opts:

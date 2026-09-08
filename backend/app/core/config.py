@@ -70,7 +70,9 @@ class Settings(BaseSettings):
     TEXTBOOK_PAGE_SCREENSHOT_MAX: int = 40      # 单本课本最多截图页数
     TEXTBOOK_SCAN_TEXT_THRESHOLD: int = 50      # 页面文本少于该字符数视为扫描/图多页
 
-    model_config = {"env_file": ".env", "extra": "ignore"}
+    # .env：backend 工作目录；../.env：仓库根目录（gitignore，放嵌入 Key 等）
+    # 后读的覆盖先读的；进程环境变量优先于文件
+    model_config = {"env_file": (".env", "../.env"), "extra": "ignore"}
 
     def model_post_init(self, __context):
         if not self.CELERY_BROKER_URL:

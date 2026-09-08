@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, or_
 from sqlalchemy.orm import selectinload
 from typing import Optional
 from urllib.parse import quote
@@ -9,7 +9,7 @@ import io
 
 from app.core.database import get_db
 from app.models.teacher import Teacher
-from app.models.homework import HomeworkPaper
+from app.models.homework import HomeworkPaper, HomeworkSourceType
 from app.models.courseware import Courseware
 from app.models.textbook import ParseStatus, Textbook
 from app.schemas.homework import HomeworkCreate, HomeworkOut, HomeworkDetail
@@ -27,16 +27,25 @@ async def list_homework(
     db: AsyncSession = Depends(get_db),
 ):
     q = select(HomeworkPaper).where(HomeworkPaper.teacher_id == teacher.id)
-    # 试卷本身不直接挂年级/科目，按其关联课件所属课本进行过滤
     if grade_id or subject_id:
-        q = (
-            q.join(Courseware, Courseware.id == HomeworkPaper.courseware_id)
-            .join(Textbook, Textbook.id == Courseware.textbook_id)
-        )
+        tb_q = select(Textbook.id).where(Textbook.teacher_id == teacher.id)
         if grade_id:
-            q = q.where(Textbook.grade_id == grade_id)
+            tb_q = tb_q.where(Textbook.grade_id == grade_id)
         if subject_id:
-            q = q.where(Textbook.subject_id == subject_id)
+            tb_q = tb_q.where(Textbook.subject_id == subject_id)
+        tb_ids = list((await db.execute(tb_q)).scalars().all())
+        cw_ids = []
+        if tb_ids:
+            cw_ids = list((await db.execute(
+                select(Courseware.id).where(
+                    Courseware.teacher_id == teacher.id,
+                    Courseware.textbook_id.in_(tb_ids),
+                )
+            )).scalars().all())
+        q = q.where(or_(
+            HomeworkPaper.textbook_id.in_(tb_ids or [-1]),
+            HomeworkPaper.courseware_id.in_(cw_ids or [-1]),
+        ))
     result = await db.execute(q.order_by(HomeworkPaper.created_at.desc()))
     return result.scalars().all()
 
@@ -47,9 +56,52 @@ async def create_homework(
     teacher: Teacher = Depends(get_current_teacher),
     db: AsyncSession = Depends(get_db),
 ):
+    cfg = data.question_config or {}
+    if not any(int(v or 0) > 0 for v in cfg.values()):
+        raise HTTPException(status_code=400, detail="请至少配置一道题")
+
+    cw_ids = list(data.courseware_ids or [])
+    textbook_id = data.textbook_id
+    chapter_ids = list(data.chapter_ids or [])
+    if data.source_type != HomeworkSourceType.courseware:
+        cw_ids = []
+    if data.source_type == HomeworkSourceType.courseware:
+        textbook_id = None
+        chapter_ids = []
+    if data.source_type != HomeworkSourceType.chapters:
+        chapter_ids = []
+
+    if cw_ids:
+        rows = (await db.execute(
+            select(Courseware).where(
+                Courseware.id.in_(cw_ids),
+                Courseware.teacher_id == teacher.id,
+            )
+        )).scalars().all()
+        if len(rows) != len(set(cw_ids)):
+            raise HTTPException(status_code=400, detail="课件不存在或无权使用")
+        if any(r.gen_status != ParseStatus.done for r in rows):
+            raise HTTPException(status_code=400, detail="请选择已生成完成的课件")
+        if textbook_id is None:
+            textbook_id = next((r.textbook_id for r in rows if r.textbook_id), None)
+
+    if textbook_id:
+        tb = (await db.execute(
+            select(Textbook).where(
+                Textbook.id == textbook_id, Textbook.teacher_id == teacher.id,
+            )
+        )).scalar_one_or_none()
+        if not tb:
+            raise HTTPException(status_code=400, detail="课本不存在或无权使用")
+
     paper = HomeworkPaper(
         teacher_id=teacher.id,
-        courseware_id=data.courseware_ids[0] if data.courseware_ids else None,
+        courseware_id=cw_ids[0] if cw_ids else None,
+        courseware_ids=cw_ids or None,
+        textbook_id=textbook_id,
+        chapter_ids=chapter_ids or None,
+        source_type=data.source_type.value,
+        question_source=data.question_source.value,
         title=data.title,
         paper_type=data.paper_type,
         difficulty=data.difficulty,
@@ -59,15 +111,10 @@ async def create_homework(
     db.add(paper)
     await db.flush()
     await db.refresh(paper)
-    # 先提交，确保 worker 能查到该行（避免 dispatch-before-commit 竞态）
     await db.commit()
 
     from app.tasks.ai_tasks import generate_homework_task
-    task = generate_homework_task.delay(
-        paper_id=paper.id,
-        courseware_ids=data.courseware_ids,
-        use_question_bank=data.use_question_bank,
-    )
+    task = generate_homework_task.delay(paper_id=paper.id)
     paper.task_id = task.id
     await db.commit()
     return paper

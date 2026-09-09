@@ -10,7 +10,12 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 24小时
     ALGORITHM: str = "HS256"
     # 是否开放教师注册入口（登录页展示 + POST /auth/register）；false / 0 / no 关闭
-    ENABLE_REGIST: bool = True
+    ENABLE_REGIST: bool = False
+    # 超级管理员（启动时若不存在则创建一次，已存在则忽略环境变量中的密码）
+    SUPER_ADMIN_USERNAME: str = "admin"
+    SUPER_ADMIN_PASSWORD: str = ""
+    SUPER_ADMIN_EMAIL: str = "admin@local"
+    SUPER_ADMIN_REAL_NAME: str = "超级管理员"
 
     # 数据库
     DATABASE_URL: str = "mysql+aiomysql://edu_user:edu_pass@localhost:3306/edu_platform"
@@ -72,7 +77,7 @@ class Settings(BaseSettings):
     TEXTBOOK_PAGE_SCREENSHOT_MAX: int = 40      # 单本课本最多截图页数
     TEXTBOOK_SCAN_TEXT_THRESHOLD: int = 50      # 页面文本少于该字符数视为扫描/图多页
 
-    # .env：backend 工作目录；../.env：仓库根目录（gitignore，放嵌入 Key 等）
+    # backend/.env：本机连接串等；仓库根目录 ../.env：嵌入 Key、SUPER_ADMIN_*、ENABLE_REGIST（gitignore）
     # 后读的覆盖先读的；进程环境变量优先于文件
     model_config = {"env_file": (".env", "../.env"), "extra": "ignore"}
 

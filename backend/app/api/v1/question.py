@@ -13,7 +13,8 @@ from app.models.textbook import ParseStatus
 from app.schemas.question import (
     QuestionOut, QuestionCreate, QuestionUpdate, QuestionFilter, QuestionImportOut, QuestionBatchDeleteIn,
 )
-from app.api.deps import get_current_teacher
+from app.api.deps import get_current_teacher, require_perm
+from app.core.access import apply_org_scope, require_org_asset
 from app.services.question_media import (
     public_images, verify_asset_sig, is_safe_object_name,
     read_question_asset, guess_content_type,
@@ -66,7 +67,8 @@ async def list_questions(
     teacher: Teacher = Depends(get_current_teacher),
     db: AsyncSession = Depends(get_db),
 ):
-    q = select(Question).where(Question.teacher_id == teacher.id)
+    q = select(Question)
+    q = await apply_org_scope(q, Question.teacher_id, db, teacher)
     if subject_id:
         q = q.where(Question.subject_id == subject_id)
     if grade_id:
@@ -91,7 +93,7 @@ async def list_questions(
 @router.post("", response_model=QuestionOut, status_code=201)
 async def create_question(
     data: QuestionCreate,
-    teacher: Teacher = Depends(get_current_teacher),
+    teacher: Teacher = Depends(require_perm("question.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.question_bank_service import build_question, upsert_question_models
@@ -115,7 +117,7 @@ class ManualQuestionsIn(BaseModel):
 @router.post("/manual", status_code=201)
 async def create_questions_manual(
     data: ManualQuestionsIn,
-    teacher: Teacher = Depends(get_current_teacher),
+    teacher: Teacher = Depends(require_perm("question.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     """手动录入：可一次录入一道或多道题。use_ai=True 时用大模型自动拆分识别题型/选项/答案。"""
@@ -162,7 +164,7 @@ async def import_question_file(
     file: UploadFile = File(...),
     subject_id: int = Form(...),
     grade_id: int = Form(...),
-    teacher: Teacher = Depends(get_current_teacher),
+    teacher: Teacher = Depends(require_perm("question.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     ext = _ext(file.filename or "")
@@ -209,7 +211,8 @@ async def list_question_imports(
 ):
     page = max(1, page)
     page_size = min(50, max(1, page_size))
-    base = select(QuestionImport).where(QuestionImport.teacher_id == teacher.id)
+    base = select(QuestionImport)
+    base = await apply_org_scope(base, QuestionImport.teacher_id, db, teacher)
     total = (await db.execute(select(func.count()).select_from(base.subquery()))).scalar() or 0
     rows = (await db.execute(
         base.order_by(QuestionImport.created_at.desc()).offset((page - 1) * page_size).limit(page_size)
@@ -223,19 +226,26 @@ async def list_question_imports(
 @router.post("/batch-delete")
 async def batch_delete_questions(
     data: QuestionBatchDeleteIn,
-    teacher: Teacher = Depends(get_current_teacher),
+    teacher: Teacher = Depends(require_perm("question.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     ids = list({int(i) for i in (data.ids or []) if i})
     if not ids:
         raise HTTPException(status_code=400, detail="请选择要删除的题目")
     result = await db.execute(
-        select(Question).where(Question.teacher_id == teacher.id, Question.id.in_(ids))
+        select(Question).where(Question.id.in_(ids))
     )
-    rows = result.scalars().all()
+    rows = [r for r in result.scalars().all()]
+    kept = []
     for q in rows:
+        try:
+            await require_org_asset(db, teacher, q, "题目不存在")
+        except HTTPException:
+            continue
+        kept.append(q)
+    for q in kept:
         await db.delete(q)
-    return {"count": len(rows)}
+    return {"count": len(kept)}
 
 
 @router.get("/assets/{object_name:path}")
@@ -266,12 +276,9 @@ async def get_question(
     teacher: Teacher = Depends(get_current_teacher),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(
-        select(Question).where(Question.id == question_id, Question.teacher_id == teacher.id)
-    )
+    result = await db.execute(select(Question).where(Question.id == question_id))
     q = result.scalar_one_or_none()
-    if not q:
-        raise HTTPException(status_code=404, detail="题目不存在")
+    await require_org_asset(db, teacher, q, "题目不存在")
     return _to_out(q, include_html=True)
 
 
@@ -279,15 +286,12 @@ async def get_question(
 async def update_question(
     question_id: int,
     data: QuestionUpdate,
-    teacher: Teacher = Depends(get_current_teacher),
+    teacher: Teacher = Depends(require_perm("question.manage")),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(
-        select(Question).where(Question.id == question_id, Question.teacher_id == teacher.id)
-    )
+    result = await db.execute(select(Question).where(Question.id == question_id))
     q = result.scalar_one_or_none()
-    if not q:
-        raise HTTPException(status_code=404, detail="题目不存在")
+    await require_org_asset(db, teacher, q, "题目不存在")
     payload = data.model_dump(exclude_unset=True)
     if not payload:
         return _to_out(q, include_html=True)
@@ -308,13 +312,10 @@ async def update_question(
 @router.delete("/{question_id}", status_code=204)
 async def delete_question(
     question_id: int,
-    teacher: Teacher = Depends(get_current_teacher),
+    teacher: Teacher = Depends(require_perm("question.manage")),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(
-        select(Question).where(Question.id == question_id, Question.teacher_id == teacher.id)
-    )
+    result = await db.execute(select(Question).where(Question.id == question_id))
     q = result.scalar_one_or_none()
-    if not q:
-        raise HTTPException(status_code=404, detail="题目不存在")
+    await require_org_asset(db, teacher, q, "题目不存在")
     await db.delete(q)

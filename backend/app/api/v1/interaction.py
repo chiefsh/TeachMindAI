@@ -13,6 +13,7 @@ from app.models.courseware import Courseware
 from app.models.textbook import ParseStatus
 from app.models.interaction import CoursewareSession, InteractionRecord
 from app.api.deps import get_current_teacher
+from app.core.access import require_resource
 
 router = APIRouter(tags=["课堂互动"])
 
@@ -64,10 +65,9 @@ async def create_session(
     db: AsyncSession = Depends(get_db),
 ):
     cw = (await db.execute(
-        select(Courseware).where(Courseware.id == cw_id, Courseware.teacher_id == teacher.id)
+        select(Courseware).where(Courseware.id == cw_id)
     )).scalar_one_or_none()
-    if not cw:
-        raise HTTPException(status_code=404, detail="课件不存在")
+    await require_resource(db, teacher, cw, "courseware", edit=True, detail="课件不存在")
     if cw.gen_status != ParseStatus.done or not cw.content:
         raise HTTPException(status_code=400, detail="课件尚未生成完成，无法开启互动")
 
@@ -90,12 +90,11 @@ async def list_sessions(
     teacher: Teacher = Depends(get_current_teacher),
     db: AsyncSession = Depends(get_db),
 ):
+    cw = (await db.execute(select(Courseware).where(Courseware.id == cw_id))).scalar_one_or_none()
+    await require_resource(db, teacher, cw, "courseware", detail="课件不存在")
     rows = (await db.execute(
         select(CoursewareSession)
-        .where(
-            CoursewareSession.courseware_id == cw_id,
-            CoursewareSession.teacher_id == teacher.id,
-        )
+        .where(CoursewareSession.courseware_id == cw_id)
         .order_by(CoursewareSession.created_at.desc())
     )).scalars().all()
     if not rows:
@@ -129,7 +128,7 @@ async def toggle_session(
     teacher: Teacher = Depends(get_current_teacher),
     db: AsyncSession = Depends(get_db),
 ):
-    s = await _get_session_or_404(session_id, teacher.id, db)
+    s = await _get_session_or_404(session_id, teacher, db, edit=True)
     s.is_open = is_open
     await db.commit()
     await db.refresh(s)
@@ -142,7 +141,7 @@ async def delete_session(
     teacher: Teacher = Depends(get_current_teacher),
     db: AsyncSession = Depends(get_db),
 ):
-    s = await _get_session_or_404(session_id, teacher.id, db)
+    s = await _get_session_or_404(session_id, teacher, db, edit=True)
     await db.delete(s)
     await db.commit()
 
@@ -154,7 +153,7 @@ async def session_board(
     db: AsyncSession = Depends(get_db),
 ):
     """互动数据看板：按题目正确率聚合 + 按学生汇总 + 原始明细。"""
-    s = await _get_session_or_404(session_id, teacher.id, db)
+    s = await _get_session_or_404(session_id, teacher, db)
     rows = (await db.execute(
         select(InteractionRecord)
         .where(InteractionRecord.session_id == s.id)
@@ -289,13 +288,14 @@ async def public_submit_record(
 
 # ---------- helpers ----------
 
-async def _get_session_or_404(session_id: int, teacher_id: int, db: AsyncSession) -> CoursewareSession:
+async def _get_session_or_404(
+    session_id: int, teacher: Teacher, db: AsyncSession, *, edit: bool = False,
+) -> CoursewareSession:
     s = (await db.execute(
-        select(CoursewareSession).where(
-            CoursewareSession.id == session_id,
-            CoursewareSession.teacher_id == teacher_id,
-        )
+        select(CoursewareSession).where(CoursewareSession.id == session_id)
     )).scalar_one_or_none()
     if not s:
         raise HTTPException(status_code=404, detail="互动会话不存在")
+    cw = await db.get(Courseware, s.courseware_id)
+    await require_resource(db, teacher, cw, "courseware", edit=edit, detail="互动会话不存在")
     return s

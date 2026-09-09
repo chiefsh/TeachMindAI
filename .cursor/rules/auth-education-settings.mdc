@@ -6,10 +6,10 @@ alwaysApply: false
 
 # 认证 / 学段科目 / 设置
 
-**认证：** JWT `sub` = 教师 id。登录写 token；登出把 token 丢 Redis `blacklist:`。前端 `auth.ts` 存 `localStorage.token`。环境变量 `ENABLE_REGIST`（默认 true）控制登录页注册入口与 `POST /auth/register`；前端读公开接口 `GET /auth/config`。
+**认证：** JWT `sub` = 教师 id。登录写 token；登出把 token 丢 Redis `blacklist:`。前端 `auth.ts` 存 `localStorage.token`。`ENABLE_REGIST`（默认 false）控制登录页注册入口与 `POST /auth/register`；前端读 `GET /auth/config`。超管由 `SUPER_ADMIN_*` 启动时只初始化一次。写接口用 `require_perm`；`/me` 带回角色与权限码。
 
-**学段科目：** `SchoolLevel` → `Grade` / `Subject`；教师授课关系 `TeacherSubject`。种子数据 `core/seed.py`。前端筛选存在 `education.ts`，多数列表 API 带 `grade_id`/`subject_id`。
+**学段科目：** `SchoolLevel` → `Grade` / `Subject`；教师授课关系 `TeacherSubject`。工作范围 `TeacherAssignment`（年级+班级+科目）。种子数据 `core/seed.py`。前端筛选存在 `education.ts`：非超管/管理员且已绑定则顶栏只显示绑定项；登录后顶栏与各表单默认落到第一条绑定。多数列表 API 带 `grade_id`/`subject_id`。
 
-**设置：** `LLMConfig` 多供应商（litellm）；`SubjectPrompt` 按科目覆盖课件提示词与互动指导。测连通走 `settings.py` 的 test 接口。
+**设置：** `LLMConfig` 为全站系统配置（`teacher_id IS NULL`），多供应商（litellm），生成任务不读个人配置；`SubjectPrompt` 按科目覆盖课件提示词与互动指导。测连通走 `settings.py` 的 test 接口。
 
 **工作台：** `dashboard.py` 只返回各模块计数，不要把业务统计塞进这里。

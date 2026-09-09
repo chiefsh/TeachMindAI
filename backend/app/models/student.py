@@ -18,10 +18,10 @@ class ReportType(str, enum.Enum):
 
 
 class SchoolClass(Base, TimestampMixin):
-    """教师名下的行政班（某年级的一个班）。"""
+    """全站公共行政班（同年级班名唯一）。teacher_id 仅记录创建人。"""
     __tablename__ = "school_classes"
     __table_args__ = (
-        UniqueConstraint("teacher_id", "grade_id", "name", name="uq_class_teacher_grade_name"),
+        UniqueConstraint("grade_id", "name", name="uq_class_grade_name"),
         Index("ix_school_classes_teacher_id", "teacher_id"),
         Index("ix_school_classes_grade_id", "grade_id"),
     )

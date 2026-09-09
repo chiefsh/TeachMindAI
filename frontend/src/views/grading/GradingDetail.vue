@@ -14,7 +14,7 @@
         </p>
       </div>
       <div class="flex flex-wrap gap-2">
-        <el-button type="primary" @click="openCollect">手机录入</el-button>
+        <el-button v-if="detail?.can_edit !== false" type="primary" @click="openCollect">手机录入</el-button>
         <el-button @click="$router.push({ path: '/wrong-questions', query: { assignment_id: id, scope: 'assignment' } })">
           本次错题
         </el-button>
@@ -62,7 +62,9 @@
             </el-table-column>
             <el-table-column label="" width="80" align="center">
               <template #default="{ row }">
-                <el-button size="small" link type="primary" @click="goStudent(row.student_id)">批改</el-button>
+                <el-button size="small" link type="primary" @click="goStudent(row.student_id)">
+                  {{ detail?.can_edit !== false ? '批改' : '查看' }}
+                </el-button>
               </template>
             </el-table-column>
           </el-table>

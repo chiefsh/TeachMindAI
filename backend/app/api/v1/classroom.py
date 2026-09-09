@@ -4,7 +4,7 @@ from typing import Optional
 
 from app.core.database import get_db
 from app.models.teacher import Teacher
-from app.api.deps import get_current_teacher
+from app.api.deps import get_current_teacher, require_perm
 from app.schemas.student import ClassCreate, ClassUpdate, ClassOut, StudentOut, StudentCreate, StudentBatchIn
 from app.services import classroom_service as svc
 
@@ -21,7 +21,7 @@ def _err(e: ValueError, code: int = 400) -> HTTPException:
 @router.get("", response_model=list[ClassOut])
 async def list_classes(
     grade_id: Optional[int] = None,
-    teacher: Teacher = Depends(get_current_teacher),
+    teacher: Teacher = Depends(require_perm("classroom.view")),
     db: AsyncSession = Depends(get_db),
 ):
     return await svc.list_classes(db, teacher.id, grade_id)
@@ -30,7 +30,7 @@ async def list_classes(
 @router.post("", response_model=ClassOut, status_code=201)
 async def create_class(
     data: ClassCreate,
-    teacher: Teacher = Depends(get_current_teacher),
+    teacher: Teacher = Depends(require_perm("classroom.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     try:
@@ -44,7 +44,7 @@ async def create_class(
 async def rename_class(
     class_id: int,
     data: ClassUpdate,
-    teacher: Teacher = Depends(get_current_teacher),
+    teacher: Teacher = Depends(require_perm("classroom.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     try:
@@ -58,7 +58,7 @@ async def rename_class(
 @router.delete("/{class_id}", status_code=204)
 async def delete_class(
     class_id: int,
-    teacher: Teacher = Depends(get_current_teacher),
+    teacher: Teacher = Depends(require_perm("classroom.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     try:
@@ -70,7 +70,7 @@ async def delete_class(
 @router.get("/{class_id}/students", response_model=list[StudentOut])
 async def list_class_students(
     class_id: int,
-    teacher: Teacher = Depends(get_current_teacher),
+    teacher: Teacher = Depends(require_perm("classroom.view")),
     db: AsyncSession = Depends(get_db),
 ):
     cls = await svc.get_class(db, class_id, teacher.id)
@@ -80,7 +80,6 @@ async def list_class_students(
     from app.models.student import Student
     rows = (await db.execute(
         select(Student).where(
-            Student.teacher_id == teacher.id,
             Student.class_id == class_id,
         ).order_by(Student.student_no)
     )).scalars().all()
@@ -91,7 +90,7 @@ async def list_class_students(
 async def add_class_student(
     class_id: int,
     data: StudentCreate,
-    teacher: Teacher = Depends(get_current_teacher),
+    teacher: Teacher = Depends(require_perm("classroom.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     try:
@@ -110,7 +109,7 @@ async def add_class_student(
 async def batch_add_students(
     class_id: int,
     data: StudentBatchIn,
-    teacher: Teacher = Depends(get_current_teacher),
+    teacher: Teacher = Depends(require_perm("classroom.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     try:

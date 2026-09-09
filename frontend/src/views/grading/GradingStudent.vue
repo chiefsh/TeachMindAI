@@ -31,6 +31,7 @@
           <span class="text-xs text-slate-400">{{ pageIndex + 1 }} / {{ pages.length || 0 }}</span>
         </div>
         <el-upload
+          v-if="canEdit"
           drag
           multiple
           accept="image/*,.pdf"
@@ -50,7 +51,7 @@
           />
           <div class="flex items-center justify-between mt-2">
             <el-button size="small" :disabled="pageIndex <= 0" @click="pageIndex--">上一页</el-button>
-            <el-button size="small" link type="danger" @click="removePage(currentPage.id)">删除本页</el-button>
+            <el-button v-if="canEdit" size="small" link type="danger" @click="removePage(currentPage.id)">删除本页</el-button>
             <el-button size="small" :disabled="pageIndex >= pages.length - 1" @click="pageIndex++">下一页</el-button>
           </div>
         </div>
@@ -59,7 +60,7 @@
 
       <!-- 题目 -->
       <div class="card max-h-[calc(100vh-8rem)] overflow-y-auto">
-        <p class="text-sm font-medium text-slate-700 mb-3">逐题批改（对照左侧原卷）</p>
+        <p class="text-sm font-medium text-slate-700 mb-3">{{ canEdit ? '逐题批改（对照左侧原卷）' : '题目与批改结果' }}</p>
         <div v-for="(q, i) in detail?.questions || []" :key="q.id" class="border-b border-slate-100 py-3 last:border-0">
           <p class="text-sm text-slate-800 leading-relaxed">
             <span class="font-medium">{{ i + 1 }}.</span>
@@ -74,7 +75,7 @@
           <p class="text-xs text-green-700 mt-1 ml-4">
             参考答案：<span v-html="renderMathText(q.answer || '—')" />
           </p>
-          <div class="flex flex-wrap items-center gap-1.5 mt-2 ml-4">
+          <div v-if="canEdit" class="flex flex-wrap items-center gap-1.5 mt-2 ml-4">
             <el-button
               v-for="v in verdicts"
               :key="v.value"
@@ -92,6 +93,9 @@
               style="width:110px"
             />
           </div>
+          <p v-else class="text-xs text-slate-500 mt-2 ml-4">
+            判定：{{ verdicts.find(v => v.value === answerOf(q.id)?.verdict)?.label || '未批' }}
+          </p>
         </div>
       </div>
     </div>
@@ -118,6 +122,7 @@ const studentId = computed(() => Number(route.params.studentId))
 const pages = computed(() => detail.value?.pages || [])
 const currentPage = computed(() => pages.value[pageIndex.value] || null)
 const isExam = computed(() => detail.value?.paper_type === 'exam')
+const canEdit = computed(() => detail.value?.can_edit !== false)
 const gradedCount = computed(() => (detail.value?.answers || []).filter(a => a.verdict).length)
 
 const rosterIds = computed(() => (detail.value?.roster || []).map(s => s.student_id))

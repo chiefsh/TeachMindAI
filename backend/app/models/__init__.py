@@ -1,9 +1,13 @@
 from app.models.base import TimestampMixin
 from app.models.teacher import Teacher
+from app.models.rbac import (
+    Organization, Permission, Role, RolePermission, UserRole, OrgRole, TeacherAssignment,
+    ResourceCollaborator,
+)
 from app.models.education import SchoolLevel, Grade, Subject, TeacherSubject
 from app.models.textbook import Textbook, TextbookChapter, TextbookImage
 from app.models.question import Question, QuestionImport
-from app.models.courseware import Courseware
+from app.models.courseware import Courseware, CoursewareVersion
 from app.models.homework import HomeworkPaper, HomeworkQuestion
 from app.models.student import Student, ExamResult, GradeReport, SchoolClass
 from app.models.llm_config import LLMConfig
@@ -16,10 +20,12 @@ from app.models.grading import (
 
 __all__ = [
     "TimestampMixin", "Teacher",
+    "Organization", "Permission", "Role", "RolePermission", "UserRole", "OrgRole", "TeacherAssignment",
+    "ResourceCollaborator",
     "SchoolLevel", "Grade", "Subject", "TeacherSubject",
     "Textbook", "TextbookChapter", "TextbookImage",
     "Question", "QuestionImport",
-    "Courseware",
+    "Courseware", "CoursewareVersion",
     "HomeworkPaper", "HomeworkQuestion",
     "Student", "ExamResult", "GradeReport", "SchoolClass",
     "LLMConfig",

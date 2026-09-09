@@ -5,7 +5,10 @@
         <h1 class="page-title">作业 / 考试生成</h1>
         <p class="page-subtitle">按课件、课本或章节组卷；可从题库筛选或 AI 出题，知识点不超出所选范围</p>
       </div>
-      <el-button type="primary" :icon="Plus" @click="openCreate">生成作业/试卷</el-button>
+      <div class="flex flex-wrap gap-2">
+        <el-button @click="openBatchCollab">批量设置协作者</el-button>
+        <el-button type="primary" :icon="Plus" @click="openCreate">生成作业/试卷</el-button>
+      </div>
     </div>
 
     <!-- 列表 -->
@@ -49,16 +52,21 @@
             <span :class="`badge badge-${row.gen_status}`">{{ statusLabel(row.gen_status) }}</span>
           </template>
         </el-table-column>
+        <el-table-column label="创建人" width="90">
+          <template #default="{ row }">
+            <span class="text-xs text-slate-500">{{ row.creator_name || '—' }}</span>
+          </template>
+        </el-table-column>
         <el-table-column label="创建时间" width="120">
           <template #default="{ row }">
             <span class="text-xs text-slate-400">{{ formatDate(row.created_at) }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="230" align="center">
+        <el-table-column label="操作" width="280" align="center">
           <template #default="{ row }">
             <el-button size="small" link type="primary" @click="viewDetail(row)">查看</el-button>
             <el-button
-              v-if="canRegenerate(row)"
+              v-if="canRegenerate(row) && row.can_edit !== false"
               size="small" link type="primary"
               @click="openRegenerate(row)"
             >重新生成</el-button>
@@ -67,7 +75,12 @@
               size="small" link type="success"
               @click="$router.push({ path: '/grading', query: { paper_id: row.id } })"
             >批改</el-button>
-            <el-popconfirm title="确定删除？" @confirm="deletePaper(row.id)">
+            <el-button
+              v-if="row.can_manage_collab"
+              size="small" link
+              @click="openCollab(row)"
+            >协作者</el-button>
+            <el-popconfirm v-if="row.can_manage_collab !== false" title="确定删除？" @confirm="deletePaper(row.id)">
               <template #reference>
                 <el-button size="small" link type="danger">删除</el-button>
               </template>
@@ -294,6 +307,12 @@
         <el-button class="mt-4" type="primary" @click="openRegenerate(detailPaper)">重新生成</el-button>
       </div>
     </el-dialog>
+    <CollaboratorsDialog
+      v-model="showCollab"
+      resource-type="homework"
+      :options="collabOptions"
+      :selected-ids="collabIds"
+    />
   </div>
 </template>
 
@@ -305,6 +324,7 @@ import { useEducationStore } from '@/stores/education'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Plus, MagicStick, Loading, Document, Tickets, Rank, Printer } from '@element-plus/icons-vue'
+import CollaboratorsDialog from '@/components/CollaboratorsDialog.vue'
 import type { HomeworkPaper, HomeworkQuestion, Courseware, Textbook, Chapter, HomeworkSourceType, QuestionSourceMode } from '@/types'
 import { isBusyStatus, useBusyPoll } from '@/utils/busyPoll'
 import dayjs from 'dayjs'
@@ -312,6 +332,11 @@ import dayjs from 'dayjs'
 const edu = useEducationStore()
 const router = useRouter()
 const papers = ref<HomeworkPaper[]>([])
+const showCollab = ref(false)
+const collabIds = ref<number[]>([])
+const collabOptions = computed(() =>
+  papers.value.filter(p => p.can_manage_collab).map(p => ({ id: p.id, title: p.title })),
+)
 const coursewares = ref<Courseware[]>([])
 const textbooks = ref<Textbook[]>([])
 const chapters = ref<Chapter[]>([])
@@ -786,6 +811,16 @@ async function doExport(fmt: 'docx' | 'pdf') {
   } finally {
     exporting.value = ''
   }
+}
+
+function openBatchCollab() {
+  collabIds.value = []
+  showCollab.value = true
+}
+
+function openCollab(row: HomeworkPaper) {
+  collabIds.value = [row.id]
+  showCollab.value = true
 }
 
 async function deletePaper(id: number) {

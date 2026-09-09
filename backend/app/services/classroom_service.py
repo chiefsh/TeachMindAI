@@ -1,4 +1,4 @@
-"""班级与花名册：行政班 CRUD、学生归班、从旧 class_name 回填。"""
+"""班级与花名册：行政班全站公共；花名册跟班走。"""
 from __future__ import annotations
 
 from sqlalchemy import select, func
@@ -7,14 +7,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.student import SchoolClass, Student
 
 
-async def get_class(db: AsyncSession, class_id: int, teacher_id: int) -> SchoolClass | None:
+async def get_class(db: AsyncSession, class_id: int, teacher_id: int | None = None) -> SchoolClass | None:
     return (await db.execute(
-        select(SchoolClass).where(SchoolClass.id == class_id, SchoolClass.teacher_id == teacher_id)
+        select(SchoolClass).where(SchoolClass.id == class_id)
     )).scalar_one_or_none()
 
 
+async def _class_by_name(db: AsyncSession, grade_id: int, name: str, exclude_id: int | None = None) -> SchoolClass | None:
+    q = select(SchoolClass).where(SchoolClass.grade_id == grade_id, SchoolClass.name == name)
+    if exclude_id:
+        q = q.where(SchoolClass.id != exclude_id)
+    return (await db.execute(q)).scalar_one_or_none()
+
+
 async def backfill_from_names(db: AsyncSession, teacher_id: int, grade_id: int | None = None):
-    """把仅有 class_name、尚未挂 class_id 的学生收成班级。"""
+    """把仅有 class_name、尚未挂 class_id 的学生收到已有公共班，没有则建班。"""
     q = select(Student.grade_id, Student.class_name).where(
         Student.teacher_id == teacher_id,
         Student.class_id.is_(None),
@@ -26,17 +33,12 @@ async def backfill_from_names(db: AsyncSession, teacher_id: int, grade_id: int |
     pairs = {(g, n) for g, n in (await db.execute(q.distinct())).all() if n}
     if not pairs:
         return
-    existing = list((await db.execute(
-        select(SchoolClass).where(SchoolClass.teacher_id == teacher_id)
-    )).scalars().all())
-    by_key = {(c.grade_id, c.name): c for c in existing}
     for gid, name in pairs:
-        cls = by_key.get((gid, name))
+        cls = await _class_by_name(db, gid, name[:32])
         if not cls:
             cls = SchoolClass(teacher_id=teacher_id, grade_id=gid, name=name[:32])
             db.add(cls)
             await db.flush()
-            by_key[(gid, name)] = cls
         students = (await db.execute(
             select(Student).where(
                 Student.teacher_id == teacher_id,
@@ -61,7 +63,7 @@ def _class_out(row: SchoolClass, student_count: int) -> dict:
 
 async def list_classes(db: AsyncSession, teacher_id: int, grade_id: int | None = None) -> list[dict]:
     await backfill_from_names(db, teacher_id, grade_id)
-    q = select(SchoolClass).where(SchoolClass.teacher_id == teacher_id)
+    q = select(SchoolClass)
     if grade_id:
         q = q.where(SchoolClass.grade_id == grade_id)
     rows = list((await db.execute(q.order_by(SchoolClass.grade_id, SchoolClass.name))).scalars().all())
@@ -69,7 +71,7 @@ async def list_classes(db: AsyncSession, teacher_id: int, grade_id: int | None =
     if rows:
         cnt_q = (
             select(Student.class_id, func.count(Student.id))
-            .where(Student.teacher_id == teacher_id, Student.class_id.in_([c.id for c in rows]))
+            .where(Student.class_id.in_([c.id for c in rows]))
             .group_by(Student.class_id)
         )
         counts = dict((await db.execute(cnt_q)).all())
@@ -81,14 +83,7 @@ async def create_class(db: AsyncSession, teacher_id: int, grade_id: int, name: s
     if not name:
         raise ValueError("请填写班级名称")
     name = name[:32]
-    dup = (await db.execute(
-        select(SchoolClass).where(
-            SchoolClass.teacher_id == teacher_id,
-            SchoolClass.grade_id == grade_id,
-            SchoolClass.name == name,
-        )
-    )).scalar_one_or_none()
-    if dup:
+    if await _class_by_name(db, grade_id, name):
         raise ValueError("该年级已有同名班级")
     row = SchoolClass(teacher_id=teacher_id, grade_id=grade_id, name=name)
     db.add(row)
@@ -98,25 +93,17 @@ async def create_class(db: AsyncSession, teacher_id: int, grade_id: int, name: s
 
 
 async def rename_class(db: AsyncSession, teacher_id: int, class_id: int, name: str) -> SchoolClass:
-    row = await get_class(db, class_id, teacher_id)
+    row = await get_class(db, class_id)
     if not row:
         raise ValueError("班级不存在")
     name = (name or "").strip()[:32]
     if not name:
         raise ValueError("请填写班级名称")
-    dup = (await db.execute(
-        select(SchoolClass).where(
-            SchoolClass.teacher_id == teacher_id,
-            SchoolClass.grade_id == row.grade_id,
-            SchoolClass.name == name,
-            SchoolClass.id != class_id,
-        )
-    )).scalar_one_or_none()
-    if dup:
+    if await _class_by_name(db, row.grade_id, name, exclude_id=class_id):
         raise ValueError("该年级已有同名班级")
     row.name = name
     students = (await db.execute(
-        select(Student).where(Student.class_id == class_id, Student.teacher_id == teacher_id)
+        select(Student).where(Student.class_id == class_id)
     )).scalars().all()
     for s in students:
         s.class_name = name
@@ -125,7 +112,7 @@ async def rename_class(db: AsyncSession, teacher_id: int, class_id: int, name: s
 
 
 async def delete_class(db: AsyncSession, teacher_id: int, class_id: int):
-    row = await get_class(db, class_id, teacher_id)
+    row = await get_class(db, class_id)
     if not row:
         raise ValueError("班级不存在")
     n = (await db.execute(
@@ -140,20 +127,14 @@ async def resolve_class(
     db: AsyncSession, teacher_id: int, class_id: int | None, class_name: str | None, grade_id: int,
 ) -> SchoolClass | None:
     if class_id:
-        cls = await get_class(db, class_id, teacher_id)
+        cls = await get_class(db, class_id)
         if not cls:
             raise ValueError("班级不存在")
         return cls
     name = (class_name or "").strip()
     if not name:
         return None
-    cls = (await db.execute(
-        select(SchoolClass).where(
-            SchoolClass.teacher_id == teacher_id,
-            SchoolClass.grade_id == grade_id,
-            SchoolClass.name == name,
-        )
-    )).scalar_one_or_none()
+    cls = await _class_by_name(db, grade_id, name[:32])
     if cls:
         return cls
     return await create_class(db, teacher_id, grade_id, name)
@@ -164,7 +145,6 @@ async def find_student_by_no(
 ) -> Student | None:
     return (await db.execute(
         select(Student).where(
-            Student.teacher_id == teacher_id,
             Student.grade_id == grade_id,
             Student.student_no == student_no,
         )
@@ -213,7 +193,7 @@ async def update_student(
     db: AsyncSession, teacher_id: int, student_id: int, data,
 ) -> Student:
     stu = (await db.execute(
-        select(Student).where(Student.id == student_id, Student.teacher_id == teacher_id)
+        select(Student).where(Student.id == student_id)
     )).scalar_one_or_none()
     if not stu:
         raise ValueError("学生不存在")
@@ -232,7 +212,7 @@ async def update_student(
         stu.name = name[:64]
     if "class_id" in data.model_fields_set:
         if data.class_id:
-            cls = await get_class(db, data.class_id, teacher_id)
+            cls = await get_class(db, data.class_id)
             if not cls:
                 raise ValueError("班级不存在")
             attach_class(stu, cls)
@@ -243,7 +223,7 @@ async def update_student(
 
 async def delete_student(db: AsyncSession, teacher_id: int, student_id: int):
     stu = (await db.execute(
-        select(Student).where(Student.id == student_id, Student.teacher_id == teacher_id)
+        select(Student).where(Student.id == student_id)
     )).scalar_one_or_none()
     if not stu:
         raise ValueError("学生不存在")
@@ -253,7 +233,7 @@ async def delete_student(db: AsyncSession, teacher_id: int, student_id: int):
 async def batch_add_students(
     db: AsyncSession, teacher_id: int, class_id: int, rows: list,
 ) -> dict:
-    cls = await get_class(db, class_id, teacher_id)
+    cls = await get_class(db, class_id)
     if not cls:
         raise ValueError("班级不存在")
     created = 0

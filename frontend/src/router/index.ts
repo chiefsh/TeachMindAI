@@ -16,32 +16,47 @@ const router = createRouter({
       redirect: '/dashboard',
       children: [
         { path: 'dashboard',    name: 'Dashboard',   component: () => import('@/views/dashboard/DashboardView.vue') },
-        { path: 'textbook',     name: 'Textbook',    component: () => import('@/views/textbook/TextbookView.vue') },
-        { path: 'question-bank',name: 'QuestionBank',component: () => import('@/views/question-bank/QuestionBankView.vue') },
-        { path: 'courseware',   name: 'Courseware',  component: () => import('@/views/courseware/CoursewareView.vue') },
-        { path: 'courseware/:id', name: 'CoursewareDetail', component: () => import('@/views/courseware/CoursewareDetail.vue') },
-        { path: 'students',     name: 'Students',    component: () => import('@/views/students/StudentsView.vue') },
-        { path: 'homework',     name: 'Homework',    component: () => import('@/views/homework/HomeworkView.vue') },
-        { path: 'grading',      name: 'Grading',     component: () => import('@/views/grading/GradingView.vue') },
-        { path: 'grading/:id',  name: 'GradingDetail', component: () => import('@/views/grading/GradingDetail.vue') },
-        { path: 'grading/:id/student/:studentId', name: 'GradingStudent', component: () => import('@/views/grading/GradingStudent.vue') },
-        { path: 'wrong-questions', name: 'WrongQuestions', component: () => import('@/views/grading/WrongQuestionsView.vue') },
-        { path: 'question-analysis', name: 'QuestionAnalysis', component: () => import('@/views/question-analysis/QuestionAnalysisView.vue') },
-        { path: 'question-analysis/:id', name: 'QuestionAnalysisDetail', component: () => import('@/views/question-analysis/QuestionAnalysisDetail.vue') },
-        { path: 'grades',       name: 'Grades',      component: () => import('@/views/grades/GradesView.vue') },
-        { path: 'knowledge',    name: 'Knowledge',   component: () => import('@/views/knowledge/KnowledgeGraphView.vue') },
-        { path: 'settings', redirect: '/settings/profile' },
+        { path: 'students',     name: 'Students',    component: () => import('@/views/students/StudentsView.vue'), meta: { perm: 'classroom.view' } },
+        { path: 'textbook',     name: 'Textbook',    component: () => import('@/views/textbook/TextbookView.vue'), meta: { perm: 'textbook.view' } },
+        { path: 'question-bank',name: 'QuestionBank',component: () => import('@/views/question-bank/QuestionBankView.vue'), meta: { perm: 'question.view' } },
+        { path: 'courseware',   name: 'Courseware',  component: () => import('@/views/courseware/CoursewareView.vue'), meta: { perm: 'courseware.view' } },
+        { path: 'courseware/:id', name: 'CoursewareDetail', component: () => import('@/views/courseware/CoursewareDetail.vue'), meta: { perm: 'courseware.view' } },
+        { path: 'homework',     name: 'Homework',    component: () => import('@/views/homework/HomeworkView.vue'), meta: { perm: 'homework.view' } },
+        { path: 'grading',      name: 'Grading',     component: () => import('@/views/grading/GradingView.vue'), meta: { perm: 'grading.view' } },
+        { path: 'grading/:id',  name: 'GradingDetail', component: () => import('@/views/grading/GradingDetail.vue'), meta: { perm: 'grading.view' } },
+        { path: 'grading/:id/student/:studentId', name: 'GradingStudent', component: () => import('@/views/grading/GradingStudent.vue'), meta: { perm: 'grading.view' } },
+        { path: 'wrong-questions', name: 'WrongQuestions', component: () => import('@/views/grading/WrongQuestionsView.vue'), meta: { perm: 'wrong_question.view' } },
+        { path: 'question-analysis', name: 'QuestionAnalysis', component: () => import('@/views/question-analysis/QuestionAnalysisView.vue'), meta: { perm: 'analysis.view' } },
+        { path: 'question-analysis/:id', name: 'QuestionAnalysisDetail', component: () => import('@/views/question-analysis/QuestionAnalysisDetail.vue'), meta: { perm: 'analysis.view' } },
+        { path: 'grades',       name: 'Grades',      component: () => import('@/views/grades/GradesView.vue'), meta: { perm: 'grade.view' } },
+        { path: 'knowledge',    name: 'Knowledge',   component: () => import('@/views/knowledge/KnowledgeGraphView.vue'), meta: { perm: 'knowledge.view' } },
+        { path: 'users',        name: 'Users',       component: () => import('@/views/org/UsersView.vue'), meta: { perm: 'user.view' } },
+        { path: 'roles',        name: 'Roles',       component: () => import('@/views/org/RolesView.vue'), meta: { perm: 'role.view' } },
+        { path: 'settings', redirect: '/settings/models' },
+        { path: 'settings/profile', redirect: '/dashboard' },
         { path: 'settings/:tab', name: 'Settings', component: () => import('@/views/settings/SettingsView.vue') },
       ],
     },
   ],
 })
 
-router.beforeEach((to) => {
+router.beforeEach(async (to) => {
   NProgress.start()
   const auth = useAuthStore()
   if (!to.meta.public && !auth.isLoggedIn()) {
     return '/login'
+  }
+  if (!to.meta.public && auth.isLoggedIn() && !auth.teacher?.permissions) {
+    await auth.fetchMe()
+  }
+  const perm = to.meta.perm as string | undefined
+  if (perm && auth.isLoggedIn() && !auth.can(perm)) {
+    return '/dashboard'
+  }
+  if (to.name === 'Settings' && auth.isLoggedIn()) {
+    const tab = String(to.params.tab || '')
+    if (tab === 'models' && !auth.can('settings.llm')) return '/dashboard'
+    if (tab === 'prompts' && !auth.can('settings.prompt')) return '/dashboard'
   }
 })
 

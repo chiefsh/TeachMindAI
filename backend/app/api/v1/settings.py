@@ -18,7 +18,7 @@ from app.schemas.llm_config import (
     EmbeddingConfigOut, EmbeddingConfigUpdate,
 )
 from app.services.embedding_service import EMBEDDING_SETTING_KEY, load_embedding_row, resolve_embedding, embed_text
-from app.api.deps import get_current_teacher
+from app.api.deps import get_current_teacher, require_perm
 
 router = APIRouter(prefix="/settings", tags=["系统设置"])
 
@@ -47,7 +47,7 @@ async def get_providers():
 
 
 @router.post("/fetch-models")
-async def fetch_models(data: FetchModelsRequest, teacher: Teacher = Depends(get_current_teacher)):
+async def fetch_models(data: FetchModelsRequest, teacher: Teacher = Depends(require_perm("settings.llm"))):
     """根据供应商动态获取可用模型列表。
     优先调用供应商的 OpenAI 兼容 /models 接口；失败则回退到预设列表。
     """
@@ -77,11 +77,11 @@ async def fetch_models(data: FetchModelsRequest, teacher: Teacher = Depends(get_
 
 @router.get("/llm-configs", response_model=list[LLMConfigOut])
 async def list_llm_configs(
-    teacher: Teacher = Depends(get_current_teacher),
+    teacher: Teacher = Depends(require_perm("settings.llm")),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
-        select(LLMConfig).where(LLMConfig.teacher_id == teacher.id).order_by(LLMConfig.created_at)
+        select(LLMConfig).where(LLMConfig.teacher_id.is_(None)).order_by(LLMConfig.created_at)
     )
     return result.scalars().all()
 
@@ -89,19 +89,14 @@ async def list_llm_configs(
 @router.post("/llm-configs", response_model=LLMConfigOut, status_code=201)
 async def create_llm_config(
     data: LLMConfigCreate,
-    teacher: Teacher = Depends(get_current_teacher),
+    teacher: Teacher = Depends(require_perm("settings.llm")),
     db: AsyncSession = Depends(get_db),
 ):
     if data.is_default:
-        # 取消其他默认
-        result = await db.execute(
-            select(LLMConfig).where(LLMConfig.teacher_id == teacher.id, LLMConfig.is_default == True)
-        )
-        for c in result.scalars().all():
-            c.is_default = False
+        await _clear_system_defaults(db)
 
     cfg = LLMConfig(
-        teacher_id=teacher.id,
+        teacher_id=None,
         provider=data.provider,
         model_name=data.model_name,
         display_name=data.display_name,
@@ -121,17 +116,13 @@ async def create_llm_config(
 async def update_llm_config(
     cfg_id: int,
     data: LLMConfigUpdate,
-    teacher: Teacher = Depends(get_current_teacher),
+    teacher: Teacher = Depends(require_perm("settings.llm")),
     db: AsyncSession = Depends(get_db),
 ):
-    cfg = await _get_or_404(cfg_id, teacher.id, db)
+    cfg = await _get_or_404(cfg_id, db)
 
     if data.is_default:
-        result = await db.execute(
-            select(LLMConfig).where(LLMConfig.teacher_id == teacher.id, LLMConfig.is_default == True)
-        )
-        for c in result.scalars().all():
-            c.is_default = False
+        await _clear_system_defaults(db)
 
     if data.display_name is not None:
         cfg.display_name = data.display_name
@@ -156,21 +147,21 @@ async def update_llm_config(
 @router.delete("/llm-configs/{cfg_id}", status_code=204)
 async def delete_llm_config(
     cfg_id: int,
-    teacher: Teacher = Depends(get_current_teacher),
+    teacher: Teacher = Depends(require_perm("settings.llm")),
     db: AsyncSession = Depends(get_db),
 ):
-    cfg = await _get_or_404(cfg_id, teacher.id, db)
+    cfg = await _get_or_404(cfg_id, db)
     await db.delete(cfg)
 
 
 @router.post("/llm-configs/{cfg_id}/test")
 async def test_llm_config(
     cfg_id: int,
-    teacher: Teacher = Depends(get_current_teacher),
+    teacher: Teacher = Depends(require_perm("settings.llm")),
     db: AsyncSession = Depends(get_db),
 ):
     """测试 LLM 配置是否可用"""
-    cfg = await _get_or_404(cfg_id, teacher.id, db)
+    cfg = await _get_or_404(cfg_id, db)
     api_key = decrypt_api_key(cfg.api_key_encrypted) if cfg.api_key_encrypted else None
     try:
         from app.core.proxy import sanitize_proxy_env
@@ -187,9 +178,17 @@ async def test_llm_config(
         return {"success": False, "error": str(e)}
 
 
-async def _get_or_404(cfg_id: int, teacher_id: int, db: AsyncSession) -> LLMConfig:
+async def _clear_system_defaults(db: AsyncSession):
     result = await db.execute(
-        select(LLMConfig).where(LLMConfig.id == cfg_id, LLMConfig.teacher_id == teacher_id)
+        select(LLMConfig).where(LLMConfig.teacher_id.is_(None), LLMConfig.is_default == True)
+    )
+    for c in result.scalars().all():
+        c.is_default = False
+
+
+async def _get_or_404(cfg_id: int, db: AsyncSession) -> LLMConfig:
+    result = await db.execute(
+        select(LLMConfig).where(LLMConfig.id == cfg_id, LLMConfig.teacher_id.is_(None))
     )
     cfg = result.scalar_one_or_none()
     if not cfg:
@@ -231,7 +230,7 @@ def _embedding_out(val: dict | None) -> EmbeddingConfigOut:
 
 @router.get("/embedding", response_model=EmbeddingConfigOut)
 async def get_embedding_config(
-    teacher: Teacher = Depends(get_current_teacher),
+    teacher: Teacher = Depends(require_perm("settings.llm")),
     db: AsyncSession = Depends(get_db),
 ):
     rec = await load_embedding_row(db, teacher.id)
@@ -242,7 +241,7 @@ async def get_embedding_config(
 @router.put("/embedding", response_model=EmbeddingConfigOut)
 async def save_embedding_config(
     data: EmbeddingConfigUpdate,
-    teacher: Teacher = Depends(get_current_teacher),
+    teacher: Teacher = Depends(require_perm("settings.llm")),
     db: AsyncSession = Depends(get_db),
 ):
     model = (data.model or "").strip()
@@ -274,7 +273,7 @@ async def save_embedding_config(
 
 @router.post("/embedding/test")
 async def test_embedding_config(
-    teacher: Teacher = Depends(get_current_teacher),
+    teacher: Teacher = Depends(require_perm("settings.llm")),
     db: AsyncSession = Depends(get_db),
 ):
     gw = await resolve_embedding(db, teacher.id)
@@ -312,7 +311,7 @@ async def _load_prompt_row(db, subject_name, teacher_id):
 
 @router.get("/subject-prompts", response_model=list[SubjectPromptOut])
 async def list_subject_prompts(
-    teacher: Teacher = Depends(get_current_teacher),
+    teacher: Teacher = Depends(require_perm("settings.prompt")),
     db: AsyncSession = Depends(get_db),
 ):
     """列出各科目的有效提示词（教师覆盖优先，否则系统默认）。"""
@@ -349,7 +348,7 @@ async def list_subject_prompts(
 async def upsert_subject_prompt(
     subject_name: str,
     data: SubjectPromptUpdate,
-    teacher: Teacher = Depends(get_current_teacher),
+    teacher: Teacher = Depends(require_perm("settings.prompt")),
     db: AsyncSession = Depends(get_db),
 ):
     """新增或更新教师对某科目的个性化提示词。"""
@@ -379,7 +378,7 @@ async def upsert_subject_prompt(
 @router.delete("/subject-prompts/{subject_name}", response_model=SubjectPromptOut)
 async def reset_subject_prompt(
     subject_name: str,
-    teacher: Teacher = Depends(get_current_teacher),
+    teacher: Teacher = Depends(require_perm("settings.prompt")),
     db: AsyncSession = Depends(get_db),
 ):
     """删除教师覆盖，恢复为系统默认提示词。"""

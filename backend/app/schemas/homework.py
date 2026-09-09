@@ -50,6 +50,10 @@ class HomeworkOut(BaseModel):
     grade_id: int | None = None
     subject_id: int | None = None
     created_at: datetime
+    creator_name: str | None = None
+    is_owner: bool = False
+    can_edit: bool = False
+    can_manage_collab: bool = False
     model_config = {"from_attributes": True}
 
 

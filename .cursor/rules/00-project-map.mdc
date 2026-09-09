@@ -14,6 +14,7 @@ alwaysApply: true
 | 功能 | 先打开 |
 |---|---|
 | 登录/鉴权 | `backend/app/api/v1/auth.py`、`frontend/src/stores/auth.ts`、`views/LoginView.vue` |
+| 用户/角色 | `api/v1/rbac.py`、`models/rbac.py`、`core/permissions.py`、`core/access.py`、`services/rbac_service.py`、`views/org/` |
 | 学段年级科目 | `api/v1/education.py`、`models/education.py`、`stores/education.ts` |
 | 工作台 | `api/v1/dashboard.py`、`views/dashboard/` |
 | 课本 | `api/v1/textbook.py`、`models/textbook.py`、`views/textbook/`、`file_service.parse_textbook_file` |

@@ -5,13 +5,16 @@
         <h1 class="page-title">课件生成</h1>
         <p class="page-subtitle">基于课本章节，利用 AI 自动生成教学课件</p>
       </div>
-      <el-button type="primary" :icon="MagicStick" @click="openCreate">生成课件</el-button>
+      <div class="flex flex-wrap gap-2">
+        <el-button v-if="auth.can('courseware.edit')" @click="openBatchCollab">批量设置协作者</el-button>
+        <el-button v-if="auth.can('courseware.create')" type="primary" :icon="MagicStick" @click="openCreate">生成课件</el-button>
+      </div>
     </div>
 
     <!-- 课件卡片列表 -->
     <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
       <div v-for="cw in coursewares" :key="cw.id"
-        class="card !p-4 hover:shadow-md transition-shadow cursor-pointer overflow-hidden"
+        class="card !p-4 hover:shadow-md transition-shadow cursor-pointer overflow-hidden relative"
         @click="router.push(`/courseware/${cw.id}`)"
       >
         <div class="flex items-start gap-3">
@@ -35,6 +38,7 @@
               </el-tag>
               <el-tag v-if="cw.is_interactive" size="small" type="warning">互动</el-tag>
               <span class="text-xs text-slate-400">{{ formatDate(cw.created_at) }}</span>
+              <span v-if="cw.creator_name" class="text-xs text-slate-400">{{ cw.creator_name }}</span>
             </div>
           </div>
         </div>
@@ -56,12 +60,13 @@
             />
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item command="rename" :icon="EditPen">重命名</el-dropdown-item>
-                <el-dropdown-item command="copy" :icon="CopyDocument">复制</el-dropdown-item>
-                <el-dropdown-item command="regen" :icon="RefreshRight" :disabled="!canRegenerate(cw)">
+                <el-dropdown-item v-if="canEditCw(cw)" command="rename" :icon="EditPen">重命名</el-dropdown-item>
+                <el-dropdown-item v-if="auth.can('courseware.create')" command="copy" :icon="CopyDocument">复制</el-dropdown-item>
+                <el-dropdown-item v-if="canEditCw(cw)" command="regen" :icon="RefreshRight" :disabled="!canRegenerate(cw)">
                   重新生成
                 </el-dropdown-item>
-                <el-dropdown-item command="delete" :icon="Delete" divided>删除</el-dropdown-item>
+                <el-dropdown-item v-if="canManageCw(cw)" command="delete" :icon="Delete" divided>删除</el-dropdown-item>
+                <el-dropdown-item v-if="canManageCw(cw)" command="collab" :icon="User">协作者</el-dropdown-item>
               </el-dropdown-menu>
             </template>
           </el-dropdown>
@@ -197,18 +202,26 @@
       :resource-id="shareTarget?.id || 0"
       :resource-title="shareTarget?.title"
     />
+    <CollaboratorsDialog
+      v-model="showCollab"
+      resource-type="courseware"
+      :options="collabOptions"
+      :selected-ids="collabIds"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, nextTick, watch } from 'vue'
+import { ref, reactive, onMounted, nextTick, watch, computed } from 'vue'
 import { watchDebounced } from '@vueuse/core'
 import { useRouter, useRoute } from 'vue-router'
 import { coursewareApi, textbookApi } from '@/api/modules'
 import { useEducationStore } from '@/stores/education'
+import { useAuthStore } from '@/stores/auth'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { MagicStick, View, Delete, VideoPlay, RefreshRight, CopyDocument, EditPen, Share, MoreFilled } from '@element-plus/icons-vue'
+import { MagicStick, View, Delete, VideoPlay, RefreshRight, CopyDocument, EditPen, Share, MoreFilled, User } from '@element-plus/icons-vue'
 import ShareDialog from '@/components/ShareDialog.vue'
+import CollaboratorsDialog from '@/components/CollaboratorsDialog.vue'
 import type { Courseware, Textbook, Chapter, RenderStyle } from '@/types'
 import { THEMES, DEFAULT_THEME, getTheme } from '@/utils/coursewareTheme'
 import { isBusyStatus, useBusyPoll } from '@/utils/busyPoll'
@@ -217,6 +230,7 @@ import dayjs from 'dayjs'
 const router = useRouter()
 const route = useRoute()
 const edu = useEducationStore()
+const auth = useAuthStore()
 const coursewares = ref<Courseware[]>([])
 const textbooks = ref<Textbook[]>([])
 const total = ref(0)
@@ -225,6 +239,11 @@ const pageSize = 12
 const loading = ref(false)
 const showShare = ref(false)
 const shareTarget = ref<Courseware | null>(null)
+const showCollab = ref(false)
+const collabIds = ref<number[]>([])
+const collabOptions = computed(() =>
+  coursewares.value.filter(c => c.can_manage_collab).map(c => ({ id: c.id, title: c.title })),
+)
 const showCreate = ref(false)
 const creating = ref(false)
 const regenId = ref<number | null>(null)
@@ -324,6 +343,14 @@ function resetForm() {
   form.interactive_features = []
   form.is_interactive = false
   chapterOptions.value = []
+}
+
+function canEditCw(cw: Courseware) {
+  return auth.can('courseware.edit') && cw.can_edit !== false
+}
+
+function canManageCw(cw: Courseware) {
+  return auth.can('courseware.edit') && cw.can_manage_collab !== false
 }
 
 function canRegenerate(cw: Courseware) {
@@ -444,6 +471,11 @@ async function handleCreate() {
   } finally { creating.value = false }
 }
 
+function openBatchCollab() {
+  collabIds.value = []
+  showCollab.value = true
+}
+
 function openShare(cw: Courseware) {
   shareTarget.value = cw
   showShare.value = true
@@ -509,6 +541,10 @@ function onCardMore(cw: Courseware, cmd: string) {
   if (cmd === 'rename') void renameCw(cw)
   else if (cmd === 'copy') void openCopy(cw)
   else if (cmd === 'regen') void openRegenerate(cw)
+  else if (cmd === 'collab') {
+    collabIds.value = [cw.id]
+    showCollab.value = true
+  }
   else if (cmd === 'delete') void confirmDeleteCw(cw)
 }
 

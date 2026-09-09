@@ -13,6 +13,7 @@ from app.schemas.auth import (
     TeacherProfileUpdate, ChangePasswordIn, PublicAuthConfig,
 )
 from app.api.deps import get_current_teacher, bearer_scheme
+from app.services.rbac_service import profile_dict
 from fastapi.security import HTTPAuthorizationCredentials
 
 router = APIRouter(prefix="/auth", tags=["认证"])
@@ -43,6 +44,12 @@ async def register(data: TeacherRegister, db: AsyncSession = Depends(get_db)):
         hashed_password=get_password_hash(data.password),
     )
     db.add(teacher)
+    await db.flush()
+    from sqlalchemy import select as sel
+    from app.models.rbac import UserRole, Role
+    creator = (await db.execute(sel(Role).where(Role.code == "creator", Role.is_system.is_(True)))).scalar_one_or_none()
+    if creator:
+        db.add(UserRole(teacher_id=teacher.id, role_id=creator.id))
     await db.flush()
     await db.refresh(teacher)
     return teacher
@@ -81,7 +88,7 @@ async def logout(
 
 @router.get("/me", response_model=TeacherProfile)
 async def get_me(teacher: Teacher = Depends(get_current_teacher)):
-    return teacher
+    return profile_dict(teacher)
 
 
 @router.patch("/me", response_model=TeacherProfile)
@@ -101,7 +108,9 @@ async def update_me(
         teacher.email = data.email
     await db.commit()
     await db.refresh(teacher)
-    return teacher
+    from app.services.rbac_service import load_rbac
+    await load_rbac(db, teacher)
+    return profile_dict(teacher)
 
 
 @router.post("/change-password")

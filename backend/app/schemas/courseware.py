@@ -59,6 +59,10 @@ class CoursewareOut(BaseModel):
     subject_id: int | None = None
     task_id: str | None
     created_at: datetime
+    creator_name: str | None = None
+    is_owner: bool = False
+    can_edit: bool = False
+    can_manage_collab: bool = False
     model_config = {"from_attributes": True}
 
 
@@ -155,3 +159,19 @@ class CoursewareExportIn(BaseModel):
     """PPT 导出时可附带互动页截图（slide 下标 → data URL / raw base64）。"""
     format: str = "pptx"
     shots: dict[str, str] | None = None
+
+
+class CoursewareVersionOut(BaseModel):
+    id: int
+    courseware_id: int
+    teacher_id: int
+    title: str
+    render_style: str
+    theme: str
+    created_at: datetime
+    creator_name: str | None = None
+    model_config = {"from_attributes": True}
+
+
+class CoursewareVersionDetail(CoursewareVersionOut):
+    content: dict

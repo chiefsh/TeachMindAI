@@ -10,6 +10,8 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
+from app.core.access import peer_ids_by_teacher_id
+
 from app.models.question import Question, QuestionType, DifficultyLevel, coerce_tags
 from app.models.textbook import ParseStatus
 
@@ -197,7 +199,7 @@ async def apply_question_update(db: AsyncSession, q: Question, data: dict) -> Qu
     if digest != (q.content_hash or ""):
         clash = (await db.execute(
             select(Question.id).where(
-                Question.teacher_id == q.teacher_id,
+                Question.teacher_id.in_(await peer_ids_by_teacher_id(db, q.teacher_id)),
                 Question.content_hash == digest,
                 Question.id != q.id,
             ).limit(1)
@@ -225,7 +227,7 @@ async def upsert_question_models(
     if hashes:
         rows = (await db.execute(
             select(Question).where(
-                Question.teacher_id == teacher_id,
+                Question.teacher_id.in_(await peer_ids_by_teacher_id(db, teacher_id)),
                 Question.content_hash.in_(list(set(hashes))),
             )
         )).scalars().all()
@@ -297,7 +299,7 @@ async def upsert_payloads(
         digest = question_content_hash(content[:_CONTENT_MAX], item.get("options"), qtype)
         hit = (await db.execute(
             select(Question).where(
-                Question.teacher_id == teacher_id,
+                Question.teacher_id.in_(await peer_ids_by_teacher_id(db, teacher_id)),
                 Question.content_hash == digest,
             )
         )).scalars().first()
@@ -368,9 +370,10 @@ async def find_questions_by_hashes(
     uniq = [h for h in dict.fromkeys(hashes) if h]
     if not uniq:
         return {}
+    peers = await peer_ids_by_teacher_id(db, teacher_id)
     rows = (await db.execute(
         select(Question).where(
-            Question.teacher_id == teacher_id,
+            Question.teacher_id.in_(peers),
             Question.content_hash.in_(uniq),
         )
     )).scalars().all()
@@ -413,7 +416,7 @@ async def upsert_and_write_analysis(
     digest = _digest_of(content, options, question_type)
     bank = (await db.execute(
         select(Question).where(
-            Question.teacher_id == teacher_id,
+            Question.teacher_id.in_(await peer_ids_by_teacher_id(db, teacher_id)),
             Question.content_hash == digest,
         )
     )).scalars().first()

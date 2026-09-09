@@ -11,7 +11,8 @@ from app.models.courseware import Courseware
 from app.models.homework import HomeworkPaper, HomeworkQuestion
 from app.models.interaction import CoursewareSession, InteractionRecord
 from app.schemas.textbook import TextbookOut, ChapterOut, TextbookCreate, TextbookRelatedCounts
-from app.api.deps import get_current_teacher
+from app.api.deps import get_current_teacher, require_perm
+from app.core.access import apply_org_scope, require_org_asset, stamp_org_assets
 from pydantic import BaseModel
 import asyncio, base64, uuid, os
 
@@ -33,7 +34,8 @@ async def list_textbooks(
     teacher: Teacher = Depends(get_current_teacher),
     db: AsyncSession = Depends(get_db),
 ):
-    q = select(Textbook).where(Textbook.teacher_id == teacher.id)
+    q = select(Textbook)
+    q = await apply_org_scope(q, Textbook.teacher_id, db, teacher)
     if subject_id:
         q = q.where(Textbook.subject_id == subject_id)
     if grade_id:
@@ -42,6 +44,7 @@ async def list_textbooks(
     total = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar() or 0
     q = q.order_by(Textbook.created_at.desc()).offset((page - 1) * page_size).limit(page_size)
     items = (await db.execute(q)).scalars().all()
+    await stamp_org_assets(db, items)
     return {
         "total": total, "page": page, "page_size": page_size,
         "items": [TextbookOut.model_validate(t) for t in items],
@@ -54,7 +57,7 @@ async def upload_textbook(
     title: str = Form(...),
     subject_id: int = Form(...),
     grade_id: int = Form(...),
-    teacher: Teacher = Depends(get_current_teacher),
+    teacher: Teacher = Depends(require_perm("textbook.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     ext = _ext(file.filename or "")
@@ -97,7 +100,7 @@ async def get_textbook(
     teacher: Teacher = Depends(get_current_teacher),
     db: AsyncSession = Depends(get_db),
 ):
-    tb = await _get_or_404(textbook_id, teacher.id, db)
+    tb = await _get_or_404(textbook_id, teacher, db)
     return tb
 
 
@@ -107,7 +110,7 @@ async def get_preview_url(
     teacher: Teacher = Depends(get_current_teacher),
     db: AsyncSession = Depends(get_db),
 ):
-    tb = await _get_or_404(textbook_id, teacher.id, db)
+    tb = await _get_or_404(textbook_id, teacher, db)
     extra = None
     if tb.file_type == "pdf":
         extra = {
@@ -126,7 +129,7 @@ async def get_chapters(
     teacher: Teacher = Depends(get_current_teacher),
     db: AsyncSession = Depends(get_db),
 ):
-    await _get_or_404(textbook_id, teacher.id, db)
+    await _get_or_404(textbook_id, teacher, db)
     rows = (
         await db.execute(
             select(TextbookChapter)
@@ -158,11 +161,11 @@ async def get_chapters(
 @router.post("/{textbook_id}/reparse", response_model=TextbookOut)
 async def reparse_textbook(
     textbook_id: int,
-    teacher: Teacher = Depends(get_current_teacher),
+    teacher: Teacher = Depends(require_perm("textbook.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     """重新解析课本：清空旧章节，重置状态并重新触发解析任务"""
-    tb = await _get_or_404(textbook_id, teacher.id, db)
+    tb = await _get_or_404(textbook_id, teacher, db)
     # 章节树自引用 parent_id，须先断开父子再删，否则 MySQL 1451
     await db.execute(
         update(TextbookChapter)
@@ -193,17 +196,17 @@ async def get_related_counts(
     db: AsyncSession = Depends(get_db),
 ):
     """删除前提示：该书关联的课件、作业/试卷及其试题数量。"""
-    await _get_or_404(textbook_id, teacher.id, db)
+    await _get_or_404(textbook_id, teacher, db)
     return await _count_related(textbook_id, db)
 
 
 @router.delete("/{textbook_id}", status_code=204)
 async def delete_textbook(
     textbook_id: int,
-    teacher: Teacher = Depends(get_current_teacher),
+    teacher: Teacher = Depends(require_perm("textbook.manage")),
     db: AsyncSession = Depends(get_db),
 ):
-    tb = await _get_or_404(textbook_id, teacher.id, db)
+    tb = await _get_or_404(textbook_id, teacher, db)
     await _purge_related(tb.id, db)
     # 章节树自引用 parent_id，须先断开再随课本删除
     await db.execute(
@@ -281,7 +284,7 @@ async def list_textbook_images(
     db: AsyncSession = Depends(get_db),
 ):
     """列出课本提取的插图（含临时访问 URL）"""
-    await _get_or_404(textbook_id, teacher.id, db)
+    await _get_or_404(textbook_id, teacher, db)
     result = await db.execute(
         select(TextbookImage)
         .where(TextbookImage.textbook_id == textbook_id)
@@ -311,11 +314,13 @@ async def resolve_image_urls(
     """把课件引用的图片 id 批量解析为可访问 URL"""
     if not data.ids:
         return {}
-    result = await db.execute(
+    q = (
         select(TextbookImage)
         .join(Textbook, Textbook.id == TextbookImage.textbook_id)
-        .where(TextbookImage.id.in_(data.ids), Textbook.teacher_id == teacher.id)
+        .where(TextbookImage.id.in_(data.ids))
     )
+    q = await apply_org_scope(q, Textbook.teacher_id, db, teacher)
+    result = await db.execute(q)
     images = result.scalars().all()
     return {
         str(img.id): get_presigned_url(
@@ -344,12 +349,14 @@ async def resolve_images_inline(
     if not data.ids:
         return {}
 
-    result = await db.execute(
+    q = (
         select(TextbookImage)
         .join(Textbook, Textbook.id == TextbookImage.textbook_id)
-        .where(TextbookImage.id.in_(data.ids), Textbook.teacher_id == teacher.id)
+        .where(TextbookImage.id.in_(data.ids))
         .order_by(TextbookImage.sort_order, TextbookImage.id)
     )
+    q = await apply_org_scope(q, Textbook.teacher_id, db, teacher)
+    result = await db.execute(q)
     images = result.scalars().all()
     if not images:
         return {}
@@ -376,11 +383,7 @@ async def resolve_images_inline(
     return out
 
 
-async def _get_or_404(textbook_id: int, teacher_id: int, db: AsyncSession) -> Textbook:
-    result = await db.execute(
-        select(Textbook).where(Textbook.id == textbook_id, Textbook.teacher_id == teacher_id)
-    )
+async def _get_or_404(textbook_id: int, teacher: Teacher, db: AsyncSession) -> Textbook:
+    result = await db.execute(select(Textbook).where(Textbook.id == textbook_id))
     tb = result.scalar_one_or_none()
-    if not tb:
-        raise HTTPException(status_code=404, detail="课本不存在")
-    return tb
+    return await require_org_asset(db, teacher, tb, "课本不存在")

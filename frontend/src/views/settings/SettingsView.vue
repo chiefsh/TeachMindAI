@@ -6,71 +6,17 @@
     </div>
 
     <div class="space-y-4">
-        <!-- 个人信息 -->
-        <template v-if="activeMenu === 'profile'">
+        <!-- 个人信息已迁至侧栏头像 -->
+        <template v-if="activeMenu === 'models'">
           <div class="card">
-            <h2 class="text-sm font-semibold text-slate-700 mb-4">基本资料</h2>
-            <el-form :model="profileForm" label-width="88px" class="max-w-md">
-              <el-form-item label="用户名">
-                <el-input :model-value="auth.teacher?.username" disabled />
-              </el-form-item>
-              <el-form-item label="真实姓名">
-                <el-input v-model="profileForm.real_name" placeholder="请输入真实姓名" maxlength="64" />
-              </el-form-item>
-              <el-form-item label="邮箱">
-                <el-input v-model="profileForm.email" placeholder="请输入邮箱" />
-              </el-form-item>
-              <el-form-item>
-                <el-button type="primary" :loading="profileSaving" @click="saveProfile">保存资料</el-button>
-              </el-form-item>
-            </el-form>
-          </div>
-
-          <div class="card">
-            <h2 class="text-sm font-semibold text-slate-700 mb-4">修改密码</h2>
-            <el-form :model="pwdForm" label-width="88px" class="max-w-md">
-              <el-form-item label="原密码">
-                <el-input v-model="pwdForm.old_password" type="password" show-password placeholder="请输入原密码" />
-              </el-form-item>
-              <el-form-item label="新密码">
-                <el-input v-model="pwdForm.new_password" type="password" show-password placeholder="至少 6 位" />
-              </el-form-item>
-              <el-form-item label="确认密码">
-                <el-input v-model="pwdForm.confirm" type="password" show-password placeholder="再次输入新密码" />
-              </el-form-item>
-              <el-form-item>
-                <el-button type="primary" :loading="pwdSaving" @click="savePassword">更新密码</el-button>
-              </el-form-item>
-            </el-form>
-          </div>
-
-          <div class="card">
-            <div class="flex items-center justify-between mb-4">
-              <h2 class="text-sm font-semibold text-slate-700">我的教学科目</h2>
-              <el-button size="small" :icon="Plus" @click="showAddSubject = true">添加</el-button>
-            </div>
-            <div v-for="ts in mySubjects" :key="ts.id" class="flex items-center gap-2 mb-2 p-2 rounded-lg hover:bg-slate-50">
-              <div class="flex-1">
-                <span class="text-xs text-slate-500">{{ ts.grade.name }}</span>
-                <span class="mx-1 text-slate-300">·</span>
-                <span class="text-sm font-medium text-slate-700">{{ ts.subject.name }}</span>
-              </div>
-              <el-button size="small" link type="danger" @click="removeSubject(ts.id)">移除</el-button>
-            </div>
-            <el-empty v-if="!mySubjects.length" :image-size="60" description="暂无科目" />
-          </div>
-        </template>
-
-        <!-- 模型设置 -->
-        <template v-else-if="activeMenu === 'models'">
-          <div class="card">
-            <div class="flex items-center justify-between mb-4">
-              <h2 class="text-sm font-semibold text-slate-700">大模型配置</h2>
+            <div class="flex items-center justify-between mb-1">
+              <h2 class="text-sm font-semibold text-slate-700">系统大模型配置</h2>
               <el-button size="small" type="primary" :icon="Plus" @click="openAddDialog">添加模型</el-button>
             </div>
+            <p class="page-subtitle mb-4">全站生成任务共用，不再按教师隔离。</p>
 
             <div v-if="!configs.length" class="py-8 text-center text-slate-400 text-sm">
-              尚未配置 AI 模型，请添加
+              尚未配置系统 AI 模型，请添加
             </div>
 
             <div v-for="cfg in configs" :key="cfg.id" class="flex items-center gap-3 p-3 rounded-xl border border-slate-100 mb-2 hover:border-primary-200 transition-colors">
@@ -249,53 +195,23 @@
         <el-button type="primary" :loading="saving" @click="handleSave">保存</el-button>
       </template>
     </el-dialog>
-
-    <!-- 添加科目弹窗 -->
-    <el-dialog v-model="showAddSubject" title="添加教学科目" width="400px">
-      <el-form label-width="80px">
-        <el-form-item label="学段">
-          <el-select v-model="subForm.school_level_id" @change="subForm.grade_id = null; subForm.subject_id = null" style="width:100%">
-            <el-option v-for="l in edu.schoolLevels" :key="l.id" :label="l.name" :value="l.id" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="年级">
-          <el-select v-model="subForm.grade_id" :disabled="!subForm.school_level_id" style="width:100%" @change="subForm.subject_id = null">
-            <el-option
-              v-for="g in edu.grades.filter(g => g.school_level_id === subForm.school_level_id).sort((a, b) => a.sort_order - b.sort_order)"
-              :key="g.id" :label="g.name" :value="g.id"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="科目">
-          <el-select v-model="subForm.subject_id" :disabled="!subForm.grade_id" style="width:100%">
-            <el-option v-for="s in edu.subjectsOfGrade(subForm.grade_id)" :key="s.id" :label="s.name" :value="s.id" />
-          </el-select>
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="showAddSubject = false">取消</el-button>
-        <el-button type="primary" @click="handleAddSubject">添加</el-button>
-      </template>
-    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { settingsApi, educationApi, authApi } from '@/api/modules'
-import { useEducationStore } from '@/stores/education'
+import { settingsApi } from '@/api/modules'
 import { useAuthStore } from '@/stores/auth'
 import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
-import type { LLMConfig, EmbeddingConfig, TeacherSubject, SubjectPrompt } from '@/types'
+import type { LLMConfig, EmbeddingConfig, SubjectPrompt } from '@/types'
 
-const VALID_TABS = ['profile', 'models', 'prompts'] as const
+const VALID_TABS = ['models', 'prompts'] as const
 type MenuKey = typeof VALID_TABS[number]
 
 const menus = [
-  { key: 'profile' as const, label: '个人信息', desc: '管理账号资料、密码和教学科目' },
-  { key: 'models' as const, label: '模型设置', desc: '配置对话大模型与向量嵌入' },
+  { key: 'models' as const, label: '系统模型', desc: '配置全站共用的对话大模型与向量嵌入' },
   { key: 'prompts' as const, label: '提示词设置', desc: '为各科目定制课件生成提示词' },
 ]
 
@@ -304,8 +220,8 @@ const router = useRouter()
 const promptsLoaded = ref(false)
 
 const activeMenu = computed<MenuKey>(() => {
-  const tab = String(route.params.tab || 'profile')
-  return (VALID_TABS as readonly string[]).includes(tab) ? tab as MenuKey : 'profile'
+  const tab = String(route.params.tab || 'models')
+  return (VALID_TABS as readonly string[]).includes(tab) ? tab as MenuKey : 'models'
 })
 const currentMenu = computed(() => menus.find(m => m.key === activeMenu.value))
 
@@ -314,65 +230,19 @@ watch(
   (tab) => {
     const t = String(tab || '')
     if (!(VALID_TABS as readonly string[]).includes(t)) {
-      router.replace('/settings/profile')
+      router.replace('/settings/models')
     }
   },
   { immediate: true },
 )
 
 const auth = useAuthStore()
-const edu = useEducationStore()
 const configs = ref<LLMConfig[]>([])
 const providers = ref<any[]>([])
-const mySubjects = ref<TeacherSubject[]>([])
 const showAdd = ref(false)
-const showAddSubject = ref(false)
 const saving = ref(false)
 const formRef = ref()
 const editingCfg = ref<LLMConfig | null>(null)
-
-const profileForm = reactive({ real_name: '', email: '' })
-const profileSaving = ref(false)
-const pwdForm = reactive({ old_password: '', new_password: '', confirm: '' })
-const pwdSaving = ref(false)
-
-function fillProfile() {
-  profileForm.real_name = auth.teacher?.real_name || ''
-  profileForm.email = auth.teacher?.email || ''
-}
-
-async function saveProfile() {
-  const real_name = profileForm.real_name.trim()
-  const email = profileForm.email.trim()
-  if (!real_name) { ElMessage.warning('请填写真实姓名'); return }
-  if (!email) { ElMessage.warning('请填写邮箱'); return }
-  profileSaving.value = true
-  try {
-    await auth.updateProfile({ real_name, email })
-    ElMessage.success('资料已保存')
-  } finally {
-    profileSaving.value = false
-  }
-}
-
-async function savePassword() {
-  if (!pwdForm.old_password) { ElMessage.warning('请输入原密码'); return }
-  if (pwdForm.new_password.length < 6) { ElMessage.warning('新密码至少 6 位'); return }
-  if (pwdForm.new_password !== pwdForm.confirm) { ElMessage.warning('两次输入的新密码不一致'); return }
-  pwdSaving.value = true
-  try {
-    await authApi.changePassword({
-      old_password: pwdForm.old_password,
-      new_password: pwdForm.new_password,
-    })
-    ElMessage.success('密码已更新')
-    pwdForm.old_password = ''
-    pwdForm.new_password = ''
-    pwdForm.confirm = ''
-  } finally {
-    pwdSaving.value = false
-  }
-}
 
 const form = reactive({
   provider: '', model_name: '', display_name: '', api_key: '',
@@ -383,7 +253,6 @@ const formRules = {
   model_name: [{ required: true, message: '请选择或输入模型名' }],
   display_name: [{ required: true, message: '请填写显示名称' }],
 }
-const subForm = reactive({ school_level_id: null as any, grade_id: null as any, subject_id: null as any })
 const availableModels = ref<string[]>([])
 const fetchingModels = ref(false)
 const modelSource = ref<'' | 'api' | 'preset'>('')
@@ -476,7 +345,6 @@ async function handleFetchModels() {
 
 async function load() {
   configs.value = (await settingsApi.listConfigs()) as any
-  mySubjects.value = (await educationApi.getMySubjects()) as any
   await loadEmbedding()
 }
 
@@ -528,21 +396,6 @@ async function testConfig(cfg: LLMConfig) {
   else ElMessage.error(`测试失败：${res.error}`)
 }
 
-async function handleAddSubject() {
-  if (!subForm.grade_id || !subForm.subject_id) { ElMessage.warning('请选择年级和科目'); return }
-  await educationApi.addMySubject({ grade_id: subForm.grade_id, subject_id: subForm.subject_id })
-  ElMessage.success('已添加')
-  showAddSubject.value = false
-  await edu.init()
-  mySubjects.value = (await educationApi.getMySubjects()) as any
-}
-
-async function removeSubject(id: number) {
-  await educationApi.removeMySubject(id)
-  ElMessage.success('已移除')
-  await load()
-}
-
 const subjectPrompts = ref<SubjectPrompt[]>([])
 const promptsLoading = ref(false)
 const showPrompt = ref(false)
@@ -592,7 +445,6 @@ async function resetPrompt(sp: SubjectPrompt) {
 
 onMounted(async () => {
   if (!auth.teacher?.email) await auth.fetchMe()
-  fillProfile()
   providers.value = (await settingsApi.getProviders()) as any
   await load()
 })

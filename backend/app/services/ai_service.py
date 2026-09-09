@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import AsyncSessionLocal
 from app.core.security import decrypt_api_key
-from app.models.courseware import Courseware
+from app.models.courseware import Courseware, save_courseware_version
 from app.models.textbook import Textbook, TextbookChapter, ParseStatus
 from app.models.education import Subject
 from app.models.subject_prompt import SubjectPromptTemplate
@@ -17,10 +17,11 @@ from app.models.question import Question
 logger = logging.getLogger(__name__)
 
 
-async def _get_default_llm(teacher_id: int, db: AsyncSession):
+async def _get_default_llm(_teacher_id: int | None, db: AsyncSession):
+    """全站系统默认大模型。_teacher_id 已废弃，保留以免改调用方。"""
     result = await db.execute(
         select(LLMConfig).where(
-            LLMConfig.teacher_id == teacher_id,
+            LLMConfig.teacher_id.is_(None),
             LLMConfig.is_default == True,
             LLMConfig.is_active == True,
         )
@@ -29,7 +30,7 @@ async def _get_default_llm(teacher_id: int, db: AsyncSession):
     if not cfg:
         result = await db.execute(
             select(LLMConfig).where(
-                LLMConfig.teacher_id == teacher_id,
+                LLMConfig.teacher_id.is_(None),
                 LLMConfig.is_active == True,
             ).limit(1)
         )
@@ -243,6 +244,7 @@ async def do_generate_courseware(courseware_id: int):
             )
             cw.content = content
             cw.gen_status = ParseStatus.done
+            await save_courseware_version(db, cw, cw.teacher_id, skip_if_same=False)
         except Exception as e:
             logger.exception("课件 %s 生成失败：%s", cw.id, e)
             cw.gen_status = ParseStatus.failed

@@ -102,7 +102,7 @@ async function handleLogin() {
   try {
     await auth.login(form.username, form.password)
     await auth.fetchMe()
-    await edu.init()
+    await edu.init({ forceBinding: true })
     router.push('/dashboard')
   } finally {
     loading.value = false
@@ -110,7 +110,7 @@ async function handleLogin() {
 }
 
 const showRegister = ref(false)
-const enableRegist = ref(true)
+const enableRegist = ref(false)
 const regFormRef = ref()
 const regLoading = ref(false)
 const regForm = reactive({ username: '', real_name: '', email: '', password: '' })
@@ -139,7 +139,7 @@ onMounted(async () => {
     const cfg = await authApi.getConfig()
     enableRegist.value = cfg.enable_regist !== false
   } catch {
-    enableRegist.value = true
+    enableRegist.value = false
   }
 })
 </script>

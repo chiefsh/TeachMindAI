@@ -6,6 +6,7 @@ from app.core.database import get_db
 from app.core.security import decode_access_token
 from app.core.redis_client import get_redis
 from app.models.teacher import Teacher
+from app.services.rbac_service import load_rbac, has_perm
 
 bearer_scheme = HTTPBearer()
 
@@ -16,7 +17,6 @@ async def get_current_teacher(
     redis=Depends(get_redis),
 ) -> Teacher:
     token = credentials.credentials
-    # 检查黑名单（登出的 token）
     if await redis.get(f"blacklist:{token}"):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token 已失效")
 
@@ -32,4 +32,22 @@ async def get_current_teacher(
     teacher = result.scalar_one_or_none()
     if not teacher or not teacher.is_active:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="用户不存在或已禁用")
+    await load_rbac(db, teacher)
     return teacher
+
+
+def require_perm(*codes: str):
+    """需要 codes 中任一权限；超管放行。"""
+    async def _dep(teacher: Teacher = Depends(get_current_teacher)) -> Teacher:
+        if not has_perm(teacher, *codes):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="没有权限")
+        return teacher
+    return _dep
+
+
+def require_super():
+    async def _dep(teacher: Teacher = Depends(get_current_teacher)) -> Teacher:
+        if not teacher.is_super:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="仅超级管理员可操作")
+        return teacher
+    return _dep

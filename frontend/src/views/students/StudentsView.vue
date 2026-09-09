@@ -6,8 +6,8 @@
         <p class="page-subtitle">先建班级，再录入花名册。批改作业、试卷会按班级对应到每个学生</p>
       </div>
       <div class="flex flex-wrap gap-2">
-        <el-button :icon="Plus" @click="openClass">新建班级</el-button>
-        <el-button type="primary" :icon="UserFilled" :disabled="!current" @click="openStudent">添加学生</el-button>
+        <el-button v-if="auth.can('classroom.manage')" :icon="Plus" @click="openClass">新建班级</el-button>
+        <el-button v-if="auth.can('classroom.manage')" type="primary" :icon="UserFilled" :disabled="!current" @click="openStudent">添加学生</el-button>
       </div>
     </div>
 
@@ -43,7 +43,7 @@
           <p class="text-sm font-medium text-slate-700">
             {{ current ? `${current.name} · 花名册` : '请选择班级' }}
           </p>
-          <div v-if="current" class="flex gap-1">
+          <div v-if="current && auth.can('classroom.manage')" class="flex gap-1">
             <el-button size="small" link @click="openBatch">批量录入</el-button>
             <el-button size="small" link @click="renameClass">改名</el-button>
             <el-popconfirm title="确定删除该班级？" @confirm="removeClass">
@@ -61,7 +61,7 @@
             <el-table-column label="姓名" min-width="100">
               <template #default="{ row }"><span class="text-sm">{{ row.name }}</span></template>
             </el-table-column>
-            <el-table-column label="" width="120" align="center">
+            <el-table-column v-if="auth.can('classroom.manage')" label="" width="120" align="center">
               <template #default="{ row }">
                 <el-button size="small" link @click="editStudent(row)">编辑</el-button>
                 <el-popconfirm title="删除该学生？" @confirm="removeStudent(row.id)">
@@ -122,9 +122,11 @@ import { Plus, UserFilled } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { classApi, studentApi } from '@/api/modules'
 import { useEducationStore } from '@/stores/education'
+import { useAuthStore } from '@/stores/auth'
 import type { SchoolClass, Student } from '@/types'
 
 const edu = useEducationStore()
+const auth = useAuthStore()
 const classes = ref<SchoolClass[]>([])
 const current = ref<SchoolClass | null>(null)
 const students = ref<Student[]>([])

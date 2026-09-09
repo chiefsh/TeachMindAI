@@ -7,6 +7,7 @@
       </div>
       <div class="flex flex-wrap gap-2">
         <el-button @click="$router.push('/wrong-questions')">错题本</el-button>
+        <el-button @click="openBatchCollab">批量设置协作者</el-button>
         <el-button type="primary" :icon="Plus" @click="openCreate">新建布置</el-button>
       </div>
     </div>
@@ -48,10 +49,16 @@
               </span>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="160" align="center">
+          <el-table-column label="创建人" width="90">
+            <template #default="{ row }">
+              <span class="text-xs text-slate-500">{{ row.creator_name || '—' }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="200" align="center">
             <template #default="{ row }">
               <el-button size="small" link type="primary" @click="$router.push(`/grading/${row.id}`)">批改</el-button>
-              <el-popconfirm title="删除本次布置及全部原卷图？" @confirm="remove(row.id)">
+              <el-button v-if="row.can_manage_collab" size="small" link @click="openCollab(row)">协作者</el-button>
+              <el-popconfirm v-if="row.can_manage_collab !== false" title="删除本次布置及全部原卷图？" @confirm="remove(row.id)">
                 <template #reference>
                   <el-button size="small" link type="danger">删除</el-button>
                 </template>
@@ -108,11 +115,17 @@
         <el-button type="primary" :loading="creating" @click="create">布置</el-button>
       </template>
     </el-dialog>
+    <CollaboratorsDialog
+      v-model="showCollab"
+      resource-type="grading"
+      :options="collabOptions"
+      :selected-ids="collabIds"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { watchDebounced } from '@vueuse/core'
 import { Plus } from '@element-plus/icons-vue'
@@ -121,6 +134,7 @@ import dayjs from 'dayjs'
 import { gradingApi, homeworkApi, classApi } from '@/api/modules'
 import { useEducationStore } from '@/stores/education'
 import type { GradingAssignment, HomeworkPaper, SchoolClass } from '@/types'
+import CollaboratorsDialog from '@/components/CollaboratorsDialog.vue'
 
 const edu = useEducationStore()
 const route = useRoute()
@@ -131,6 +145,11 @@ const classes = ref<SchoolClass[]>([])
 const loading = ref(false)
 const showCreate = ref(false)
 const creating = ref(false)
+const showCollab = ref(false)
+const collabIds = ref<number[]>([])
+const collabOptions = computed(() =>
+  rows.value.filter(r => r.can_manage_collab).map(r => ({ id: r.id, title: r.title })),
+)
 
 const form = reactive({
   paper_id: null as number | null,
@@ -184,6 +203,7 @@ function onPaper(id: number) {
 }
 
 function onGradeChange() {
+  form.subject_id = edu.defaultSubjectId(form.grade_id) || form.subject_id
   form.class_id = null
   loadClasses()
 }
@@ -230,6 +250,16 @@ async function create() {
   } finally {
     creating.value = false
   }
+}
+
+function openBatchCollab() {
+  collabIds.value = []
+  showCollab.value = true
+}
+
+function openCollab(row: GradingAssignment) {
+  collabIds.value = [row.id]
+  showCollab.value = true
 }
 
 async function remove(id: number) {

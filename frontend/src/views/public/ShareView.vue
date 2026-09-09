@@ -32,7 +32,7 @@
 
     <template v-else-if="payload">
       <iframe
-        v-if="kind === 'courseware' && frameUrl"
+        v-if="(kind === 'courseware' || kind === 'courseware_version') && frameUrl"
         :src="frameUrl"
         sandbox="allow-scripts allow-same-origin allow-popups allow-modals"
         class="w-full border-0 bg-white"
@@ -158,7 +158,7 @@ function applyPayload(data: { title: string; expires_at: string; resource_type: 
   expiresAt.value = dayjs(data.expires_at).format('YYYY-MM-DD HH:mm')
   kind.value = data.resource_type
   payload.value = data.payload
-  if (data.resource_type === 'courseware') {
+  if (data.resource_type === 'courseware' || data.resource_type === 'courseware_version') {
     const p = data.payload
     const ctx = [p.grade_name, p.subject_name].filter(Boolean).join(' · ')
     const html = p.render_style === 'html'

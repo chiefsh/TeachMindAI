@@ -14,16 +14,18 @@ from app.core.database import get_db
 from app.core.config import settings
 from app.core.minio_client import get_file_bytes
 from app.models.teacher import Teacher
-from app.models.courseware import Courseware
+from app.models.courseware import Courseware, CoursewareVersion, RenderStyle, save_courseware_version
 from app.models.homework import HomeworkPaper
 from app.models.interaction import CoursewareSession, InteractionRecord
 from app.models.textbook import ParseStatus, TextbookImage, Textbook
 from app.schemas.courseware import (
     CoursewareCreate, CoursewareOut, CoursewareDetail, CoursewareUpdate, CoursewareCopyIn,
     SlidePatch, SlideInsert, SlideReorder, SlideOptimizeIn, CoursewareExportIn,
+    CoursewareVersionOut, CoursewareVersionDetail,
 )
 from app.services.courseware_theme import PAGE_LABELS, page_kind
-from app.api.deps import get_current_teacher
+from app.api.deps import get_current_teacher, require_perm
+from app.core.access import apply_private_scope, require_resource, stamp_access_many
 from app.services.export_service import build_export
 
 router = APIRouter(prefix="/coursewares", tags=["课件管理"])
@@ -38,9 +40,10 @@ async def list_coursewares(
     teacher: Teacher = Depends(get_current_teacher),
     db: AsyncSession = Depends(get_db),
 ):
-    q = select(Courseware).where(Courseware.teacher_id == teacher.id).options(
+    q = select(Courseware).options(
         selectinload(Courseware.textbook)
     )
+    q = await apply_private_scope(q, Courseware, db, teacher, "courseware")
     # 课件本身不直接挂年级/科目，按其引用的课本进行过滤
     if grade_id or subject_id:
         q = q.join(Textbook, Textbook.id == Courseware.textbook_id)
@@ -52,6 +55,7 @@ async def list_coursewares(
     total = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar() or 0
     q = q.order_by(Courseware.created_at.desc()).offset((page - 1) * page_size).limit(page_size)
     rows = (await db.execute(q)).scalars().all()
+    await stamp_access_many(db, teacher, rows, "courseware")
 
     items = []
     for cw in rows:
@@ -66,7 +70,7 @@ async def list_coursewares(
 @router.post("", response_model=CoursewareOut, status_code=201)
 async def create_courseware(
     data: CoursewareCreate,
-    teacher: Teacher = Depends(get_current_teacher),
+    teacher: Teacher = Depends(require_perm("courseware.create")),
     db: AsyncSession = Depends(get_db),
 ):
     cw = Courseware(
@@ -103,7 +107,8 @@ async def get_courseware(
     teacher: Teacher = Depends(get_current_teacher),
     db: AsyncSession = Depends(get_db),
 ):
-    cw = await _get_or_404(cw_id, teacher.id, db)
+    cw = await _get_or_404(cw_id, teacher, db)
+    await stamp_access_many(db, teacher, [cw], "courseware")
     return cw
 
 
@@ -113,21 +118,139 @@ async def get_courseware_status(
     teacher: Teacher = Depends(get_current_teacher),
     db: AsyncSession = Depends(get_db),
 ):
-    cw = await _get_or_404(cw_id, teacher.id, db)
+    cw = await _get_or_404(cw_id, teacher, db)
     return {"id": cw.id, "gen_status": cw.gen_status, "task_id": cw.task_id}
+
+
+def _version_out(ver: CoursewareVersion, creator_name: str | None, *, with_content: bool = False):
+    data = {
+        "id": ver.id,
+        "courseware_id": ver.courseware_id,
+        "teacher_id": ver.teacher_id,
+        "title": ver.title,
+        "render_style": ver.render_style,
+        "theme": ver.theme,
+        "created_at": ver.created_at,
+        "creator_name": creator_name,
+    }
+    if with_content:
+        data["content"] = ver.content
+        return CoursewareVersionDetail(**data)
+    return CoursewareVersionOut(**data)
+
+
+async def _get_version_or_404(cw: Courseware, vid: int, db: AsyncSession) -> CoursewareVersion:
+    ver = (
+        await db.execute(
+            select(CoursewareVersion).where(
+                CoursewareVersion.id == vid,
+                CoursewareVersion.courseware_id == cw.id,
+            )
+        )
+    ).scalar_one_or_none()
+    if not ver:
+        raise HTTPException(status_code=404, detail="历史版本不存在")
+    return ver
+
+
+@router.get("/{cw_id}/versions", response_model=list[CoursewareVersionOut])
+async def list_courseware_versions(
+    cw_id: int,
+    teacher: Teacher = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+):
+    cw = await _get_or_404(cw_id, teacher, db)
+
+    async def _fetch():
+        return (
+            await db.execute(
+                select(CoursewareVersion, Teacher.real_name)
+                .outerjoin(Teacher, Teacher.id == CoursewareVersion.teacher_id)
+                .where(CoursewareVersion.courseware_id == cw.id)
+                .order_by(CoursewareVersion.id.desc())
+            )
+        ).all()
+
+    rows = await _fetch()
+    # 升级前已生成的课件补一版当前内容，避免历史列表空白
+    if not rows and isinstance(cw.content, dict):
+        await save_courseware_version(db, cw, cw.teacher_id, skip_if_same=False)
+        await db.commit()
+        rows = await _fetch()
+    return [_version_out(ver, name) for ver, name in rows]
+
+
+@router.get("/{cw_id}/versions/{vid}", response_model=CoursewareVersionDetail)
+async def get_courseware_version(
+    cw_id: int,
+    vid: int,
+    teacher: Teacher = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+):
+    cw = await _get_or_404(cw_id, teacher, db)
+    ver = await _get_version_or_404(cw, vid, db)
+    name = (
+        await db.execute(select(Teacher.real_name).where(Teacher.id == ver.teacher_id))
+    ).scalar_one_or_none()
+    return _version_out(ver, name, with_content=True)
+
+
+@router.delete("/{cw_id}/versions/{vid}", status_code=204)
+async def delete_courseware_version(
+    cw_id: int,
+    vid: int,
+    teacher: Teacher = Depends(require_perm("courseware.edit")),
+    db: AsyncSession = Depends(get_db),
+):
+    cw = await _get_or_404(cw_id, teacher, db, edit=True)
+    ver = await _get_version_or_404(cw, vid, db)
+    await db.delete(ver)
+    await db.commit()
+
+
+@router.post("/{cw_id}/versions/{vid}/apply", response_model=CoursewareDetail)
+async def apply_courseware_version(
+    cw_id: int,
+    vid: int,
+    teacher: Teacher = Depends(require_perm("courseware.edit")),
+    db: AsyncSession = Depends(get_db),
+):
+    """把历史版本覆盖为当前课件；覆盖前先把当前内容存成一版。"""
+    cw = await _get_or_404(cw_id, teacher, db, edit=True)
+    if cw.gen_status in (ParseStatus.pending, ParseStatus.processing):
+        raise HTTPException(status_code=400, detail="正在生成中，请稍后再试")
+    ver = await _get_version_or_404(cw, vid, db)
+    if not isinstance(ver.content, dict):
+        raise HTTPException(status_code=400, detail="该版本没有内容")
+    await save_courseware_version(db, cw, teacher.id)
+    cw.title = ver.title
+    cw.content = copy.deepcopy(ver.content)
+    flag_modified(cw, "content")
+    try:
+        cw.render_style = RenderStyle(ver.render_style)
+    except ValueError:
+        pass
+    if ver.theme:
+        cw.theme = ver.theme
+    cw.gen_status = ParseStatus.done
+    await db.commit()
+    await db.refresh(cw)
+    await stamp_access_many(db, teacher, [cw], "courseware")
+    return cw
 
 
 @router.post("/{cw_id}/regenerate", response_model=CoursewareOut)
 async def regenerate_courseware(
     cw_id: int,
     data: CoursewareCreate,
-    teacher: Teacher = Depends(get_current_teacher),
+    teacher: Teacher = Depends(require_perm("courseware.edit")),
     db: AsyncSession = Depends(get_db),
 ):
     """按新配置重新生成：覆盖旧内容。"""
-    cw = await _get_or_404(cw_id, teacher.id, db)
+    cw = await _get_or_404(cw_id, teacher, db, edit=True)
     if cw.gen_status in (ParseStatus.pending, ParseStatus.processing):
         raise HTTPException(status_code=400, detail="正在生成中，请稍后再试")
+    await save_courseware_version(db, cw, teacher.id)
     cw.title = data.title
     cw.textbook_id = data.textbook_id
     cw.chapter_range = data.chapter_range
@@ -192,10 +315,10 @@ async def _next_copy_title(base: str, teacher_id: int, db: AsyncSession) -> str:
 async def update_courseware(
     cw_id: int,
     data: CoursewareUpdate,
-    teacher: Teacher = Depends(get_current_teacher),
+    teacher: Teacher = Depends(require_perm("courseware.edit")),
     db: AsyncSession = Depends(get_db),
 ):
-    cw = await _get_or_404(cw_id, teacher.id, db)
+    cw = await _get_or_404(cw_id, teacher, db, edit=True)
     old = cw.title
     cw.title = data.title
     if cw.content and old != data.title:
@@ -212,7 +335,7 @@ async def suggest_copy_title(
     teacher: Teacher = Depends(get_current_teacher),
     db: AsyncSession = Depends(get_db),
 ):
-    src = await _get_or_404(cw_id, teacher.id, db)
+    src = await _get_or_404(cw_id, teacher, db)
     return {"title": await _next_copy_title(src.title, teacher.id, db)}
 
 
@@ -220,10 +343,10 @@ async def suggest_copy_title(
 async def copy_courseware(
     cw_id: int,
     data: CoursewareCopyIn = CoursewareCopyIn(),
-    teacher: Teacher = Depends(get_current_teacher),
+    teacher: Teacher = Depends(require_perm("courseware.create")),
     db: AsyncSession = Depends(get_db),
 ):
-    src = await _get_or_404(cw_id, teacher.id, db)
+    src = await _get_or_404(cw_id, teacher, db)
     title = data.title or await _next_copy_title(src.title, teacher.id, db)
     content = _apply_title(src.content, src.title, title) if src.content else None
     gen_status = src.gen_status
@@ -326,10 +449,10 @@ async def _require_structure_ok(cw: Courseware, db: AsyncSession) -> None:
 async def reorder_slides(
     cw_id: int,
     data: SlideReorder,
-    teacher: Teacher = Depends(get_current_teacher),
+    teacher: Teacher = Depends(require_perm("courseware.edit")),
     db: AsyncSession = Depends(get_db),
 ):
-    cw = await _get_or_404(cw_id, teacher.id, db)
+    cw = await _get_or_404(cw_id, teacher, db, edit=True)
     _require_editable(cw)
     await _require_structure_ok(cw, db)
     slides = _ensure_slides(cw)
@@ -347,10 +470,10 @@ async def reorder_slides(
 async def insert_slide(
     cw_id: int,
     data: SlideInsert,
-    teacher: Teacher = Depends(get_current_teacher),
+    teacher: Teacher = Depends(require_perm("courseware.edit")),
     db: AsyncSession = Depends(get_db),
 ):
-    cw = await _get_or_404(cw_id, teacher.id, db)
+    cw = await _get_or_404(cw_id, teacher, db, edit=True)
     _require_editable(cw)
     await _require_structure_ok(cw, db)
     slides = _ensure_slides(cw)
@@ -371,7 +494,7 @@ async def get_slide(
     teacher: Teacher = Depends(get_current_teacher),
     db: AsyncSession = Depends(get_db),
 ):
-    cw = await _get_or_404(cw_id, teacher.id, db)
+    cw = await _get_or_404(cw_id, teacher, db, edit=True)
     slide = _get_slide(cw, index)
     return {
         "index": index,
@@ -386,10 +509,10 @@ async def patch_slide(
     cw_id: int,
     index: int,
     data: SlidePatch,
-    teacher: Teacher = Depends(get_current_teacher),
+    teacher: Teacher = Depends(require_perm("courseware.edit")),
     db: AsyncSession = Depends(get_db),
 ):
-    cw = await _get_or_404(cw_id, teacher.id, db)
+    cw = await _get_or_404(cw_id, teacher, db, edit=True)
     _require_editable(cw)
     slide = _get_slide(cw, index)
     if slide.get("edit_status") == "processing":
@@ -409,10 +532,10 @@ async def patch_slide(
 async def delete_slide(
     cw_id: int,
     index: int,
-    teacher: Teacher = Depends(get_current_teacher),
+    teacher: Teacher = Depends(require_perm("courseware.edit")),
     db: AsyncSession = Depends(get_db),
 ):
-    cw = await _get_or_404(cw_id, teacher.id, db)
+    cw = await _get_or_404(cw_id, teacher, db, edit=True)
     _require_editable(cw)
     await _require_structure_ok(cw, db)
     slides = _ensure_slides(cw)
@@ -431,10 +554,10 @@ async def optimize_slide(
     cw_id: int,
     index: int,
     data: SlideOptimizeIn,
-    teacher: Teacher = Depends(get_current_teacher),
+    teacher: Teacher = Depends(require_perm("courseware.edit")),
     db: AsyncSession = Depends(get_db),
 ):
-    cw = await _get_or_404(cw_id, teacher.id, db)
+    cw = await _get_or_404(cw_id, teacher, db, edit=True)
     _require_editable(cw)
     slide = _get_slide(cw, index)
     if slide.get("edit_status") == "processing":
@@ -511,7 +634,7 @@ async def _export_courseware(
 ) -> StreamingResponse:
     if fmt not in ("pptx", "docx", "pdf"):
         raise HTTPException(status_code=400, detail="仅支持 pptx / docx / pdf")
-    cw = await _get_or_404(cw_id, teacher.id, db)
+    cw = await _get_or_404(cw_id, teacher, db)
     if not cw.content or cw.gen_status != ParseStatus.done:
         raise HTTPException(status_code=400, detail="课件尚未生成完成，无法导出")
 
@@ -581,10 +704,10 @@ async def export_courseware_with_shots(
 @router.delete("/{cw_id}", status_code=204)
 async def delete_courseware(
     cw_id: int,
-    teacher: Teacher = Depends(get_current_teacher),
+    teacher: Teacher = Depends(require_perm("courseware.edit")),
     db: AsyncSession = Depends(get_db),
 ):
-    cw = await _get_or_404(cw_id, teacher.id, db)
+    cw = await _get_or_404(cw_id, teacher, db, delete=True)
     session_ids = (
         await db.execute(
             select(CoursewareSession.id).where(CoursewareSession.courseware_id == cw_id)
@@ -603,11 +726,11 @@ async def delete_courseware(
     await db.delete(cw)
 
 
-async def _get_or_404(cw_id: int, teacher_id: int, db: AsyncSession) -> Courseware:
-    result = await db.execute(
-        select(Courseware).where(Courseware.id == cw_id, Courseware.teacher_id == teacher_id)
-    )
+async def _get_or_404(
+    cw_id: int, teacher: Teacher, db: AsyncSession, *, edit: bool = False, delete: bool = False,
+) -> Courseware:
+    result = await db.execute(select(Courseware).where(Courseware.id == cw_id))
     cw = result.scalar_one_or_none()
-    if not cw:
-        raise HTTPException(status_code=404, detail="课件不存在")
-    return cw
+    return await require_resource(
+        db, teacher, cw, "courseware", edit=edit, delete=delete, detail="课件不存在",
+    )

@@ -163,3 +163,11 @@ async def seed_subject_prompts():
             for name, cfg in SUBJECT_PROMPTS.items()
         ])
         await db.commit()
+
+
+async def seed_rbac_data():
+    """权限目录、系统角色、超级管理员（只建一次）。"""
+    from app.core.config import settings
+    from app.services.rbac_service import seed_rbac
+    async with AsyncSessionLocal() as db:
+        await seed_rbac(db, settings)

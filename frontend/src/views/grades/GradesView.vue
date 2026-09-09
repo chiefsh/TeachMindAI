@@ -224,8 +224,8 @@
     <el-dialog v-model="showManual" title="手动录入成绩" width="720px" :close-on-click-modal="false" top="5vh">
       <!-- 步骤一：基本信息 -->
       <div class="flex flex-wrap items-center gap-3 mb-4">
-        <el-select v-model="manualForm.grade_id" placeholder="年级" style="width:120px" @change="manualForm.subject_id = null">
-          <el-option v-for="g in edu.sortedGrades" :key="g.id" :label="g.name" :value="g.id" />
+        <el-select v-model="manualForm.grade_id" placeholder="年级" style="width:120px" @change="manualForm.subject_id = edu.defaultSubjectId(manualForm.grade_id)">
+          <el-option v-for="g in edu.filteredGrades" :key="g.id" :label="g.name" :value="g.id" />
         </el-select>
         <el-select v-model="manualForm.subject_id" placeholder="科目" style="width:130px" :disabled="!manualForm.grade_id">
           <el-option v-for="s in edu.subjectsOfGrade(manualForm.grade_id)" :key="s.id" :label="s.name" :value="s.id" />

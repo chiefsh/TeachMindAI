@@ -8,7 +8,7 @@ from app.core.database import get_db
 from app.core.config import settings
 from app.models.teacher import Teacher
 from app.models.education import Subject
-from app.api.deps import get_current_teacher
+from app.api.deps import get_current_teacher, require_perm
 from app.services import knowledge_graph_service as kg
 from app.schemas.knowledge import (
     KnowledgePointCreate, RelationCreate, RelationOp, RelationStatusUpdate,
@@ -63,7 +63,7 @@ async def get_point(point_id: str, teacher: Teacher = Depends(get_current_teache
 @router.post("/points", status_code=201)
 async def create_point(
     body: KnowledgePointCreate,
-    teacher: Teacher = Depends(get_current_teacher),
+    teacher: Teacher = Depends(require_perm("knowledge.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     _require_enabled()
@@ -89,7 +89,7 @@ async def create_point(
 
 
 @router.delete("/points/{point_id}", status_code=204)
-async def delete_point(point_id: str, teacher: Teacher = Depends(get_current_teacher)):
+async def delete_point(point_id: str, teacher: Teacher = Depends(require_perm("knowledge.manage"))):
     _require_enabled()
     node = await kg.get_point(point_id)
     if not node or node.get("teacher_id") != teacher.id:
@@ -98,7 +98,7 @@ async def delete_point(point_id: str, teacher: Teacher = Depends(get_current_tea
 
 
 @router.post("/relations", status_code=201)
-async def create_relation(body: RelationCreate, teacher: Teacher = Depends(get_current_teacher)):
+async def create_relation(body: RelationCreate, teacher: Teacher = Depends(require_perm("knowledge.manage"))):
     _require_enabled()
     # 校验两端归属当前教师
     for pid in (body.from_id, body.to_id):
@@ -119,13 +119,13 @@ async def create_relation(body: RelationCreate, teacher: Teacher = Depends(get_c
 
 
 @router.post("/relations/delete", status_code=204)
-async def delete_relation(body: RelationOp, teacher: Teacher = Depends(get_current_teacher)):
+async def delete_relation(body: RelationOp, teacher: Teacher = Depends(require_perm("knowledge.manage"))):
     _require_enabled()
     await kg.delete_relation(body.from_id, body.to_id, body.rel_type)
 
 
 @router.put("/relations/status")
-async def update_relation_status(body: RelationStatusUpdate, teacher: Teacher = Depends(get_current_teacher)):
+async def update_relation_status(body: RelationStatusUpdate, teacher: Teacher = Depends(require_perm("knowledge.manage"))):
     _require_enabled()
     if body.status == "rejected":
         await kg.delete_relation(body.from_id, body.to_id, body.rel_type)
@@ -135,7 +135,7 @@ async def update_relation_status(body: RelationStatusUpdate, teacher: Teacher = 
 
 
 @router.post("/extract/chapter/{chapter_id}")
-async def extract_chapter(chapter_id: int, teacher: Teacher = Depends(get_current_teacher)):
+async def extract_chapter(chapter_id: int, teacher: Teacher = Depends(require_perm("knowledge.manage"))):
     _require_enabled()
     from app.tasks.knowledge_tasks import extract_chapter_task
     task = extract_chapter_task.delay(chapter_id, teacher.id)
@@ -143,7 +143,7 @@ async def extract_chapter(chapter_id: int, teacher: Teacher = Depends(get_curren
 
 
 @router.post("/extract/textbook/{textbook_id}")
-async def extract_textbook(textbook_id: int, teacher: Teacher = Depends(get_current_teacher)):
+async def extract_textbook(textbook_id: int, teacher: Teacher = Depends(require_perm("knowledge.manage"))):
     _require_enabled()
     from app.tasks.knowledge_tasks import extract_textbook_task
     task = extract_textbook_task.delay(textbook_id, teacher.id)
@@ -151,7 +151,7 @@ async def extract_textbook(textbook_id: int, teacher: Teacher = Depends(get_curr
 
 
 @router.post("/suggest-cross-subject")
-async def suggest_cross_subject(teacher: Teacher = Depends(get_current_teacher)):
+async def suggest_cross_subject(teacher: Teacher = Depends(require_perm("knowledge.manage"))):
     _require_enabled()
     from app.tasks.knowledge_tasks import suggest_cross_subject_task
     task = suggest_cross_subject_task.delay(teacher.id)

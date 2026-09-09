@@ -30,6 +30,10 @@ class AssignmentOut(BaseModel):
     graded_count: int = 0
     collect_token: str | None = None
     created_at: datetime
+    creator_name: str | None = None
+    is_owner: bool = False
+    can_edit: bool = False
+    can_manage_collab: bool = False
     model_config = {"from_attributes": True}
 
 
@@ -112,6 +116,7 @@ class SubmissionDetail(BaseModel):
     answers: list[AnswerOut] = []
     questions: list[PaperQuestionOut] = []
     roster: list[StudentRowOut] = []
+    can_edit: bool = False
 
 
 class AnswerGradeIn(BaseModel):

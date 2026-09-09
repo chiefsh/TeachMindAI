@@ -31,7 +31,7 @@
       <el-icon class="text-3xl text-red-400"><CircleClose /></el-icon>
       <p class="text-slate-500 mt-3">解析失败：{{ set.parse_error || '未知错误' }}</p>
       <el-button
-        v-if="set.source_type !== 'manual'"
+        v-if="set.source_type !== 'manual' && set.can_edit !== false"
         class="mt-4" type="primary" :icon="Refresh" :loading="reparsing" @click="reparse"
       >重新解析</el-button>
     </div>
@@ -43,11 +43,12 @@
         <span class="text-sm text-slate-500">已选 {{ checked.size }} 题</span>
         <div class="flex-1" />
         <el-button size="small" :icon="Collection" :disabled="!checked.size" @click="saveToBank">选中题目入库</el-button>
-        <el-button size="small" type="primary" :icon="MagicStick" :loading="analyzing"
+        <el-button v-if="set?.can_edit !== false" size="small" type="primary" :icon="MagicStick" :loading="analyzing"
           :disabled="!checked.size" @click="startAnalyze(false)">
           AI 解析选中题目
         </el-button>
         <el-popconfirm
+          v-if="set?.can_edit !== false"
           title="将调用 AI 重新解析选中题目，并覆盖题库中的解析"
           confirm-button-text="重新解析"
           @confirm="startAnalyze(true)"

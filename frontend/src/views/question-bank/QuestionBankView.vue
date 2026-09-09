@@ -110,8 +110,8 @@
     <!-- 手动录入弹窗 -->
     <el-dialog v-model="showCreate" title="手动录入题目" width="720px" :close-on-click-modal="false" top="6vh">
       <div class="flex flex-wrap items-center gap-3 mb-3">
-        <el-select v-model="createForm.grade_id" placeholder="年级" size="small" style="width:110px" @change="createForm.subject_id = null">
-          <el-option v-for="g in edu.sortedGrades" :key="g.id" :label="g.name" :value="g.id" />
+        <el-select v-model="createForm.grade_id" placeholder="年级" size="small" style="width:110px" @change="createForm.subject_id = edu.defaultSubjectId(createForm.grade_id)">
+          <el-option v-for="g in edu.filteredGrades" :key="g.id" :label="g.name" :value="g.id" />
         </el-select>
         <el-select v-model="createForm.subject_id" placeholder="科目" size="small" style="width:110px" :disabled="!createForm.grade_id">
           <el-option v-for="s in edu.subjectsOfGrade(createForm.grade_id)" :key="s.id" :label="s.name" :value="s.id" />
@@ -141,8 +141,8 @@
     <el-dialog v-model="showImport" title="导入题库" width="460px">
       <el-form :model="importForm" label-width="80px" class="mb-2">
         <el-form-item label="年级">
-          <el-select v-model="importForm.grade_id" placeholder="选择年级" style="width:100%" @change="importForm.subject_id = null">
-            <el-option v-for="g in edu.sortedGrades" :key="g.id" :label="g.name" :value="g.id" />
+          <el-select v-model="importForm.grade_id" placeholder="选择年级" style="width:100%" @change="importForm.subject_id = edu.defaultSubjectId(importForm.grade_id)">
+            <el-option v-for="g in edu.filteredGrades" :key="g.id" :label="g.name" :value="g.id" />
           </el-select>
         </el-form-item>
         <el-form-item label="科目">
@@ -220,8 +220,8 @@
     >
       <div v-if="detail && editing" class="space-y-4">
         <div class="flex flex-wrap items-center gap-2">
-          <el-select v-model="editForm.grade_id" placeholder="年级" size="small" style="width:110px" @change="editForm.subject_id = null">
-            <el-option v-for="g in edu.sortedGrades" :key="g.id" :label="g.name" :value="g.id" />
+          <el-select v-model="editForm.grade_id" placeholder="年级" size="small" style="width:110px" @change="editForm.subject_id = edu.defaultSubjectId(editForm.grade_id)">
+            <el-option v-for="g in edu.filteredGrades" :key="g.id" :label="g.name" :value="g.id" />
           </el-select>
           <el-select v-model="editForm.subject_id" placeholder="科目" size="small" style="width:110px" :disabled="!editForm.grade_id">
             <el-option v-for="s in edu.subjectsOfGrade(editForm.grade_id)" :key="s.id" :label="s.name" :value="s.id" />

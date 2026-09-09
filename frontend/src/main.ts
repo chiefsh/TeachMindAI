@@ -10,7 +10,7 @@ import {
   Reading, HomeFilled, Collection, EditPen, VideoPlay, Tickets,
   DataAnalysis, TrendCharts, Setting, SwitchButton,
   Connection, CopyDocument, Printer, Finished, Flag, User,
-  Cpu, ChatDotRound,
+  Cpu, ChatDotRound, Avatar, Key,
 } from '@element-plus/icons-vue'
 
 import App from './App.vue'
@@ -23,7 +23,7 @@ const icons = {
   Reading, HomeFilled, Collection, EditPen, VideoPlay, Tickets,
   DataAnalysis, TrendCharts, Setting, SwitchButton,
   Connection, CopyDocument, Printer, Finished, Flag, User,
-  Cpu, ChatDotRound,
+  Cpu, ChatDotRound, Avatar, Key,
 }
 for (const [key, component] of Object.entries(icons)) {
   app.component(key, component)

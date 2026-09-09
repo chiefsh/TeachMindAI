@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, or_
+from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.orm.attributes import flag_modified
 from typing import Optional
@@ -14,7 +14,11 @@ from app.models.homework import HomeworkPaper, HomeworkSourceType
 from app.models.courseware import Courseware
 from app.models.textbook import ParseStatus, Textbook
 from app.schemas.homework import HomeworkCreate, HomeworkOut, HomeworkDetail
-from app.api.deps import get_current_teacher
+from app.api.deps import get_current_teacher, require_perm
+from app.core.access import (
+    apply_private_scope, require_resource, require_org_asset,
+    stamp_access_many, can_view_resource,
+)
 from app.services.export_service import build_homework_export
 
 router = APIRouter(prefix="/homework", tags=["作业考试"])
@@ -27,28 +31,16 @@ async def list_homework(
     teacher: Teacher = Depends(get_current_teacher),
     db: AsyncSession = Depends(get_db),
 ):
-    q = select(HomeworkPaper).where(HomeworkPaper.teacher_id == teacher.id)
-    if grade_id or subject_id:
-        tb_q = select(Textbook.id).where(Textbook.teacher_id == teacher.id)
-        if grade_id:
-            tb_q = tb_q.where(Textbook.grade_id == grade_id)
-        if subject_id:
-            tb_q = tb_q.where(Textbook.subject_id == subject_id)
-        tb_ids = list((await db.execute(tb_q)).scalars().all())
-        cw_ids = []
-        if tb_ids:
-            cw_ids = list((await db.execute(
-                select(Courseware.id).where(
-                    Courseware.teacher_id == teacher.id,
-                    Courseware.textbook_id.in_(tb_ids),
-                )
-            )).scalars().all())
-        q = q.where(or_(
-            HomeworkPaper.textbook_id.in_(tb_ids or [-1]),
-            HomeworkPaper.courseware_id.in_(cw_ids or [-1]),
-        ))
+    q = select(HomeworkPaper)
+    q = await apply_private_scope(q, HomeworkPaper, db, teacher, "homework")
+    if grade_id:
+        q = q.where(HomeworkPaper.grade_id == grade_id)
+    if subject_id:
+        q = q.where(HomeworkPaper.subject_id == subject_id)
     result = await db.execute(q.order_by(HomeworkPaper.created_at.desc()))
-    return result.scalars().all()
+    rows = list(result.scalars().all())
+    await stamp_access_many(db, teacher, rows, "homework")
+    return rows
 
 
 async def _validated_paper_fields(db: AsyncSession, teacher: Teacher, data: HomeworkCreate) -> dict:
@@ -69,14 +61,14 @@ async def _validated_paper_fields(db: AsyncSession, teacher: Teacher, data: Home
         chapter_ids = []
 
     if cw_ids:
-        rows = (await db.execute(
-            select(Courseware).where(
-                Courseware.id.in_(cw_ids),
-                Courseware.teacher_id == teacher.id,
-            )
-        )).scalars().all()
+        rows = list((await db.execute(
+            select(Courseware).where(Courseware.id.in_(cw_ids))
+        )).scalars().all())
         if len(rows) != len(set(cw_ids)):
             raise HTTPException(status_code=400, detail="课件不存在或无权使用")
+        for r in rows:
+            if not await can_view_resource(db, teacher, r, "courseware"):
+                raise HTTPException(status_code=400, detail="课件不存在或无权使用")
         if any(r.gen_status != ParseStatus.done for r in rows):
             raise HTTPException(status_code=400, detail="请选择已生成完成的课件")
         if textbook_id is None:
@@ -84,12 +76,9 @@ async def _validated_paper_fields(db: AsyncSession, teacher: Teacher, data: Home
 
     if textbook_id:
         tb = (await db.execute(
-            select(Textbook).where(
-                Textbook.id == textbook_id, Textbook.teacher_id == teacher.id,
-            )
+            select(Textbook).where(Textbook.id == textbook_id)
         )).scalar_one_or_none()
-        if not tb:
-            raise HTTPException(status_code=400, detail="课本不存在或无权使用")
+        await require_org_asset(db, teacher, tb, "课本不存在或无权使用")
         grade_id = tb.grade_id
         subject_id = tb.subject_id
     else:
@@ -130,7 +119,7 @@ async def _enqueue_generate(paper: HomeworkPaper, db: AsyncSession) -> HomeworkP
 @router.post("", response_model=HomeworkOut, status_code=201)
 async def create_homework(
     data: HomeworkCreate,
-    teacher: Teacher = Depends(get_current_teacher),
+    teacher: Teacher = Depends(require_perm("homework.create")),
     db: AsyncSession = Depends(get_db),
 ):
     fields = await _validated_paper_fields(db, teacher, data)
@@ -150,10 +139,10 @@ async def create_homework(
 async def regenerate_homework(
     paper_id: int,
     data: HomeworkCreate,
-    teacher: Teacher = Depends(get_current_teacher),
+    teacher: Teacher = Depends(require_perm("homework.edit")),
     db: AsyncSession = Depends(get_db),
 ):
-    paper = await _get_or_404(paper_id, teacher.id, db)
+    paper = await _get_or_404(paper_id, teacher, db, edit=True)
     if paper.gen_status in (ParseStatus.pending, ParseStatus.processing):
         raise HTTPException(status_code=400, detail="正在生成中，请稍后再试")
     fields = await _validated_paper_fields(db, teacher, data)
@@ -171,7 +160,9 @@ async def get_homework(
     teacher: Teacher = Depends(get_current_teacher),
     db: AsyncSession = Depends(get_db),
 ):
-    return await _get_or_404(paper_id, teacher.id, db)
+    paper = await _get_or_404(paper_id, teacher, db)
+    await stamp_access_many(db, teacher, [paper], "homework")
+    return paper
 
 
 @router.get("/{paper_id}/export")
@@ -186,7 +177,7 @@ async def export_homework(
     fmt = (format or "docx").lower()
     if fmt not in ("docx", "pdf"):
         raise HTTPException(status_code=400, detail="仅支持 docx / pdf")
-    paper = await _get_or_404(paper_id, teacher.id, db)
+    paper = await _get_or_404(paper_id, teacher, db)
     if paper.gen_status != ParseStatus.done:
         raise HTTPException(status_code=400, detail="作业尚未生成完成，无法导出")
 
@@ -216,20 +207,22 @@ async def export_homework(
 @router.delete("/{paper_id}", status_code=204)
 async def delete_homework(
     paper_id: int,
-    teacher: Teacher = Depends(get_current_teacher),
+    teacher: Teacher = Depends(require_perm("homework.edit")),
     db: AsyncSession = Depends(get_db),
 ):
-    paper = await _get_or_404(paper_id, teacher.id, db)
+    paper = await _get_or_404(paper_id, teacher, db, delete=True)
     await db.delete(paper)
 
 
-async def _get_or_404(paper_id: int, teacher_id: int, db: AsyncSession) -> HomeworkPaper:
+async def _get_or_404(
+    paper_id: int, teacher: Teacher, db: AsyncSession, *, edit: bool = False, delete: bool = False,
+) -> HomeworkPaper:
     result = await db.execute(
         select(HomeworkPaper)
-        .where(HomeworkPaper.id == paper_id, HomeworkPaper.teacher_id == teacher_id)
+        .where(HomeworkPaper.id == paper_id)
         .options(selectinload(HomeworkPaper.questions))
     )
     paper = result.scalar_one_or_none()
-    if not paper:
-        raise HTTPException(status_code=404, detail="作业不存在")
-    return paper
+    return await require_resource(
+        db, teacher, paper, "homework", edit=edit, delete=delete, detail="作业不存在",
+    )

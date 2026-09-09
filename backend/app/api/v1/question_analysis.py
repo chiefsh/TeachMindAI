@@ -22,7 +22,8 @@ from app.schemas.question_analysis import (
     AnalysisSetOut, AnalysisSetDetail, AnalysisQuestionOut,
     ManualImportIn, AnalyzeIn, SaveToBankIn,
 )
-from app.api.deps import get_current_teacher
+from app.api.deps import get_current_teacher, require_perm
+from app.core.access import apply_private_scope, require_resource, stamp_access_many
 
 router = APIRouter(prefix="/question-analysis", tags=["试题分析"])
 
@@ -41,14 +42,17 @@ async def _default_name(db: AsyncSession, grade_id: int, subject_id: int) -> str
     return f"{g}_{s}_{datetime.now():%Y%m%d%H%M%S}"
 
 
-async def _get_set_or_404(set_id: int, teacher_id: int, db: AsyncSession, with_questions: bool = False) -> AnalysisSet:
-    q = select(AnalysisSet).where(AnalysisSet.id == set_id, AnalysisSet.teacher_id == teacher_id)
+async def _get_set_or_404(
+    set_id: int, teacher: Teacher, db: AsyncSession, with_questions: bool = False,
+    *, edit: bool = False, delete: bool = False,
+) -> AnalysisSet:
+    q = select(AnalysisSet).where(AnalysisSet.id == set_id)
     if with_questions:
         q = q.options(selectinload(AnalysisSet.questions))
     aset = (await db.execute(q)).scalar_one_or_none()
-    if not aset:
-        raise HTTPException(status_code=404, detail="试题批次不存在")
-    return aset
+    return await require_resource(
+        db, teacher, aset, "analysis", edit=edit, delete=delete, detail="试题批次不存在",
+    )
 
 
 @router.get("", response_model=dict)
@@ -60,7 +64,8 @@ async def list_sets(
     teacher: Teacher = Depends(get_current_teacher),
     db: AsyncSession = Depends(get_db),
 ):
-    base = select(AnalysisSet.id).where(AnalysisSet.teacher_id == teacher.id)
+    base = select(AnalysisSet.id)
+    base = await apply_private_scope(base, AnalysisSet, db, teacher, "analysis")
     if grade_id:
         base = base.where(AnalysisSet.grade_id == grade_id)
     if subject_id:
@@ -70,8 +75,8 @@ async def list_sets(
     q = (
         select(AnalysisSet, func.count(AnalysisQuestion.id))
         .outerjoin(AnalysisQuestion, AnalysisQuestion.set_id == AnalysisSet.id)
-        .where(AnalysisSet.teacher_id == teacher.id)
     )
+    q = await apply_private_scope(q, AnalysisSet, db, teacher, "analysis")
     if grade_id:
         q = q.where(AnalysisSet.grade_id == grade_id)
     if subject_id:
@@ -83,6 +88,8 @@ async def list_sets(
         .limit(page_size)
     )
     rows = (await db.execute(q)).all()
+    asets = [aset for aset, _ in rows]
+    await stamp_access_many(db, teacher, asets, "analysis")
     items: list[AnalysisSetOut] = []
     for aset, cnt in rows:
         item = AnalysisSetOut.model_validate(aset)
@@ -94,7 +101,7 @@ async def list_sets(
 @router.post("/import-manual", response_model=AnalysisSetDetail, status_code=201)
 async def import_manual(
     data: ManualImportIn,
-    teacher: Teacher = Depends(get_current_teacher),
+    teacher: Teacher = Depends(require_perm("analysis.create")),
     db: AsyncSession = Depends(get_db),
 ):
     """富文本/纯文本录入：默认调用 LLM 拆题（失败回退按题号拆分）。"""
@@ -154,7 +161,7 @@ async def import_manual(
     await attach_bank_analysis(db, teacher.id, aqs)
 
     await db.commit()
-    aset = await _get_set_or_404(aset.id, teacher.id, db, with_questions=True)
+    aset = await _get_set_or_404(aset.id, teacher, db, with_questions=True)
     detail = AnalysisSetDetail.model_validate(aset)
     detail.question_count = len(aset.questions)
     return detail
@@ -166,7 +173,7 @@ async def import_file(
     grade_id: int = Form(...),
     subject_id: int = Form(...),
     name: Optional[str] = Form(None),
-    teacher: Teacher = Depends(get_current_teacher),
+    teacher: Teacher = Depends(require_perm("analysis.create")),
     db: AsyncSession = Depends(get_db),
 ):
     ext = _ext(file.filename or "")
@@ -204,7 +211,8 @@ async def get_set(
     teacher: Teacher = Depends(get_current_teacher),
     db: AsyncSession = Depends(get_db),
 ):
-    aset = await _get_set_or_404(set_id, teacher.id, db, with_questions=True)
+    aset = await _get_set_or_404(set_id, teacher, db, with_questions=True)
+    await stamp_access_many(db, teacher, [aset], "analysis")
     detail = AnalysisSetDetail.model_validate(aset)
     detail.question_count = len(aset.questions)
     return detail
@@ -216,7 +224,7 @@ async def get_status(
     teacher: Teacher = Depends(get_current_teacher),
     db: AsyncSession = Depends(get_db),
 ):
-    aset = await _get_set_or_404(set_id, teacher.id, db, with_questions=True)
+    aset = await _get_set_or_404(set_id, teacher, db, with_questions=True)
     qs = aset.questions
     return {
         "parse_status": aset.parse_status.value,
@@ -233,12 +241,12 @@ async def get_status(
 @router.post("/{set_id}/reparse", response_model=AnalysisSetOut)
 async def reparse(
     set_id: int,
-    teacher: Teacher = Depends(get_current_teacher),
+    teacher: Teacher = Depends(require_perm("analysis.edit")),
     db: AsyncSession = Depends(get_db),
 ):
     """重新解析：清空已拆题目并重新拆题（仅文件/图片导入的批次可用）。"""
-    aset = await _get_set_or_404(set_id, teacher.id, db)
-    if aset.source_type not in ("file", "image") or not aset.source_file_path:
+    aset = await _get_set_or_404(set_id, teacher, db, edit=True)
+    if aset.source_type == "manual" or not aset.source_file_path:
         raise HTTPException(status_code=400, detail="该批次没有可重新解析的源文件")
 
     await db.execute(delete(AnalysisQuestion).where(AnalysisQuestion.set_id == aset.id))
@@ -260,10 +268,10 @@ async def reparse(
 async def analyze(
     set_id: int,
     data: AnalyzeIn,
-    teacher: Teacher = Depends(get_current_teacher),
+    teacher: Teacher = Depends(require_perm("analysis.edit")),
     db: AsyncSession = Depends(get_db),
 ):
-    aset = await _get_set_or_404(set_id, teacher.id, db, with_questions=True)
+    aset = await _get_set_or_404(set_id, teacher, db, with_questions=True, edit=True)
     valid_ids = {q.id for q in aset.questions}
     ids = [i for i in data.question_ids if i in valid_ids]
     if not ids:
@@ -311,11 +319,11 @@ async def analyze(
 async def save_to_bank(
     set_id: int,
     data: SaveToBankIn,
-    teacher: Teacher = Depends(get_current_teacher),
+    teacher: Teacher = Depends(require_perm("analysis.edit")),
     db: AsyncSession = Depends(get_db),
 ):
     """将选中的题目复用入题库（questions 表）。重复题干不重复录入。"""
-    aset = await _get_set_or_404(set_id, teacher.id, db, with_questions=True)
+    aset = await _get_set_or_404(set_id, teacher, db, with_questions=True, edit=True)
     id_set = set(data.question_ids)
     items: list[dict] = []
     for q in aset.questions:
@@ -374,7 +382,7 @@ async def export_set(
     teacher: Teacher = Depends(get_current_teacher),
     db: AsyncSession = Depends(get_db),
 ):
-    aset = await _get_set_or_404(set_id, teacher.id, db, with_questions=True)
+    aset = await _get_set_or_404(set_id, teacher, db, with_questions=True)
     fmt = (format or "docx").lower()
     questions = [
         {
@@ -401,9 +409,9 @@ async def export_set(
 @router.delete("/{set_id}", status_code=204)
 async def delete_set(
     set_id: int,
-    teacher: Teacher = Depends(get_current_teacher),
+    teacher: Teacher = Depends(require_perm("analysis.edit")),
     db: AsyncSession = Depends(get_db),
 ):
-    aset = await _get_set_or_404(set_id, teacher.id, db)
+    aset = await _get_set_or_404(set_id, teacher, db, delete=True)
     await db.delete(aset)
     await db.commit()

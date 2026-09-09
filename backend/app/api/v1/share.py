@@ -11,9 +11,10 @@ from sqlalchemy.orm import selectinload
 from app.api.deps import get_current_teacher
 from app.core.config import settings
 from app.core.database import get_db
+from app.core.access import require_resource
 from app.core.minio_client import get_presigned_url
 from app.core.security import get_password_hash, verify_password
-from app.models.courseware import Courseware
+from app.models.courseware import Courseware, CoursewareVersion
 from app.models.education import Grade, Subject
 from app.models.question_analysis import AnalysisSet
 from app.models.share import ShareLink
@@ -47,8 +48,9 @@ def _to_out(link: ShareLink, title: str = "") -> ShareOut:
 
 
 async def _owned_title(
-    resource_type: str, resource_id: int, teacher_id: int, db: AsyncSession, *, require_ready: bool,
+    resource_type: str, resource_id: int, teacher: Teacher, db: AsyncSession, *, require_ready: bool,
 ) -> str:
+    teacher_id = teacher.id
     if resource_type == "courseware":
         cw = (
             await db.execute(
@@ -60,6 +62,19 @@ async def _owned_title(
         if require_ready and (cw.gen_status != ParseStatus.done or not cw.content):
             raise HTTPException(status_code=400, detail="课件尚未生成完成，无法分享")
         return cw.title
+    if resource_type == "courseware_version":
+        ver = (
+            await db.execute(select(CoursewareVersion).where(CoursewareVersion.id == resource_id))
+        ).scalar_one_or_none()
+        if not ver:
+            raise HTTPException(status_code=404, detail="历史版本不存在")
+        cw = (
+            await db.execute(select(Courseware).where(Courseware.id == ver.courseware_id))
+        ).scalar_one_or_none()
+        await require_resource(db, teacher, cw, "courseware", detail="课件不存在")
+        if require_ready and not isinstance(ver.content, dict):
+            raise HTTPException(status_code=400, detail="该版本没有内容，无法分享")
+        return ver.title
     if resource_type == "question_analysis":
         aset = (
             await db.execute(
@@ -82,7 +97,7 @@ async def create_share(
     teacher: Teacher = Depends(get_current_teacher),
     db: AsyncSession = Depends(get_db),
 ):
-    title = await _owned_title(data.resource_type, data.resource_id, teacher.id, db, require_ready=True)
+    title = await _owned_title(data.resource_type, data.resource_id, teacher, db, require_ready=True)
     link = ShareLink(
         teacher_id=teacher.id,
         resource_type=data.resource_type,
@@ -105,7 +120,7 @@ async def list_shares(
     teacher: Teacher = Depends(get_current_teacher),
     db: AsyncSession = Depends(get_db),
 ):
-    title = await _owned_title(resource_type, resource_id, teacher.id, db, require_ready=False)
+    title = await _owned_title(resource_type, resource_id, teacher, db, require_ready=False)
     rows = (
         await db.execute(
             select(ShareLink)
@@ -167,6 +182,11 @@ async def _resource_title(link: ShareLink, db: AsyncSession) -> str:
     if link.resource_type == "courseware":
         cw = (await db.execute(select(Courseware).where(Courseware.id == link.resource_id))).scalar_one_or_none()
         return cw.title if cw else ""
+    if link.resource_type == "courseware_version":
+        ver = (
+            await db.execute(select(CoursewareVersion).where(CoursewareVersion.id == link.resource_id))
+        ).scalar_one_or_none()
+        return ver.title if ver else ""
     if link.resource_type == "question_analysis":
         aset = (await db.execute(select(AnalysisSet).where(AnalysisSet.id == link.resource_id))).scalar_one_or_none()
         return aset.name if aset else ""
@@ -193,10 +213,23 @@ def _image_ids(content: dict | None) -> list[int]:
     return list(dict.fromkeys(ids))
 
 
-async def _courseware_payload(cw: Courseware, expires_at: datetime, db: AsyncSession) -> dict:
+async def _courseware_payload(
+    cw: Courseware,
+    expires_at: datetime,
+    db: AsyncSession,
+    *,
+    content: dict | None = None,
+    render_style: str | None = None,
+    theme: str | None = None,
+) -> dict:
+    body = content if content is not None else (cw.content if isinstance(cw.content, dict) else None)
+    style = render_style or (
+        cw.render_style.value if hasattr(cw.render_style, "value") else (cw.render_style or "ppt")
+    )
+    theme_key = theme or cw.theme or "indigo"
     remain_h = max(1, min(168, ceil((expires_at - _now()).total_seconds() / 3600)))
     images: dict[str, str] = {}
-    ids = _image_ids(cw.content if isinstance(cw.content, dict) else None)
+    ids = _image_ids(body if isinstance(body, dict) else None)
     if ids:
         rows = (
             await db.execute(select(TextbookImage).where(TextbookImage.id.in_(ids)))
@@ -219,9 +252,9 @@ async def _courseware_payload(cw: Courseware, expires_at: datetime, db: AsyncSes
             grade_name = g.name if g else ""
             subject_name = s.name if s else ""
     return {
-        "render_style": cw.render_style.value if hasattr(cw.render_style, "value") else (cw.render_style or "ppt"),
-        "theme": cw.theme or "indigo",
-        "content": cw.content or {},
+        "render_style": style,
+        "theme": theme_key,
+        "content": body or {},
         "images": images,
         "grade_name": grade_name,
         "subject_name": subject_name,
@@ -269,6 +302,21 @@ async def _build_payload(link: ShareLink, db: AsyncSession) -> dict:
         if not cw or cw.gen_status != ParseStatus.done or not cw.content:
             raise HTTPException(status_code=404, detail="分享内容已不可用")
         return await _courseware_payload(cw, link.expires_at, db)
+    if link.resource_type == "courseware_version":
+        ver = (
+            await db.execute(select(CoursewareVersion).where(CoursewareVersion.id == link.resource_id))
+        ).scalar_one_or_none()
+        if not ver or not isinstance(ver.content, dict):
+            raise HTTPException(status_code=404, detail="分享内容已不可用")
+        cw = (
+            await db.execute(select(Courseware).where(Courseware.id == ver.courseware_id))
+        ).scalar_one_or_none()
+        if not cw:
+            raise HTTPException(status_code=404, detail="分享内容已不可用")
+        return await _courseware_payload(
+            cw, link.expires_at, db,
+            content=ver.content, render_style=ver.render_style, theme=ver.theme,
+        )
     if link.resource_type == "question_analysis":
         aset = (
             await db.execute(select(AnalysisSet).where(AnalysisSet.id == link.resource_id))
@@ -299,8 +347,9 @@ async def public_share_access(
         pwd = data.password or ""
         if not pwd or not verify_password(pwd, link.password_hash):
             raise HTTPException(status_code=403, detail="密码错误")
+    out_type = "courseware" if link.resource_type == "courseware_version" else link.resource_type
     return SharePayloadOut(
-        resource_type=link.resource_type,
+        resource_type=out_type,
         title=title,
         expires_at=link.expires_at,
         payload=await _build_payload(link, db),

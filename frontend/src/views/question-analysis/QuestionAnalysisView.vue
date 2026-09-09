@@ -5,12 +5,15 @@
         <h1 class="page-title">试题分析</h1>
         <p class="page-subtitle">导入试题，AI 图解式解析，帮助学生更直观地掌握每道题</p>
       </div>
-      <el-button type="primary" :icon="Plus" @click="openImport">导入试题</el-button>
+      <div class="flex flex-wrap gap-2">
+        <el-button @click="openBatchCollab">批量设置协作者</el-button>
+        <el-button type="primary" :icon="Plus" @click="openImport">导入试题</el-button>
+      </div>
     </div>
 
     <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
       <div v-for="s in sets" :key="s.id"
-        class="card !p-4 hover:shadow-md transition-shadow cursor-pointer"
+        class="card !p-4 hover:shadow-md transition-shadow cursor-pointer relative"
         @click="router.push(`/question-analysis/${s.id}`)"
       >
         <div class="flex items-start gap-3">
@@ -27,6 +30,7 @@
               <span :class="`badge badge-${s.parse_status}`">{{ statusLabel(s.parse_status) }}</span>
               <span class="text-xs text-slate-400">{{ s.question_count }} 题</span>
               <span class="text-xs text-slate-400">{{ formatDate(s.created_at) }}</span>
+              <span v-if="s.creator_name" class="text-xs text-slate-400">{{ s.creator_name }}</span>
             </div>
           </div>
         </div>
@@ -37,8 +41,13 @@
             size="small" link :icon="Share"
             @click="openShare(s)"
           >分享</el-button>
+          <el-button
+            v-if="s.can_manage_collab"
+            size="small" link
+            @click="openCollab(s)"
+          >协作者</el-button>
           <el-popconfirm
-            v-if="s.source_type !== 'manual'"
+            v-if="s.source_type !== 'manual' && s.can_edit !== false"
             title="重新解析将清空已拆题目并重新拆题，确定继续吗？"
             width="240"
             @confirm="reparse(s)"
@@ -52,7 +61,7 @@
             </template>
           </el-popconfirm>
           <div class="flex-1" />
-          <el-popconfirm title="确定删除该试题批次？" @confirm="del(s.id)">
+          <el-popconfirm v-if="s.can_manage_collab !== false" title="确定删除该试题批次？" @confirm="del(s.id)">
             <template #reference>
               <el-button size="small" link type="danger" :icon="Delete">删除</el-button>
             </template>
@@ -128,11 +137,17 @@
       :resource-id="shareTarget?.id || 0"
       :resource-title="shareTarget?.name"
     />
+    <CollaboratorsDialog
+      v-model="showCollab"
+      resource-type="analysis"
+      :options="collabOptions"
+      :selected-ids="collabIds"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { watchDebounced } from '@vueuse/core'
 import { useRouter } from 'vue-router'
 import { analysisApi } from '@/api/modules'
@@ -140,6 +155,7 @@ import { useEducationStore } from '@/stores/education'
 import { ElMessage } from 'element-plus'
 import { Plus, View, Delete, DataAnalysis, UploadFilled, Refresh, Share } from '@element-plus/icons-vue'
 import ShareDialog from '@/components/ShareDialog.vue'
+import CollaboratorsDialog from '@/components/CollaboratorsDialog.vue'
 import type { AnalysisSet } from '@/types'
 import { isBusyStatus, useBusyPoll } from '@/utils/busyPoll'
 import RichEditor from '@/components/RichEditor.vue'
@@ -148,6 +164,11 @@ import dayjs from 'dayjs'
 const router = useRouter()
 const edu = useEducationStore()
 const sets = ref<AnalysisSet[]>([])
+const showCollab = ref(false)
+const collabIds = ref<number[]>([])
+const collabOptions = computed(() =>
+  sets.value.filter(s => s.can_manage_collab).map(s => ({ id: s.id, title: s.name })),
+)
 const loading = ref(false)
 const total = ref(0)
 const page = ref(1)
@@ -210,7 +231,7 @@ function openImport() {
 
 // 年级变化时清空已选学科，保证学科与年级联动
 function onGradeChange() {
-  form.subject_id = null
+  form.subject_id = edu.defaultSubjectId(form.grade_id)
 }
 
 function onFileChange(f: any) { file.value = f.raw }
@@ -245,6 +266,16 @@ async function submit() {
       router.push(`/question-analysis/${s.id}`)
     }
   } finally { submitting.value = false }
+}
+
+function openBatchCollab() {
+  collabIds.value = []
+  showCollab.value = true
+}
+
+function openCollab(s: AnalysisSet) {
+  collabIds.value = [s.id]
+  showCollab.value = true
 }
 
 async function del(id: number) {

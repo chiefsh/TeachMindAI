@@ -14,6 +14,7 @@ class TextbookOut(BaseModel):
     subject_id: int
     grade_id: int
     created_at: datetime
+    creator_name: str | None = None
     model_config = {"from_attributes": True}
 
 

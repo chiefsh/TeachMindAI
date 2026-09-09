@@ -3,11 +3,12 @@ import type {
   Textbook, Chapter, Question, QuestionImport, Courseware, HomeworkPaper,
   Student, SchoolClass, ExamResult, ExamSummary, GradeReport, LLMConfig, EmbeddingConfig, TeacherSubject,
   SchoolLevel, Grade, Subject, SubjectPrompt,
-  CoursewareSession, SessionBoard, PublicSession,
+  CoursewareSession, SessionBoard, PublicSession, CoursewareVersion,
   AnalysisSet, Paginated, KgNode, KgEdge, KgGraph,
   ShareLink, ShareMeta, SharePayload, ShareResourceType,
   GradingAssignment, GradingSubmission, WrongQuestionItem,
   CollectMeta,
+  PermissionItem, RoleItem, OrgUser, ClassOption,
 } from '@/types'
 
 // ─── 工作台 ────────────────────────────────────────────────────────
@@ -128,6 +129,14 @@ export const coursewareApi = {
     })
   },
   delete: (id: number) => request.delete(`/coursewares/${id}`),
+  listVersions: (id: number) =>
+    request.get<CoursewareVersion[]>(`/coursewares/${id}/versions`),
+  getVersion: (id: number, vid: number) =>
+    request.get<CoursewareVersion>(`/coursewares/${id}/versions/${vid}`),
+  deleteVersion: (id: number, vid: number) =>
+    request.delete(`/coursewares/${id}/versions/${vid}`),
+  applyVersion: (id: number, vid: number) =>
+    request.post<Courseware>(`/coursewares/${id}/versions/${vid}/apply`),
 }
 
 // ─── 课堂互动会话 ──────────────────────────────────────────────────
@@ -349,4 +358,33 @@ export const settingsApi = {
     request.put<SubjectPrompt>(`/settings/subject-prompts/${encodeURIComponent(subjectName)}`, data),
   resetSubjectPrompt: (subjectName: string) =>
     request.delete<SubjectPrompt>(`/settings/subject-prompts/${encodeURIComponent(subjectName)}`),
+}
+
+// ─── 用户 / 角色 ──────────────────────────────────────────────────
+export const rbacApi = {
+  listPermissions: () => request.get<PermissionItem[]>('/permissions'),
+  listRoles: () => request.get<RoleItem[]>('/roles'),
+  createRole: (data: { name: string; permission_codes: string[] }) =>
+    request.post<RoleItem>('/roles', data),
+  updateRole: (id: number, data: { name?: string; permission_codes?: string[] }) =>
+    request.patch<RoleItem>(`/roles/${id}`, data),
+  deleteRole: (id: number) => request.delete(`/roles/${id}`),
+  listUsers: (params?: { keyword?: string; page?: number; page_size?: number }) =>
+    request.get<Paginated<OrgUser>>('/users', { params }),
+  getUser: (id: number) => request.get<OrgUser>(`/users/${id}`),
+  createUser: (data: object) => request.post<OrgUser>('/users', data),
+  updateUser: (id: number, data: object) => request.patch<OrgUser>(`/users/${id}`, data),
+  deleteUser: (id: number) => request.delete(`/users/${id}`),
+  classOptions: () => request.get<ClassOption[]>('/users/class-options'),
+  colleagues: () => request.get<{ id: number; username: string; real_name: string }[]>('/colleagues'),
+  listCollaborators: (type: string, id: number) =>
+    request.get<{ teacher_id: number; real_name: string; username: string; can_edit: boolean }[]>(
+      `/resources/${type}/${id}/collaborators`,
+    ),
+  saveCollaborators: (type: string, id: number, items: { teacher_id: number; can_edit: boolean }[]) =>
+    request.put(`/resources/${type}/${id}/collaborators`, items),
+  saveCollaboratorsBatch: (
+    type: string,
+    data: { resource_ids: number[]; items: { teacher_id: number; can_edit: boolean }[]; replace?: boolean },
+  ) => request.put<{ updated: number; skipped: number }>(`/resources/${type}/collaborators/batch`, data),
 }

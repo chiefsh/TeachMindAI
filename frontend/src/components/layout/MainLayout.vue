@@ -61,13 +61,15 @@
       </nav>
       <div class="border-t border-slate-100 p-3">
         <div class="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-slate-50">
-          <el-avatar :size="32" class="bg-primary-600 text-white flex-shrink-0">
-            {{ auth.teacher?.real_name?.charAt(0) || '师' }}
-          </el-avatar>
-          <div class="flex-1 min-w-0">
-            <p class="text-sm font-medium text-slate-700 truncate">{{ auth.teacher?.real_name }}</p>
-            <p class="text-xs text-slate-400 truncate">{{ auth.teacher?.username }}</p>
-          </div>
+          <button type="button" class="flex items-center gap-3 flex-1 min-w-0 text-left" @click="profileOpen = true">
+            <el-avatar :size="32" class="bg-primary-600 text-white flex-shrink-0">
+              {{ auth.teacher?.real_name?.charAt(0) || '师' }}
+            </el-avatar>
+            <div class="flex-1 min-w-0">
+              <p class="text-sm font-medium text-slate-700 truncate">{{ auth.teacher?.real_name }}</p>
+              <p class="text-xs text-slate-400 truncate">{{ auth.teacher?.username }}</p>
+            </div>
+          </button>
           <el-button link @click="handleLogout" class="!text-slate-400 hover:!text-slate-600">
             <el-icon><SwitchButton /></el-icon>
           </el-button>
@@ -141,13 +143,15 @@
         </nav>
         <div class="border-t border-slate-100 p-3">
           <div class="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-slate-50">
-            <el-avatar :size="32" class="bg-primary-600 text-white flex-shrink-0">
-              {{ auth.teacher?.real_name?.charAt(0) || '师' }}
-            </el-avatar>
-            <div class="flex-1 min-w-0">
-              <p class="text-sm font-medium text-slate-700 truncate">{{ auth.teacher?.real_name }}</p>
-              <p class="text-xs text-slate-400 truncate">{{ auth.teacher?.username }}</p>
-            </div>
+            <button type="button" class="flex items-center gap-3 flex-1 min-w-0 text-left" @click="profileOpen = true">
+              <el-avatar :size="32" class="bg-primary-600 text-white flex-shrink-0">
+                {{ auth.teacher?.real_name?.charAt(0) || '师' }}
+              </el-avatar>
+              <div class="flex-1 min-w-0">
+                <p class="text-sm font-medium text-slate-700 truncate">{{ auth.teacher?.real_name }}</p>
+                <p class="text-xs text-slate-400 truncate">{{ auth.teacher?.username }}</p>
+              </div>
+            </button>
             <el-button link @click="handleLogout" class="!text-slate-400 hover:!text-slate-600">
               <el-icon><SwitchButton /></el-icon>
             </el-button>
@@ -180,7 +184,7 @@
             @change="edu.selectSchoolLevel"
             clearable
           >
-            <el-option v-for="l in edu.schoolLevels" :key="l.id" :label="l.name" :value="l.id" />
+            <el-option v-for="l in edu.visibleSchoolLevels" :key="l.id" :label="l.name" :value="l.id" />
           </el-select>
 
           <el-select
@@ -219,24 +223,27 @@
         <router-view />
       </main>
     </div>
+    <ProfileDrawer v-model="profileOpen" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, watch, computed } from 'vue'
 import { useMediaQuery } from '@vueuse/core'
 import { useAuthStore } from '@/stores/auth'
 import { useEducationStore } from '@/stores/education'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import { Fold, ArrowDown } from '@element-plus/icons-vue'
+import ProfileDrawer from './ProfileDrawer.vue'
 
-type NavChild = { path: string; label: string; icon: string }
+type NavChild = { path: string; label: string; icon: string; perm?: string }
 type NavItem = {
   key: string
   label: string
   icon: string
   path?: string
+  perm?: string
   children?: NavChild[]
 }
 
@@ -247,17 +254,18 @@ const route = useRoute()
 
 const isDesktop = useMediaQuery('(min-width: 1024px)')
 const drawerOpen = ref(false)
+const profileOpen = ref(false)
 
-const navMenu: NavItem[] = [
+const allNav: NavItem[] = [
   { key: 'dashboard', label: '工作台', icon: 'HomeFilled', path: '/dashboard' },
   {
     key: 'resources',
     label: '教学资源',
     icon: 'Collection',
     children: [
-      { path: '/textbook', label: '课本管理', icon: 'Collection' },
-      { path: '/question-bank', label: '题库管理', icon: 'EditPen' },
-      { path: '/students', label: '班级/学生', icon: 'User' },
+      { path: '/textbook', label: '课本管理', icon: 'Collection', perm: 'textbook.view' },
+      { path: '/question-bank', label: '题库管理', icon: 'EditPen', perm: 'question.view' },
+      { path: '/students', label: '班级/学生', icon: 'User', perm: 'classroom.view' },
     ],
   },
   {
@@ -265,9 +273,9 @@ const navMenu: NavItem[] = [
     label: 'AI 生成',
     icon: 'VideoPlay',
     children: [
-      { path: '/courseware', label: '课件生成', icon: 'VideoPlay' },
-      { path: '/homework', label: '作业/考试', icon: 'Tickets' },
-      { path: '/question-analysis', label: '试题分析', icon: 'DataAnalysis' },
+      { path: '/courseware', label: '课件生成', icon: 'VideoPlay', perm: 'courseware.view' },
+      { path: '/homework', label: '作业/考试', icon: 'Tickets', perm: 'homework.view' },
+      { path: '/question-analysis', label: '试题分析', icon: 'DataAnalysis', perm: 'analysis.view' },
     ],
   },
   {
@@ -275,10 +283,19 @@ const navMenu: NavItem[] = [
     label: '学情分析',
     icon: 'TrendCharts',
     children: [
-      { path: '/grading', label: '批改作业/试卷', icon: 'Finished' },
-      { path: '/wrong-questions', label: '错题本', icon: 'Flag' },
-      { path: '/grades', label: '学生成绩', icon: 'TrendCharts' },
-      { path: '/knowledge', label: '知识图谱', icon: 'Connection' },
+      { path: '/grading', label: '批改作业/试卷', icon: 'Finished', perm: 'grading.view' },
+      { path: '/wrong-questions', label: '错题本', icon: 'Flag', perm: 'wrong_question.view' },
+      { path: '/grades', label: '学生成绩', icon: 'TrendCharts', perm: 'grade.view' },
+      { path: '/knowledge', label: '知识图谱', icon: 'Connection', perm: 'knowledge.view' },
+    ],
+  },
+  {
+    key: 'users',
+    label: '用户管理',
+    icon: 'Avatar',
+    children: [
+      { path: '/users', label: '用户', icon: 'Avatar', perm: 'user.view' },
+      { path: '/roles', label: '角色', icon: 'Key', perm: 'role.view' },
     ],
   },
   {
@@ -286,12 +303,21 @@ const navMenu: NavItem[] = [
     label: '系统设置',
     icon: 'Setting',
     children: [
-      { path: '/settings/profile', label: '个人信息', icon: 'User' },
-      { path: '/settings/models', label: '模型设置', icon: 'Cpu' },
-      { path: '/settings/prompts', label: '提示词设置', icon: 'ChatDotRound' },
+      { path: '/settings/models', label: '系统模型', icon: 'Cpu', perm: 'settings.llm' },
+      { path: '/settings/prompts', label: '提示词设置', icon: 'ChatDotRound', perm: 'settings.prompt' },
     ],
   },
 ]
+
+const navMenu = computed(() => {
+  return allNav
+    .map((item) => {
+      if (item.path) return auth.can(item.perm) ? item : null
+      const children = (item.children || []).filter(c => auth.can(c.perm))
+      return children.length ? { ...item, children } : null
+    })
+    .filter((x): x is NavItem => !!x)
+})
 
 function isChildActive(path: string) {
   return route.path === path || route.path.startsWith(path + '/')
@@ -303,7 +329,7 @@ function isGroupActive(item: NavItem) {
 }
 
 function groupOf(path: string) {
-  return navMenu.find(g =>
+  return navMenu.value.find(g =>
     (g.path && (path === g.path || path.startsWith(g.path + '/')))
     || g.children?.some(c => path === c.path || path.startsWith(c.path + '/')),
   )?.key ?? ''

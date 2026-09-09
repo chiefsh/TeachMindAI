@@ -4,7 +4,7 @@ from typing import Optional
 
 from app.core.database import get_db
 from app.models.teacher import Teacher
-from app.api.deps import get_current_teacher
+from app.api.deps import get_current_teacher, require_perm
 from app.schemas.grading import (
     AssignmentCreate, AssignmentOut, AssignmentDetail, SubmissionDetail,
     AnswerBatchIn, PageOrderIn, WrongItemOut,
@@ -24,7 +24,7 @@ def _err(e: ValueError) -> HTTPException:
 @router.post("/assignments", response_model=AssignmentOut, status_code=201)
 async def create_assignment(
     data: AssignmentCreate,
-    teacher: Teacher = Depends(get_current_teacher),
+    teacher: Teacher = Depends(require_perm("grading.create")),
     db: AsyncSession = Depends(get_db),
 ):
     try:
@@ -61,7 +61,7 @@ async def get_assignment(
 @router.delete("/assignments/{assignment_id}", status_code=204)
 async def delete_assignment(
     assignment_id: int,
-    teacher: Teacher = Depends(get_current_teacher),
+    teacher: Teacher = Depends(require_perm("grading.edit")),
     db: AsyncSession = Depends(get_db),
 ):
     try:
@@ -90,7 +90,7 @@ async def get_student_submission(
 async def upload_pages(
     submission_id: int,
     files: list[UploadFile] = File(...),
-    teacher: Teacher = Depends(get_current_teacher),
+    teacher: Teacher = Depends(require_perm("grading.edit")),
     db: AsyncSession = Depends(get_db),
 ):
     payloads: list[tuple[str, bytes]] = []
@@ -111,7 +111,7 @@ async def upload_pages(
 async def delete_page(
     submission_id: int,
     page_id: int,
-    teacher: Teacher = Depends(get_current_teacher),
+    teacher: Teacher = Depends(require_perm("grading.edit")),
     db: AsyncSession = Depends(get_db),
 ):
     try:
@@ -130,7 +130,7 @@ async def delete_page(
 async def reorder_pages(
     submission_id: int,
     data: PageOrderIn,
-    teacher: Teacher = Depends(get_current_teacher),
+    teacher: Teacher = Depends(require_perm("grading.edit")),
     db: AsyncSession = Depends(get_db),
 ):
     try:
@@ -144,7 +144,7 @@ async def reorder_pages(
 async def grade_answers(
     submission_id: int,
     data: AnswerBatchIn,
-    teacher: Teacher = Depends(get_current_teacher),
+    teacher: Teacher = Depends(require_perm("grading.edit")),
     db: AsyncSession = Depends(get_db),
 ):
     try:
@@ -176,7 +176,7 @@ async def list_wrong_questions(
 @router.post("/assignments/{assignment_id}/collect-token", response_model=CollectTokenOut)
 async def ensure_collect_token(
     assignment_id: int,
-    teacher: Teacher = Depends(get_current_teacher),
+    teacher: Teacher = Depends(require_perm("grading.edit")),
     db: AsyncSession = Depends(get_db),
 ):
     try:

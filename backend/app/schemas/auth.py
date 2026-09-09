@@ -39,6 +39,10 @@ class TeacherProfile(BaseModel):
     real_name: str
     avatar: str | None
     is_active: bool
+    is_super: bool = False
+    roles: list[dict] = []
+    permissions: list[str] = []
+    assignments: list[dict] = []
 
     model_config = {"from_attributes": True}
 

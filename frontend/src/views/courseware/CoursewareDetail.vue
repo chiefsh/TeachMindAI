@@ -6,7 +6,7 @@
         <div class="flex items-center gap-1.5 min-w-0">
           <h1 class="page-title truncate">{{ cw?.title }}</h1>
           <el-button
-            v-if="cw"
+            v-if="cw && canEdit"
             link
             :icon="EditPen"
             class="!px-1"
@@ -14,7 +14,7 @@
             @click="renameCw"
           />
           <el-button
-            v-if="cw"
+            v-if="cw && auth.can('courseware.create')"
             link
             :icon="CopyDocument"
             class="!px-1"
@@ -35,17 +35,28 @@
           </span>
         </div>
       </div>
-      <!-- 操作：与课件的呈现样式对应，主按钮为该样式的默认打开方式 -->
-      <div v-if="cw?.gen_status === 'done' && slides.length" class="flex items-center gap-2">
-        <el-button :type="isWebStyle ? 'primary' : ''" :icon="Monitor" @click="openLessonPage">网页预览</el-button>
-        <el-button :type="isWebStyle ? '' : 'primary'" :icon="VideoPlay" @click="openPresent">演示模式</el-button>
-        <el-button :icon="Share" @click="showShare = true">分享</el-button>
-        <el-button :icon="Connection" @click="openInteraction">课堂互动</el-button>
-        <el-button-group>
-          <el-button :loading="downloadingPage" :icon="Link" @click="downloadLessonPage">下载 HTML</el-button>
-          <el-button :loading="exporting === 'pptx'" :icon="Download" @click="doExport('pptx')">导出 PPT</el-button>
-        </el-button-group>
-        <el-button :icon="RefreshRight" @click="goRegenerate">重新生成</el-button>
+      <!-- 常用：预览/分享；其余收入「更多」 -->
+      <div v-if="cw" class="flex items-center gap-2 flex-wrap justify-end">
+        <template v-if="cw.gen_status === 'done' && slides.length">
+          <el-button :type="isWebStyle ? 'primary' : ''" :icon="Monitor" @click="openLessonPage">网页预览</el-button>
+          <el-button :type="isWebStyle ? '' : 'primary'" :icon="VideoPlay" @click="openPresent">演示模式</el-button>
+          <el-button :icon="Share" @click="showShare = true">分享</el-button>
+          <el-dropdown trigger="click" placement="bottom-end" @command="onToolbarMore">
+            <el-button :loading="downloadingPage || exporting === 'pptx'">
+              更多<el-icon class="el-icon--right"><ArrowDown /></el-icon>
+            </el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="versions" :icon="Clock">历史版本</el-dropdown-item>
+                <el-dropdown-item v-if="canEdit" command="interaction" :icon="Connection">课堂互动</el-dropdown-item>
+                <el-dropdown-item command="html" :icon="Link" :disabled="downloadingPage">下载 HTML</el-dropdown-item>
+                <el-dropdown-item command="pptx" :icon="Download" :disabled="exporting === 'pptx'">导出 PPT</el-dropdown-item>
+                <el-dropdown-item v-if="canEdit" command="regen" :icon="RefreshRight" divided>重新生成</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+        </template>
+        <el-button v-else :icon="Clock" @click="openVersions">历史版本</el-button>
       </div>
     </div>
 
@@ -60,7 +71,7 @@
     <div v-else-if="cw?.gen_status === 'failed'" class="card text-center py-16">
       <el-icon class="text-5xl text-red-400 mb-4"><CircleClose /></el-icon>
       <p class="text-slate-600 font-medium">课件生成失败，请调整配置后重新生成</p>
-      <el-button class="mt-4" type="primary" :icon="RefreshRight" @click="goRegenerate">重新生成</el-button>
+      <el-button v-if="canEdit" class="mt-4" type="primary" :icon="RefreshRight" @click="goRegenerate">重新生成</el-button>
     </div>
 
     <template v-else-if="slides.length">
@@ -106,7 +117,7 @@
               <p class="font-medium text-slate-700 truncate mt-1">{{ slide.title || `第 ${i+1} 页` }}</p>
             </div>
           </div>
-          <el-button size="small" :icon="Plus" :disabled="structureLocked" @click="insertSlide()">插入页面</el-button>
+          <el-button v-if="canEdit" size="small" :icon="Plus" :disabled="structureLocked" @click="insertSlide()">插入页面</el-button>
         </div>
 
         <!-- 幻灯片预览 / 编辑 -->
@@ -128,7 +139,7 @@
                 <h2 class="text-lg font-bold text-slate-800 truncate">{{ currentSlide.title }}</h2>
                 <p v-if="currentSlide.subtitle" class="text-sm text-slate-500 truncate">{{ currentSlide.subtitle }}</p>
               </div>
-              <div class="flex items-center gap-1 flex-shrink-0">
+              <div v-if="canEdit" class="flex items-center gap-1 flex-shrink-0">
                 <el-button size="small" :type="panelMode === 'edit' ? 'primary' : ''" :icon="EditPen" @click="toggleEdit">编辑</el-button>
                 <el-button size="small" :type="panelMode === 'ai' ? 'primary' : ''" :icon="MagicStick" @click="toggleAi">AI 优化</el-button>
                 <el-button size="small" :icon="ArrowUp" :disabled="structureLocked || activeSlide === 0" title="上移" @click="moveSlide(-1)" />
@@ -406,11 +417,84 @@
       </template>
     </el-dialog>
 
+    <!-- 历史版本 -->
+    <el-dialog v-model="showVersions" title="历史版本" width="920px" destroy-on-close>
+      <el-table :data="versions" v-loading="versionsLoading" size="small" empty-text="暂无历史版本">
+        <el-table-column label="课件名称" prop="title" min-width="180" show-overflow-tooltip />
+        <el-table-column label="时间" width="160">
+          <template #default="{ row }">{{ formatVersionTime(row.created_at) }}</template>
+        </el-table-column>
+        <el-table-column label="创建人" width="110" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.creator_name || '—' }}</template>
+        </el-table-column>
+        <el-table-column label="操作" :width="canEdit ? 280 : 140" fixed="right">
+          <template #default="{ row }">
+            <el-button size="small" link :loading="viewingVersionId === row.id" @click="viewVersion(row)">查看</el-button>
+            <el-button size="small" link @click="openVersionShare(row)">分享</el-button>
+            <el-button
+              v-if="canEdit"
+              size="small"
+              link
+              type="primary"
+              :loading="applyingVersionId === row.id"
+              @click="applyVersion(row)"
+            >应用</el-button>
+            <el-button
+              v-if="canEdit"
+              size="small"
+              link
+              type="danger"
+              :loading="deletingVersionId === row.id"
+              @click="deleteVersion(row)"
+            >删除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-dialog>
+
+    <el-dialog
+      v-model="showVersionView"
+      width="94%"
+      top="2vh"
+      :destroy-on-close="true"
+      @closed="revokeVersionView"
+    >
+      <template #header>
+        <div class="flex items-center gap-3 min-w-0">
+          <span class="font-semibold truncate">{{ versionViewTitle }}</span>
+          <span class="text-xs text-slate-400 flex-1">历史版本 · {{ versionViewIsWeb ? '网页预览' : '演示模式' }} · 只读</span>
+          <el-button size="small" :icon="Share" @click="viewingVersionRow && openVersionShare(viewingVersionRow)">分享</el-button>
+          <el-button
+            v-if="canEdit && viewingVersionRow"
+            size="small"
+            type="primary"
+            :loading="applyingVersionId === viewingVersionRow.id"
+            @click="applyVersion(viewingVersionRow)"
+          >应用为当前版本</el-button>
+        </div>
+      </template>
+      <iframe
+        v-if="versionViewUrl"
+        :src="versionViewUrl"
+        :sandbox="versionViewIsWeb
+          ? 'allow-scripts allow-popups allow-modals'
+          : 'allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox'"
+        class="w-full rounded-lg border border-slate-200 bg-white"
+        :style="{ height: versionViewIsWeb ? '86vh' : '90vh' }"
+      ></iframe>
+    </el-dialog>
+
     <ShareDialog
       v-model="showShare"
       resource-type="courseware"
       :resource-id="cw?.id || 0"
       :resource-title="cw?.title"
+    />
+    <ShareDialog
+      v-model="showVersionShare"
+      resource-type="courseware_version"
+      :resource-id="shareVersion?.id || 0"
+      :resource-title="shareVersion?.title"
     />
 
     <div
@@ -433,11 +517,12 @@
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import dayjs from 'dayjs'
 import { coursewareApi, textbookApi, interactionApi } from '@/api/modules'
 import {
   ArrowLeft, ArrowRight, ArrowUp, ArrowDown, Loading, CircleClose, Download, FullScreen,
   VideoPlay, Connection, Plus, CopyDocument, DataAnalysis, Delete, Refresh, EditPen,
-  Monitor, Link, MagicStick, Share, RefreshRight,
+  Monitor, Link, MagicStick, Share, RefreshRight, Clock,
 } from '@element-plus/icons-vue'
 import QRCode from 'qrcode'
 import { createIframeBlob } from '@/utils/coursewareFrame'
@@ -447,14 +532,16 @@ import { buildLessonPage } from '@/utils/lessonPage'
 import { getTheme } from '@/utils/coursewareTheme'
 import { pageTypeLabel, PAGE_KINDS, normalizePageKind } from '@/utils/coursewarePages'
 import { useEducationStore } from '@/stores/education'
+import { useAuthStore } from '@/stores/auth'
 import { renderMarkdown } from '@/utils/markdown'
 import { copyToClipboard } from '@/utils/clipboard'
 import ShareDialog from '@/components/ShareDialog.vue'
-import type { Courseware, CoursewareSession, SessionBoard } from '@/types'
+import type { Courseware, CoursewareSession, CoursewareVersion, SessionBoard } from '@/types'
 
 const route = useRoute()
 const router = useRouter()
 const edu = useEducationStore()
+const auth = useAuthStore()
 const cw = ref<Courseware | null>(null)
 const activeSlide = ref(0)
 const exporting = ref<string>('')
@@ -533,6 +620,7 @@ const showPage = ref(false)
 const pageBlobUrl = ref('')
 const downloadingPage = ref(false)
 const isWebStyle = computed(() => cw.value?.render_style === 'html')
+const canEdit = computed(() => auth.can('courseware.edit') && cw.value?.can_edit !== false)
 const theme = computed(() => getTheme(cw.value?.theme))
 const themeGradient = computed(() => `linear-gradient(135deg, ${theme.value.coverFrom}, ${theme.value.coverTo})`)
 
@@ -587,6 +675,134 @@ async function downloadLessonPage() {
 }
 
 const showShare = ref(false)
+
+const showVersions = ref(false)
+const versions = ref<CoursewareVersion[]>([])
+const versionsLoading = ref(false)
+const viewingVersionId = ref<number | null>(null)
+const viewingVersionRow = ref<CoursewareVersion | null>(null)
+const deletingVersionId = ref<number | null>(null)
+const applyingVersionId = ref<number | null>(null)
+const showVersionShare = ref(false)
+const shareVersion = ref<CoursewareVersion | null>(null)
+const showVersionView = ref(false)
+const versionViewUrl = ref('')
+const versionViewTitle = ref('')
+const versionViewIsWeb = ref(false)
+
+function formatVersionTime(d?: string) {
+  return d ? dayjs(d).format('YYYY-MM-DD HH:mm') : '—'
+}
+
+function revokeVersionView() {
+  viewingVersionRow.value = null
+  if (versionViewUrl.value) {
+    URL.revokeObjectURL(versionViewUrl.value)
+    versionViewUrl.value = ''
+  }
+}
+
+async function openVersions() {
+  if (!cw.value) return
+  showVersions.value = true
+  versionsLoading.value = true
+  try {
+    versions.value = await coursewareApi.listVersions(cw.value.id)
+  } catch {
+    ElMessage.error('加载历史版本失败')
+  } finally {
+    versionsLoading.value = false
+  }
+}
+
+async function viewVersion(row: CoursewareVersion) {
+  if (!cw.value) return
+  viewingVersionId.value = row.id
+  try {
+    const full = await coursewareApi.getVersion(cw.value.id, row.id)
+    revokeVersionView()
+    viewingVersionRow.value = { ...row, ...full }
+    const isWeb = full.render_style === 'html'
+    versionViewIsWeb.value = isWeb
+    versionViewTitle.value = full.title || row.title
+    const subject = cw.value.subject_id ? edu.subjectName(cw.value.subject_id) : ''
+    if (isWeb) {
+      const ctx = [
+        cw.value.grade_id ? edu.gradeName(cw.value.grade_id) : '',
+        subject,
+      ].filter(Boolean).join(' · ')
+      versionViewUrl.value = makeBlobUrl(buildLessonPage(full.content, imageMap.value, {
+        subtitle: ctx,
+        theme: full.theme,
+        subject,
+      }))
+    } else {
+      versionViewUrl.value = makeBlobUrl(buildRevealDeck(full.content, imageMap.value, {
+        theme: full.theme,
+        subject,
+      }))
+    }
+    showVersionView.value = true
+  } catch {
+    ElMessage.error('打开历史版本失败')
+  } finally {
+    viewingVersionId.value = null
+  }
+}
+
+function openVersionShare(row: CoursewareVersion) {
+  shareVersion.value = row
+  showVersionShare.value = true
+}
+
+async function applyVersion(row: CoursewareVersion) {
+  if (!cw.value) return
+  try {
+    await ElMessageBox.confirm(
+      `确定将「${row.title}」应用为当前课件？当前内容会先保存为历史版本，未保存的页面修改将丢失。`,
+      '应用为当前版本',
+      { type: 'warning' },
+    )
+  } catch {
+    return
+  }
+  applyingVersionId.value = row.id
+  try {
+    await coursewareApi.applyVersion(cw.value.id, row.id)
+    ElMessage.success('已应用为当前版本')
+    showVersionView.value = false
+    showVersions.value = false
+    dirty.value = false
+    await load()
+  } catch {
+    /* interceptor */
+  } finally {
+    applyingVersionId.value = null
+  }
+}
+
+async function deleteVersion(row: CoursewareVersion) {
+  if (!cw.value) return
+  try {
+    await ElMessageBox.confirm(
+      `确定删除历史版本「${row.title}」？删除后不可恢复，不影响当前课件。`,
+      '删除历史版本',
+      { type: 'warning' },
+    )
+  } catch {
+    return
+  }
+  deletingVersionId.value = row.id
+  try {
+    await coursewareApi.deleteVersion(cw.value.id, row.id)
+    versions.value = versions.value.filter((v) => v.id !== row.id)
+    ElMessage.success('已删除')
+  } catch {
+    ElMessage.error('删除失败')
+  } finally {
+    deletingVersionId.value = null
+  }
+}
 
 // 课堂互动
 const showInteraction = ref(false)
@@ -1044,6 +1260,14 @@ async function load() {
   }
 }
 
+function onToolbarMore(cmd: string) {
+  if (cmd === 'versions') openVersions()
+  else if (cmd === 'interaction') openInteraction()
+  else if (cmd === 'html') downloadLessonPage()
+  else if (cmd === 'pptx') doExport('pptx')
+  else if (cmd === 'regen') goRegenerate()
+}
+
 function goRegenerate() {
   if (!cw.value) return
   router.push({ path: '/courseware', query: { regen: String(cw.value.id) } })
@@ -1136,7 +1360,7 @@ onUnmounted(() => {
   stopStatusPoll()
   stopOptPoll()
   // 释放所有 Blob URL，防止内存泄漏
-  ;[currentBlobUrl, fsBlobUrl, deckBlobUrl, pageBlobUrl].forEach(r => {
+  ;[currentBlobUrl, fsBlobUrl, deckBlobUrl, pageBlobUrl, versionViewUrl].forEach(r => {
     if (r.value) { URL.revokeObjectURL(r.value); r.value = '' }
   })
   _blobUrls.forEach(u => URL.revokeObjectURL(u))

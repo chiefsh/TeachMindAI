@@ -10,7 +10,7 @@ from app.schemas.education import (
     SchoolLevelOut, GradeOut, SubjectOut,
     TeacherSubjectCreate, TeacherSubjectOut,
 )
-from app.api.deps import get_current_teacher
+from app.api.deps import get_current_teacher, require_perm
 
 router = APIRouter(prefix="/education", tags=["学段年级科目"])
 
@@ -55,7 +55,7 @@ async def get_my_subjects(
 @router.post("/my-subjects", response_model=TeacherSubjectOut, status_code=201)
 async def add_my_subject(
     data: TeacherSubjectCreate,
-    teacher: Teacher = Depends(get_current_teacher),
+    teacher: Teacher = Depends(require_perm("user.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     existing = await db.execute(
@@ -82,7 +82,7 @@ async def add_my_subject(
 @router.delete("/my-subjects/{ts_id}", status_code=204)
 async def remove_my_subject(
     ts_id: int,
-    teacher: Teacher = Depends(get_current_teacher),
+    teacher: Teacher = Depends(require_perm("user.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(

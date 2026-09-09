@@ -1,3 +1,19 @@
+export interface RoleBrief {
+  id: number
+  code: string
+  name: string
+  is_system: boolean
+}
+
+export interface WorkAssignment {
+  grade_id: number
+  subject_id: number
+  class_id?: number | null
+  grade_name?: string | null
+  subject_name?: string | null
+  class_name?: string | null
+}
+
 export interface Teacher {
   id: number
   username: string
@@ -5,6 +21,10 @@ export interface Teacher {
   real_name: string
   avatar?: string
   is_active: boolean
+  is_super?: boolean
+  roles?: RoleBrief[]
+  permissions?: string[]
+  assignments?: WorkAssignment[]
 }
 
 export interface Paginated<T> { total: number; page: number; page_size: number; items: T[] }
@@ -39,6 +59,7 @@ export interface Textbook {
   id: number; title: string; file_name: string; file_type: string
   file_size: number; parse_status: ParseStatus; total_pages?: number
   subject_id: number; grade_id: number; created_at: string
+  creator_name?: string | null
 }
 
 export interface Chapter {
@@ -87,6 +108,22 @@ export interface Courseware {
   content?: Record<string, unknown>; custom_prompt?: string
   chapter_range?: { chapter_ids?: number[] } | Record<string, number>
   page_range?: { start?: number; end?: number }
+  creator_name?: string | null
+  is_owner?: boolean
+  can_edit?: boolean
+  can_manage_collab?: boolean
+}
+
+export interface CoursewareVersion {
+  id: number
+  courseware_id: number
+  teacher_id: number
+  title: string
+  render_style: RenderStyle | string
+  theme: string
+  created_at: string
+  creator_name?: string | null
+  content?: Record<string, unknown>
 }
 
 export interface HomeworkQuestion {
@@ -113,6 +150,10 @@ export interface HomeworkPaper {
   courseware_ids?: number[] | null
   grade_id?: number | null
   subject_id?: number | null
+  creator_name?: string | null
+  is_owner?: boolean
+  can_edit?: boolean
+  can_manage_collab?: boolean
 }
 
 export interface Student {
@@ -166,6 +207,10 @@ export interface AnalysisSet {
   source_type: string; parse_status: ParseStatus; parse_error?: string | null
   task_id?: string | null; question_count: number; created_at: string
   questions?: AnalysisQuestion[]
+  creator_name?: string | null
+  is_owner?: boolean
+  can_edit?: boolean
+  can_manage_collab?: boolean
 }
 
 export interface LLMConfig {
@@ -249,7 +294,7 @@ export interface SessionBoard {
   records: SessionBoardRecord[]
 }
 
-export type ShareResourceType = 'courseware' | 'question_analysis'
+export type ShareResourceType = 'courseware' | 'courseware_version' | 'question_analysis'
 
 export interface ShareLink {
   id: number
@@ -298,6 +343,10 @@ export interface GradingAssignment {
   graded_count: number
   collect_token?: string | null
   created_at: string
+  creator_name?: string | null
+  is_owner?: boolean
+  can_edit?: boolean
+  can_manage_collab?: boolean
   questions?: HomeworkQuestion[]
   question_stats?: GradingQuestionStat[]
   students?: GradingStudentRow[]
@@ -379,6 +428,7 @@ export interface GradingSubmission {
   answers: GradingAnswer[]
   questions: HomeworkQuestion[]
   roster: GradingStudentRow[]
+  can_edit?: boolean
 }
 
 export interface WrongQuestionItem {
@@ -396,4 +446,47 @@ export interface WrongQuestionItem {
   blank_count?: number
   last_at?: string | null
   use_count?: number | null
+}
+
+export interface PermissionItem {
+  code: string
+  module: string
+  name: string
+  sort_order: number
+}
+
+export interface RoleItem {
+  id: number
+  code: string
+  name: string
+  is_system: boolean
+  is_super: boolean
+  permission_codes: string[]
+}
+
+export interface UserAssignment {
+  id: number
+  grade_id: number
+  subject_id: number
+  class_id: number | null
+  grade_name?: string | null
+  subject_name?: string | null
+  class_name?: string | null
+}
+
+export interface OrgUser {
+  id: number
+  username: string
+  email: string
+  real_name: string
+  is_active: boolean
+  is_super: boolean
+  roles: RoleBrief[]
+  assignments: UserAssignment[]
+}
+
+export interface ClassOption {
+  id: number
+  grade_id: number
+  name: string
 }

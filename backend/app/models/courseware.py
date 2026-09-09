@@ -1,8 +1,9 @@
-from sqlalchemy import String, Integer, ForeignKey, Text, Enum as SAEnum, JSON, Boolean
+from sqlalchemy import String, Integer, ForeignKey, Text, Enum as SAEnum, JSON, Boolean, Index, select
 from sqlalchemy.orm import mapped_column, Mapped, relationship
 from app.core.database import Base
 from app.models.base import TimestampMixin
 from app.models.textbook import ParseStatus
+import copy
 import enum
 
 
@@ -46,3 +47,69 @@ class Courseware(Base, TimestampMixin):
     teacher = relationship("Teacher", back_populates="coursewares")
     textbook = relationship("Textbook", back_populates="coursewares")
     homework_papers = relationship("HomeworkPaper", back_populates="courseware")
+    versions = relationship(
+        "CoursewareVersion", back_populates="courseware", cascade="all, delete-orphan",
+    )
+
+
+class CoursewareVersion(Base, TimestampMixin):
+    """一次生成（或重新生成前）的课件内容快照，不影响当前课件。"""
+    __tablename__ = "courseware_versions"
+    __table_args__ = (Index("ix_cw_versions_cw_id", "courseware_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    courseware_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("coursewares.id", ondelete="CASCADE"), nullable=False,
+    )
+    teacher_id: Mapped[int] = mapped_column(Integer, ForeignKey("teachers.id"), nullable=False)
+    title: Mapped[str] = mapped_column(String(256), nullable=False)
+    content: Mapped[dict] = mapped_column(JSON, nullable=False)
+    render_style: Mapped[str] = mapped_column(String(16), nullable=False, default="html")
+    theme: Mapped[str] = mapped_column(String(24), nullable=False, default="indigo")
+
+    courseware = relationship("Courseware", back_populates="versions")
+    teacher = relationship("Teacher")
+
+
+def _render_style_value(cw: Courseware) -> str:
+    rs = cw.render_style
+    return rs.value if isinstance(rs, RenderStyle) else str(rs or "html")
+
+
+def make_courseware_version(cw: Courseware, teacher_id: int) -> "CoursewareVersion | None":
+    if not isinstance(cw.content, dict):
+        return None
+    return CoursewareVersion(
+        courseware_id=cw.id,
+        teacher_id=teacher_id,
+        title=cw.title,
+        content=copy.deepcopy(cw.content),
+        render_style=_render_style_value(cw),
+        theme=cw.theme or "indigo",
+    )
+
+
+async def save_courseware_version(db, cw: Courseware, teacher_id: int, *, skip_if_same: bool = True):
+    """把当前课件内容存成一版。内容与最近一版完全相同则跳过。"""
+    ver = make_courseware_version(cw, teacher_id)
+    if ver is None:
+        return None
+    if skip_if_same:
+        last = (
+            await db.execute(
+                select(CoursewareVersion)
+                .where(CoursewareVersion.courseware_id == cw.id)
+                .order_by(CoursewareVersion.id.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if (
+            last
+            and last.title == ver.title
+            and last.render_style == ver.render_style
+            and last.theme == ver.theme
+            and last.content == ver.content
+        ):
+            return None
+    db.add(ver)
+    return ver

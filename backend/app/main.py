@@ -8,8 +8,8 @@ from sqlalchemy import text
 from app.core.database import engine, Base
 from app.core.redis_client import close_redis
 from app.core.minio_client import init_buckets
-from app.core.seed import seed_education_data, seed_subject_prompts
-from app.api.v1 import auth, education, textbook, question, courseware, homework, student, settings, ws, dashboard, interaction, question_analysis, knowledge, share, grading, classroom
+from app.core.seed import seed_education_data, seed_subject_prompts, seed_rbac_data
+from app.api.v1 import auth, education, textbook, question, courseware, homework, student, settings, ws, dashboard, interaction, question_analysis, knowledge, share, grading, classroom, rbac
 
 
 # create_all 不会给已有表补索引，启动时幂等补齐热查询字段
@@ -22,6 +22,7 @@ _INDEX_SQL = [
     "CREATE INDEX IF NOT EXISTS ix_questions_teacher_id ON questions (teacher_id)",
     "CREATE INDEX IF NOT EXISTS ix_questions_teacher_content_hash ON questions (teacher_id, content_hash)",
     "CREATE INDEX IF NOT EXISTS ix_coursewares_teacher_id ON coursewares (teacher_id)",
+    "CREATE INDEX IF NOT EXISTS ix_cw_versions_cw_id ON courseware_versions (courseware_id)",
     "CREATE INDEX IF NOT EXISTS ix_textbooks_teacher_id ON textbooks (teacher_id)",
     "CREATE INDEX IF NOT EXISTS ix_textbook_chapters_textbook_id ON textbook_chapters (textbook_id)",
     "CREATE INDEX IF NOT EXISTS ix_homework_papers_teacher_id ON homework_papers (teacher_id)",
@@ -30,6 +31,8 @@ _INDEX_SQL = [
     "CREATE INDEX IF NOT EXISTS ix_grading_assignments_teacher_id ON grading_assignments (teacher_id)",
     "CREATE INDEX IF NOT EXISTS ix_paper_submissions_teacher_id ON paper_submissions (teacher_id)",
     "CREATE UNIQUE INDEX IF NOT EXISTS uq_grading_assignments_collect_token ON grading_assignments (collect_token)",
+    "CREATE INDEX IF NOT EXISTS ix_teachers_org_id ON teachers (org_id)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS uq_class_grade_name ON school_classes (grade_id, name)",
 ]
 
 
@@ -119,6 +122,14 @@ _COLUMN_SQL = [
         "grading_assignments", "collect_token",
         "ALTER TABLE grading_assignments ADD COLUMN collect_token VARCHAR(48) NULL",
     ),
+    (
+        "teachers", "org_id",
+        "ALTER TABLE teachers ADD COLUMN org_id INTEGER NULL",
+    ),
+    (
+        "teachers", "is_super",
+        "ALTER TABLE teachers ADD COLUMN is_super TINYINT(1) NOT NULL DEFAULT 0",
+    ),
 ]
 
 
@@ -149,6 +160,70 @@ async def _ensure_columns():
             await conn.execute(text("ALTER TABLE homework_questions MODIFY COLUMN score INT NULL"))
         except Exception:
             pass
+        # 系统大模型：teacher_id 改为可空
+        try:
+            await conn.execute(text("ALTER TABLE llm_configs MODIFY COLUMN teacher_id INTEGER NULL"))
+        except Exception:
+            pass
+
+
+async def _migrate_llm_configs_to_system():
+    """把历史个人 LLM 配置收成全站系统配置，并删除其余个人行。"""
+    from sqlalchemy import delete, select
+    from app.core.database import AsyncSessionLocal
+    from app.models.llm_config import LLMConfig
+    from app.models.teacher import Teacher
+
+    async with AsyncSessionLocal() as db:
+        has_sys = (
+            await db.execute(
+                select(LLMConfig.id).where(LLMConfig.teacher_id.is_(None)).limit(1)
+            )
+        ).scalar()
+        if not has_sys:
+            super_id = (
+                await db.execute(select(Teacher.id).where(Teacher.is_super.is_(True)))
+            ).scalar()
+            source_tid = None
+            if super_id:
+                n = (
+                    await db.execute(
+                        select(LLMConfig.id)
+                        .where(LLMConfig.teacher_id == super_id)
+                        .limit(1)
+                    )
+                ).scalar()
+                if n:
+                    source_tid = super_id
+            if not source_tid:
+                source_tid = (
+                    await db.execute(
+                        select(LLMConfig.teacher_id)
+                        .where(LLMConfig.teacher_id.is_not(None))
+                        .order_by(LLMConfig.id)
+                        .limit(1)
+                    )
+                ).scalar()
+            if source_tid:
+                rows = (
+                    await db.execute(
+                        select(LLMConfig).where(LLMConfig.teacher_id == source_tid)
+                    )
+                ).scalars().all()
+                for r in rows:
+                    r.teacher_id = None
+                await db.flush()
+        await db.execute(delete(LLMConfig).where(LLMConfig.teacher_id.is_not(None)))
+        sys_rows = (
+            await db.execute(select(LLMConfig).where(LLMConfig.teacher_id.is_(None)))
+        ).scalars().all()
+        defaults = [r for r in sys_rows if r.is_default]
+        if len(defaults) > 1:
+            for r in defaults[1:]:
+                r.is_default = False
+        elif not defaults and sys_rows:
+            sys_rows[0].is_default = True
+        await db.commit()
 
 
 @asynccontextmanager
@@ -178,6 +253,14 @@ async def lifespan(app: FastAPI):
     # 注入各科目默认课件提示词
     try:
         await seed_subject_prompts()
+    except Exception:
+        pass
+    try:
+        await seed_rbac_data()
+    except Exception:
+        pass
+    try:
+        await _migrate_llm_configs_to_system()
     except Exception:
         pass
     # 初始化 MinIO Bucket
@@ -229,6 +312,7 @@ app.include_router(grading.router, prefix="/api/v1")
 app.include_router(grading.public_router, prefix="/api/v1")
 app.include_router(student.router, prefix="/api/v1")
 app.include_router(classroom.router, prefix="/api/v1")
+app.include_router(rbac.router, prefix="/api/v1")
 app.include_router(settings.router, prefix="/api/v1")
 app.include_router(dashboard.router, prefix="/api/v1")
 app.include_router(interaction.router, prefix="/api/v1")

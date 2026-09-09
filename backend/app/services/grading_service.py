@@ -14,6 +14,11 @@ from sqlalchemy.orm.attributes import set_committed_value
 
 from app.core.config import settings
 from app.core.minio_client import upload_file, get_presigned_url, delete_file
+from app.core.access import (
+    apply_private_scope, apply_org_scope, require_resource,
+    stamp_access_many, teacher_names,
+)
+from app.models.teacher import Teacher
 from app.models.grading import (
     GradingAssignment, PaperSubmission, SubmissionPage, SubmissionAnswer, WrongQuestionLog,
 )
@@ -88,21 +93,44 @@ def expand_upload(filename: str, data: bytes) -> list[tuple[bytes, str, str]]:
     return [(data, ctype, name)]
 
 
-async def _paper_or_404(db: AsyncSession, paper_id: int, teacher_id: int) -> HomeworkPaper:
+async def _ensure_teacher(db: AsyncSession, teacher: Teacher | int) -> Teacher:
+    if isinstance(teacher, Teacher):
+        return teacher
+    t = await db.get(Teacher, int(teacher))
+    if not t:
+        raise ValueError("用户不存在")
+    from app.services.rbac_service import load_rbac
+    await load_rbac(db, t)
+    return t
+
+
+async def _paper_or_404(db: AsyncSession, paper_id: int, teacher: Teacher | int) -> HomeworkPaper:
+    teacher = await _ensure_teacher(db, teacher)
     paper = (await db.execute(
         select(HomeworkPaper)
-        .where(HomeworkPaper.id == paper_id, HomeworkPaper.teacher_id == teacher_id)
+        .where(HomeworkPaper.id == paper_id)
         .options(selectinload(HomeworkPaper.questions))
     )).scalar_one_or_none()
     if not paper:
         raise ValueError("作业/试卷不存在")
+    try:
+        await require_resource(db, teacher, paper, "homework", detail="作业/试卷不存在")
+    except Exception as e:
+        from fastapi import HTTPException
+        if isinstance(e, HTTPException):
+            raise ValueError(str(e.detail))
+        raise
     return paper
 
 
-async def _assignment_or_404(db: AsyncSession, assignment_id: int, teacher_id: int) -> GradingAssignment:
+async def _assignment_or_404(
+    db: AsyncSession, assignment_id: int, teacher: Teacher | int,
+    *, edit: bool = False, delete: bool = False,
+) -> GradingAssignment:
+    teacher = await _ensure_teacher(db, teacher)
     row = (await db.execute(
         select(GradingAssignment)
-        .where(GradingAssignment.id == assignment_id, GradingAssignment.teacher_id == teacher_id)
+        .where(GradingAssignment.id == assignment_id)
         .options(
             selectinload(GradingAssignment.paper).selectinload(HomeworkPaper.questions),
             selectinload(GradingAssignment.submissions).selectinload(PaperSubmission.pages),
@@ -112,6 +140,15 @@ async def _assignment_or_404(db: AsyncSession, assignment_id: int, teacher_id: i
     )).scalar_one_or_none()
     if not row:
         raise ValueError("布置记录不存在")
+    try:
+        await require_resource(
+            db, teacher, row, "grading", edit=edit, delete=delete, detail="布置记录不存在",
+        )
+    except Exception as e:
+        from fastapi import HTTPException
+        if isinstance(e, HTTPException):
+            raise ValueError(str(e.detail))
+        raise
     return row
 
 
@@ -250,14 +287,15 @@ async def _sync_exam_result(
 
 
 async def _roster(db: AsyncSession, assignment: GradingAssignment) -> list[Student]:
-    q = select(Student).where(
-        Student.teacher_id == assignment.teacher_id,
-        Student.grade_id == assignment.grade_id,
-    )
     if getattr(assignment, "class_id", None):
-        q = q.where(Student.class_id == assignment.class_id)
-    elif assignment.class_name:
-        q = q.where(Student.class_name == assignment.class_name)
+        q = select(Student).where(
+            Student.class_id == assignment.class_id,
+            Student.grade_id == assignment.grade_id,
+        )
+    else:
+        q = select(Student).where(Student.grade_id == assignment.grade_id)
+        if assignment.class_name:
+            q = q.where(Student.class_name == assignment.class_name)
     return list((await db.execute(q.order_by(Student.class_name, Student.student_no))).scalars().all())
 
 
@@ -326,6 +364,10 @@ def _assignment_out(a: GradingAssignment, roster_n: int | None = None) -> dict:
         "graded_count": graded,
         "collect_token": getattr(a, "collect_token", None),
         "created_at": a.created_at,
+        "creator_name": getattr(a, "creator_name", None),
+        "is_owner": getattr(a, "is_owner", False),
+        "can_edit": getattr(a, "can_edit", False),
+        "can_manage_collab": getattr(a, "can_manage_collab", False),
     }
 
 
@@ -379,18 +421,19 @@ async def create_assignment(db: AsyncSession, teacher_id: int, data) -> GradingA
 
 
 async def list_assignments(
-    db: AsyncSession, teacher_id: int,
+    db: AsyncSession, teacher_id: Teacher | int,
     grade_id: int | None = None, subject_id: int | None = None, class_name: str | None = None,
 ) -> list[dict]:
+    teacher = await _ensure_teacher(db, teacher_id)
     q = (
         select(GradingAssignment)
-        .where(GradingAssignment.teacher_id == teacher_id)
         .options(
             selectinload(GradingAssignment.paper),
             selectinload(GradingAssignment.submissions).selectinload(PaperSubmission.pages),
         )
         .order_by(GradingAssignment.assigned_at.desc(), GradingAssignment.id.desc())
     )
+    q = await apply_private_scope(q, GradingAssignment, db, teacher, "grading")
     if grade_id:
         q = q.where(GradingAssignment.grade_id == grade_id)
     if subject_id:
@@ -398,6 +441,7 @@ async def list_assignments(
     if class_name:
         q = q.where(GradingAssignment.class_name == class_name)
     rows = list((await db.execute(q)).scalars().all())
+    await stamp_access_many(db, teacher, rows, "grading")
     out = []
     for a in rows:
         roster = await _roster(db, a)
@@ -407,6 +451,8 @@ async def list_assignments(
 
 async def get_assignment_detail(db: AsyncSession, assignment_id: int, teacher_id: int) -> dict:
     a = await _assignment_or_404(db, assignment_id, teacher_id)
+    teacher = await _ensure_teacher(db, teacher_id)
+    await stamp_access_many(db, teacher, [a], "grading")
     paper = a.paper
     questions = sorted(paper.questions, key=lambda x: x.sort_order)
     qcount = len(questions)
@@ -452,7 +498,7 @@ async def get_assignment_detail(db: AsyncSession, assignment_id: int, teacher_id
 
 
 async def delete_assignment(db: AsyncSession, assignment_id: int, teacher_id: int):
-    a = await _assignment_or_404(db, assignment_id, teacher_id)
+    a = await _assignment_or_404(db, assignment_id, teacher_id, delete=True)
     logs = (await db.execute(
         select(WrongQuestionLog).where(WrongQuestionLog.assignment_id == a.id)
     )).scalars().all()
@@ -480,7 +526,7 @@ async def get_or_create_submission(
 ) -> tuple[GradingAssignment, PaperSubmission, Student]:
     a = await _assignment_or_404(db, assignment_id, teacher_id)
     stu = (await db.execute(
-        select(Student).where(Student.id == student_id, Student.teacher_id == teacher_id)
+        select(Student).where(Student.id == student_id)
     )).scalar_one_or_none()
     if not stu:
         raise ValueError("学生不存在")
@@ -523,6 +569,8 @@ async def submission_detail(
     db: AsyncSession, assignment_id: int, student_id: int, teacher_id: int,
 ) -> dict:
     a, sub, stu = await get_or_create_submission(db, assignment_id, student_id, teacher_id)
+    teacher = await _ensure_teacher(db, teacher_id)
+    await stamp_access_many(db, teacher, [a], "grading")
     paper = a.paper
     questions = sorted(paper.questions, key=lambda x: x.sort_order)
     roster = await _roster(db, a)
@@ -562,6 +610,7 @@ async def submission_detail(
         "answers": answers,
         "questions": [_q_out(q) for q in questions],
         "roster": [_student_row(s, by_stu.get(s.id), len(questions)) for s in roster],
+        "can_edit": getattr(a, "can_edit", False),
     }
 
 
@@ -571,7 +620,7 @@ async def add_pages(
 ) -> PaperSubmission:
     sub = (await db.execute(
         select(PaperSubmission)
-        .where(PaperSubmission.id == submission_id, PaperSubmission.teacher_id == teacher_id)
+        .where(PaperSubmission.id == submission_id)
         .options(
             selectinload(PaperSubmission.pages),
             selectinload(PaperSubmission.answers),
@@ -581,6 +630,14 @@ async def add_pages(
     )).scalar_one_or_none()
     if not sub:
         raise ValueError("答卷不存在")
+    teacher = await _ensure_teacher(db, teacher_id)
+    try:
+        await require_resource(db, teacher, sub.assignment, "grading", edit=True, detail="答卷不存在")
+    except Exception as e:
+        from fastapi import HTTPException
+        if isinstance(e, HTTPException):
+            raise ValueError(str(e.detail))
+        raise
     idx = max((p.page_index for p in sub.pages), default=-1) + 1
     for filename, data in files:
         for blob, ctype, fname in expand_upload(filename, data):
@@ -606,7 +663,7 @@ async def add_pages(
 async def delete_page(db: AsyncSession, submission_id: int, page_id: int, teacher_id: int):
     sub = (await db.execute(
         select(PaperSubmission)
-        .where(PaperSubmission.id == submission_id, PaperSubmission.teacher_id == teacher_id)
+        .where(PaperSubmission.id == submission_id)
         .options(
             selectinload(PaperSubmission.pages),
             selectinload(PaperSubmission.answers),
@@ -616,6 +673,14 @@ async def delete_page(db: AsyncSession, submission_id: int, page_id: int, teache
     )).scalar_one_or_none()
     if not sub:
         raise ValueError("答卷不存在")
+    teacher = await _ensure_teacher(db, teacher_id)
+    try:
+        await require_resource(db, teacher, sub.assignment, "grading", edit=True, detail="答卷不存在")
+    except Exception as e:
+        from fastapi import HTTPException
+        if isinstance(e, HTTPException):
+            raise ValueError(str(e.detail))
+        raise
     page = next((p for p in sub.pages if p.id == page_id), None)
     if not page:
         raise ValueError("页图不存在")
@@ -634,11 +699,22 @@ async def delete_page(db: AsyncSession, submission_id: int, page_id: int, teache
 async def reorder_pages(db: AsyncSession, submission_id: int, teacher_id: int, page_ids: list[int]):
     sub = (await db.execute(
         select(PaperSubmission)
-        .where(PaperSubmission.id == submission_id, PaperSubmission.teacher_id == teacher_id)
-        .options(selectinload(PaperSubmission.pages))
+        .where(PaperSubmission.id == submission_id)
+        .options(
+            selectinload(PaperSubmission.pages),
+            selectinload(PaperSubmission.assignment),
+        )
     )).scalar_one_or_none()
     if not sub:
         raise ValueError("答卷不存在")
+    teacher = await _ensure_teacher(db, teacher_id)
+    try:
+        await require_resource(db, teacher, sub.assignment, "grading", edit=True, detail="答卷不存在")
+    except Exception as e:
+        from fastapi import HTTPException
+        if isinstance(e, HTTPException):
+            raise ValueError(str(e.detail))
+        raise
     by_id = {p.id: p for p in sub.pages}
     if set(page_ids) != set(by_id):
         raise ValueError("页序与现有页不匹配")
@@ -675,7 +751,7 @@ async def grade_answers(
 ) -> PaperSubmission:
     sub = (await db.execute(
         select(PaperSubmission)
-        .where(PaperSubmission.id == submission_id, PaperSubmission.teacher_id == teacher_id)
+        .where(PaperSubmission.id == submission_id)
         .options(
             selectinload(PaperSubmission.pages),
             selectinload(PaperSubmission.answers),
@@ -686,6 +762,14 @@ async def grade_answers(
     )).scalar_one_or_none()
     if not sub:
         raise ValueError("答卷不存在")
+    teacher = await _ensure_teacher(db, teacher_id)
+    try:
+        await require_resource(db, teacher, sub.assignment, "grading", edit=True, detail="答卷不存在")
+    except Exception as e:
+        from fastapi import HTTPException
+        if isinstance(e, HTTPException):
+            raise ValueError(str(e.detail))
+        raise
     a = sub.assignment
     questions = sorted(a.paper.questions, key=lambda x: x.sort_order)
     await _ensure_answers(db, sub, questions)
@@ -716,11 +800,10 @@ async def list_wrong_questions(
     assignment_id: int | None = None, student_id: int | None = None,
     grade_id: int | None = None, subject_id: int | None = None,
 ) -> list[dict]:
+    teacher = await _ensure_teacher(db, teacher_id)
     if scope == "bank":
-        q = select(Question).where(
-            Question.teacher_id == teacher_id,
-            Question.wrong_count > 0,
-        )
+        q = select(Question).where(Question.wrong_count > 0)
+        q = await apply_org_scope(q, Question.teacher_id, db, teacher)
         if grade_id:
             q = q.where(Question.grade_id == grade_id)
         if subject_id:
@@ -734,6 +817,9 @@ async def list_wrong_questions(
             "use_count": r.use_count or 0,
         } for r in rows]
 
+    vis_q = select(GradingAssignment.id)
+    vis_q = await apply_private_scope(vis_q, GradingAssignment, db, teacher, "grading")
+    vis_ids = list((await db.execute(vis_q)).scalars().all())
     stmt = (
         select(
             WrongQuestionLog.student_id,
@@ -744,7 +830,7 @@ async def list_wrong_questions(
             func.sum(case((WrongQuestionLog.is_blank.is_(True), 1), else_=0)).label("blank_count"),
             func.max(WrongQuestionLog.created_at).label("last_at"),
         )
-        .where(WrongQuestionLog.teacher_id == teacher_id)
+        .where(WrongQuestionLog.assignment_id.in_(vis_ids or [0]))
         .group_by(
             WrongQuestionLog.student_id,
             WrongQuestionLog.assignment_id,
@@ -846,7 +932,7 @@ async def _assignment_by_token(db: AsyncSession, token: str) -> GradingAssignmen
 
 
 async def ensure_collect_token(db: AsyncSession, assignment_id: int, teacher_id: int) -> str:
-    a = await _assignment_or_404(db, assignment_id, teacher_id)
+    a = await _assignment_or_404(db, assignment_id, teacher_id, edit=True)
     if not a.collect_token:
         a.collect_token = secrets.token_urlsafe(16)
         await db.flush()

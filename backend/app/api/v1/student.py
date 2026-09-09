@@ -13,7 +13,8 @@ from app.schemas.student import (
     StudentCreate, StudentUpdate, StudentOut, ExamResultCreate, ExamResultOut, GradeStats,
     AnalysisCreate, AnalysisRegenerate, GradeReportOut, ExamSummaryOut, GradeLineConfig,
 )
-from app.api.deps import get_current_teacher
+from app.api.deps import get_current_teacher, require_perm
+from app.core.access import apply_org_scope
 
 router = APIRouter(prefix="/students", tags=["学生成绩"])
 
@@ -45,7 +46,8 @@ async def list_students(
     teacher: Teacher = Depends(get_current_teacher),
     db: AsyncSession = Depends(get_db),
 ):
-    q = select(Student).where(Student.teacher_id == teacher.id)
+    q = select(Student)
+    q = await apply_org_scope(q, Student.teacher_id, db, teacher)
     if grade_id:
         q = q.where(Student.grade_id == grade_id)
     if class_id:
@@ -59,7 +61,7 @@ async def list_students(
 @router.post("", response_model=StudentOut, status_code=201)
 async def create_student(
     data: StudentCreate,
-    teacher: Teacher = Depends(get_current_teacher),
+    teacher: Teacher = Depends(require_perm("classroom.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     from app.services import classroom_service as class_svc
@@ -80,7 +82,7 @@ async def create_student(
 async def update_student(
     student_id: int,
     data: StudentUpdate,
-    teacher: Teacher = Depends(get_current_teacher),
+    teacher: Teacher = Depends(require_perm("classroom.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     from app.services import classroom_service as class_svc
@@ -93,7 +95,7 @@ async def update_student(
 @router.delete("/{student_id}", status_code=204)
 async def delete_student(
     student_id: int,
-    teacher: Teacher = Depends(get_current_teacher),
+    teacher: Teacher = Depends(require_perm("classroom.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     from app.services import classroom_service as class_svc
@@ -120,7 +122,7 @@ class ManualGradesIn(BaseModel):
 @router.post("/manual-grades", status_code=201)
 async def manual_grades(
     data: ManualGradesIn,
-    teacher: Teacher = Depends(get_current_teacher),
+    teacher: Teacher = Depends(require_perm("grade.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     """手动批量录入成绩：按 姓名/学号/成绩 逐行录入，自动创建或复用学生。"""
@@ -175,7 +177,7 @@ async def manual_grades(
 @router.post("/batch-import", status_code=202)
 async def import_students_from_file(
     file: UploadFile = File(...),
-    teacher: Teacher = Depends(get_current_teacher),
+    teacher: Teacher = Depends(require_perm("grade.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     """从 Excel/Word 文档批量导入学生成绩"""
@@ -188,7 +190,7 @@ async def import_students_from_file(
 @router.post("/image-import", status_code=202)
 async def import_grades_from_image(
     file: UploadFile = File(...),
-    teacher: Teacher = Depends(get_current_teacher),
+    teacher: Teacher = Depends(require_perm("grade.manage")),
 ):
     """从图片 OCR 识别成绩"""
     data = await file.read()
@@ -201,7 +203,7 @@ async def import_grades_from_image(
 @router.post("/results", response_model=list[ExamResultOut], status_code=201)
 async def add_results(
     results: list[ExamResultCreate],
-    teacher: Teacher = Depends(get_current_teacher),
+    teacher: Teacher = Depends(require_perm("grade.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     records = [ExamResult(teacher_id=teacher.id, **r.model_dump()) for r in results]
@@ -259,7 +261,7 @@ async def get_grade_line_config(
 @router.put("/grade-line-config", response_model=GradeLineConfig)
 async def save_grade_line_config(
     data: GradeLineConfig,
-    teacher: Teacher = Depends(get_current_teacher),
+    teacher: Teacher = Depends(require_perm("grade.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     """保存教师的高/低分线配置。"""
@@ -390,7 +392,7 @@ async def _dispatch_ai(db, report: GradeReport):
 @router.post("/analysis", response_model=GradeReportOut, status_code=201)
 async def create_analysis(
     data: AnalysisCreate,
-    teacher: Teacher = Depends(get_current_teacher),
+    teacher: Teacher = Depends(require_perm("grade.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     """创建成绩分析（统计分析同步完成；AI 报告异步生成）。"""
@@ -459,7 +461,7 @@ async def get_analysis(
 @router.delete("/analysis/{report_id}", status_code=204)
 async def delete_analysis(
     report_id: int,
-    teacher: Teacher = Depends(get_current_teacher),
+    teacher: Teacher = Depends(require_perm("grade.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     report = await _get_report_or_404(report_id, teacher.id, db)
@@ -470,7 +472,7 @@ async def delete_analysis(
 async def regenerate_analysis(
     report_id: int,
     data: AnalysisRegenerate,
-    teacher: Teacher = Depends(get_current_teacher),
+    teacher: Teacher = Depends(require_perm("grade.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     report = await _get_report_or_404(report_id, teacher.id, db)

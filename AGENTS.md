@@ -13,7 +13,7 @@
 
 - 前端 dev：`frontend/` → Vite `:3000`，`/api` 代理到后端 `:8000`
 - 后端入口：`backend/app/main.py`，API 前缀 `/api/v1`
-- 鉴权：JWT，依赖 `backend/app/api/deps.py` 的 `get_current_teacher`
+- 鉴权：JWT，依赖 `backend/app/api/deps.py` 的 `get_current_teacher`；写接口另加 `require_perm`
 - 前端 HTTP：`frontend/src/api/index.ts`（axios），接口按业务写在 `frontend/src/api/modules.ts`
 - 类型：`frontend/src/types/index.ts`
 - 路由：`frontend/src/router/index.ts`（登录守卫）；侧栏：`frontend/src/components/layout/MainLayout.vue`
@@ -54,12 +54,21 @@ tasks/<队列>.py      → Celery 包装（薄，真正逻辑在 service）
 ### 认证 / 教师
 
 - 后端：`api/v1/auth.py`、`schemas/auth.py`、`models/teacher.py`、`core/security.py`、`api/deps.py`
-- 前端：`views/LoginView.vue`、`stores/auth.ts`
+- 前端：`views/LoginView.vue`、`stores/auth.ts`；个人信息在侧栏头像（`components/layout/ProfileDrawer.vue`），不在系统设置
+
+### 用户 / 角色
+
+- 后端：`api/v1/rbac.py`、`schemas/rbac.py`、`models/rbac.py`、`core/permissions.py`、`core/access.py`（共享/私有 ACL）、`services/rbac_service.py`、`core/seed.py`（`seed_rbac`）
+- 前端：`views/org/`（用户、角色）；侧栏「用户管理」；协作者弹窗 `components/CollaboratorsDialog.vue`
+- 约定：`.cursor/rules/rbac-org.mdc`。超管环境变量写在仓库根目录 `.env`（`SUPER_ADMIN_USERNAME` / `PASSWORD` / `EMAIL` / `REAL_NAME`），只初始化一次
+- 无组织；权限 = 用户绑定角色的并集；超管 `is_super` 唯一
+- 私有资源协作：点「批量设置协作者」后在弹窗里多选资源与人员；`GET /colleagues`，`PUT /resources/{type}/collaborators/batch`（type = courseware|homework|analysis|grading）
+- 顶栏学段/年级/科目：非管理员且已绑定 `TeacherAssignment` 时，选项来自绑定（`stores/education.ts`）
 
 ### 学段 / 年级 / 科目
 
 - 后端：`api/v1/education.py`、`schemas/education.py`、`models/education.py`、`core/seed.py`
-- 前端：`stores/education.ts`；顶栏筛选在 `MainLayout.vue`
+- 前端：`stores/education.ts`；顶栏筛选在 `MainLayout.vue`。非超管/管理员且已绑定工作范围时，学段/年级/科目选项来自 `TeacherAssignment`。
 
 ### 工作台
 
@@ -75,7 +84,7 @@ tasks/<队列>.py      → Celery 包装（薄，真正逻辑在 service）
 
 - 后端：`api/v1/classroom.py`、`api/v1/student.py`（花名册增删改）、`models/student.py`（`SchoolClass` + `Student.class_id`）、`services/classroom_service.py`
 - 前端：`views/students/StudentsView.vue`；侧栏「班级/学生」
-- 行政班按教师 + 年级；学生必须归入班级。批改布置选班级后用该班花名册。成绩模块只负责分数，不负责建班。
+- 班级全站公共（同年级班名唯一）；学生花名册跟班走。仅超管/管理员可录入编辑（`classroom.manage`）；制作者与阅览者只读。学号在同年级全局唯一。批改布置选班级后用该班花名册。成绩模块只负责分数，不负责建班。
 
 ### 题库
 
@@ -84,7 +93,7 @@ tasks/<队列>.py      → Celery 包装（薄，真正逻辑在 service）
 
 ### 课件 + 课堂互动
 
-- 后端：`api/v1/courseware.py`、`api/v1/interaction.py`、`models/courseware.py`、`models/interaction.py`、`models/subject_prompt.py`、`services/ai_service.py`（`do_generate_courseware`）、`services/courseware_components.py`、`services/skill_service.py`、`tasks/ai_tasks.py`、`services/export_service.py`；`POST /coursewares/{id}/regenerate` 可改配置后重出
+- 后端：`api/v1/courseware.py`、`api/v1/interaction.py`、`models/courseware.py`、`models/interaction.py`、`models/subject_prompt.py`、`services/ai_service.py`（`do_generate_courseware`）、`services/courseware_components.py`、`services/skill_service.py`、`tasks/ai_tasks.py`、`services/export_service.py`；`POST /coursewares/{id}/regenerate` 可改配置后重出；历史版本表 `courseware_versions`（可分享、可应用为当前）
 - 前端：`views/courseware/`、`views/public/SessionPlay.vue`、`utils/coursewareFrame.ts`、`utils/revealDeck.ts`、`utils/lessonPage.ts`、`utils/coursewareTheme.ts`
 - 呈现样式 `render_style`：`ppt` 走 `revealDeck.ts`，`html` 走 `lessonPage.ts`（单页滚动网页，可下载）
 - 视觉主题 `theme`：调色板在 `services/courseware_theme.py` 与 `utils/coursewareTheme.ts`，两份必须同步；在线预览与导出的 PPT/Word/PDF 共用
@@ -123,7 +132,7 @@ tasks/<队列>.py      → Celery 包装（薄，真正逻辑在 service）
 
 - 后端：`api/v1/settings.py`、`schemas/llm_config.py`、`models/llm_config.py`、`models/teacher_setting.py`、`models/subject_prompt.py`
 - 前端：`views/settings/SettingsView.vue`
-- LLM 调用统一走 `ai_service.build_litellm_kwargs` / `_call_llm`；API Key 加密存库
+- 对话大模型为系统级（`llm_configs.teacher_id IS NULL`），全站共用；LLM 调用统一走 `ai_service.build_litellm_kwargs` / `_call_llm`；API Key 加密存库
 
 ### Skills（理科课件互动页）
 
@@ -161,12 +170,13 @@ tasks/<队列>.py      → Celery 包装（薄，真正逻辑在 service）
 | `/question-analysis`、`/:id` | `question-analysis/*` |
 | `/grades` | `grades/GradesView.vue` |
 | `/knowledge` | `knowledge/KnowledgeGraphView.vue` |
-| `/settings`、`/settings/:tab` | `settings/SettingsView.vue`（`profile` / `models` / `prompts`） |
+| `/users`、`/roles` | `org/*`（用户 / 角色，需相应权限） |
+| `/settings`、`/settings/:tab` | `settings/SettingsView.vue`（`models` / `prompts`） |
 
 ## 改代码约定
 
 - 新接口：同时改 `api/v1/<模块>.py`、`frontend/src/api/modules.ts`、必要时 `types/index.ts` 与对应 View。
 - 耗时任务：API 只投递 Celery，状态写模型字段（如 `parse_status` / `gen_status`），进度走 Redis+WS。
-- 多租户：业务表按 `teacher_id` 隔离，查询必须带当前教师。
+- 可见范围：共享资产全站可见；私有资源按创建人 + 协作者 + 管理员（见 `rbac-org.mdc`），不要只按当前教师过滤。
 - 课件互动 HTML：优先走 skill；不要把确定性计算改回「LLM 直接写 HTML」。
 - 公式渲染：前端 `utils/mathText.ts`、`utils/markdown.ts`。

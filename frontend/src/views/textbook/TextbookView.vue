@@ -5,7 +5,7 @@
         <h1 class="page-title">课本管理</h1>
         <p class="page-subtitle">管理上传的课本文档，支持 PDF、Word、TXT、EPUB、MOBI 格式</p>
       </div>
-      <el-button type="primary" :icon="Upload" @click="openUpload">上传课本</el-button>
+      <el-button v-if="auth.can('textbook.manage')" type="primary" :icon="Upload" @click="openUpload">上传课本</el-button>
     </div>
 
     <!-- 课本列表 -->
@@ -22,6 +22,7 @@
             <div class="flex items-center flex-wrap gap-1.5 mt-2">
               <el-tag size="small" type="info">{{ edu.gradeName(tb.grade_id) || '未设置年级' }}</el-tag>
               <el-tag size="small" type="success">{{ edu.subjectName(tb.subject_id) || '未设置科目' }}</el-tag>
+              <span v-if="tb.creator_name" class="text-xs text-slate-400 ml-1">{{ tb.creator_name }}</span>
             </div>
             <div class="flex items-center gap-2 mt-2">
               <span :class="`badge badge-${tb.parse_status}`">
@@ -36,6 +37,7 @@
           <el-button size="small" link :icon="View" @click="previewBook(tb)">预览</el-button>
           <el-button size="small" link :icon="List" @click="viewChapters(tb)">章节</el-button>
           <el-popconfirm
+            v-if="auth.can('textbook.manage')"
             title="重新解析将清空已有章节并重新提取内容，确定继续吗？"
             width="240"
             @confirm="reparseBook(tb)"
@@ -51,7 +53,7 @@
             </template>
           </el-popconfirm>
           <div class="flex-1" />
-          <el-button size="small" link type="danger" :icon="Delete" @click="confirmDeleteBook(tb)">删除</el-button>
+          <el-button v-if="auth.can('textbook.manage')" size="small" link type="danger" :icon="Delete" @click="confirmDeleteBook(tb)">删除</el-button>
         </div>
       </div>
 
@@ -79,7 +81,7 @@
         </el-form-item>
         <el-form-item label="年级" prop="grade_id">
           <el-select v-model="uploadForm.grade_id" placeholder="选择年级" style="width:100%" @change="onUploadGradeChange">
-            <el-option v-for="g in edu.sortedGrades" :key="g.id" :label="g.name" :value="g.id" />
+            <el-option v-for="g in edu.filteredGrades" :key="g.id" :label="g.name" :value="g.id" />
           </el-select>
         </el-form-item>
         <el-form-item label="科目" prop="subject_id">
@@ -189,12 +191,14 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { watchDebounced } from '@vueuse/core'
 import { textbookApi } from '@/api/modules'
 import { useEducationStore } from '@/stores/education'
+import { useAuthStore } from '@/stores/auth'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Upload, View, List, Delete, Refresh, Loading } from '@element-plus/icons-vue'
 import type { Textbook, Chapter } from '@/types'
 import { isBusyStatus, useBusyPoll } from '@/utils/busyPoll'
 
 const edu = useEducationStore()
+const auth = useAuthStore()
 const textbooks = ref<Textbook[]>([])
 const loading = ref(false)
 const total = ref(0)
@@ -222,8 +226,7 @@ const uploadRules = {
 }
 
 function onUploadGradeChange() {
-  // 切换年级后，已选科目可能不属于新年级所在学段，清空重选
-  uploadForm.subject_id = null
+  uploadForm.subject_id = edu.defaultSubjectId(uploadForm.grade_id)
 }
 
 function onUploadFileChange(f: { name?: string; raw?: File }) {

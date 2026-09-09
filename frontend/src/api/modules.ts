@@ -182,8 +182,11 @@ export const homeworkApi = {
   create: (data: object) => request.post<HomeworkPaper>('/homework', data),
   regenerate: (id: number, data: object) => request.post<HomeworkPaper>(`/homework/${id}/regenerate`, data),
   get: (id: number) => request.get<HomeworkPaper>(`/homework/${id}`),
-  exportFile: (id: number, format: 'docx' | 'pdf') =>
-    request.get<Blob>(`/homework/${id}/export`, { params: { format }, responseType: 'blob' }),
+  exportFile: (id: number, format: 'docx' | 'pdf', includeAnswers = false) =>
+    request.get<Blob>(`/homework/${id}/export`, {
+      params: { format, include_answers: includeAnswers },
+      responseType: 'blob',
+    }),
   delete: (id: number) => request.delete(`/homework/${id}`),
 }
 

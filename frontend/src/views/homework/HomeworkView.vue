@@ -204,18 +204,26 @@
       <template #header>
         <div class="flex items-center justify-between pr-6">
           <span class="font-semibold text-slate-800">{{ detailPaper?.title }}</span>
-          <el-button-group>
-            <el-button
-              v-if="detailPaper && canRegenerate(detailPaper)"
+          <div class="flex items-center gap-3">
+            <el-checkbox
+              v-if="detailPaper?.gen_status === 'done' && questions.length"
+              v-model="includeAnswers"
               size="small"
-              @click="openRegenerate(detailPaper)"
-            >重新生成</el-button>
-            <template v-if="detailPaper?.gen_status === 'done' && questions.length">
-              <el-button size="small" :loading="exporting === 'docx'" :icon="Document" @click="doExport('docx')">导出 Word</el-button>
-              <el-button size="small" :loading="exporting === 'pdf'" :icon="Tickets" @click="doExport('pdf')">导出 PDF</el-button>
-              <el-button size="small" type="success" @click="goGrade">去批改</el-button>
-            </template>
-          </el-button-group>
+            >包括参考答案</el-checkbox>
+            <el-button-group>
+              <el-button
+                v-if="detailPaper && canRegenerate(detailPaper)"
+                size="small"
+                @click="openRegenerate(detailPaper)"
+              >重新生成</el-button>
+              <template v-if="detailPaper?.gen_status === 'done' && questions.length">
+                <el-button size="small" :icon="Printer" @click="openPrint">打印</el-button>
+                <el-button size="small" :loading="exporting === 'docx'" :icon="Document" @click="doExport('docx')">导出 Word</el-button>
+                <el-button size="small" :loading="exporting === 'pdf'" :icon="Tickets" @click="doExport('pdf')">导出 PDF</el-button>
+                <el-button size="small" type="success" @click="goGrade">去批改</el-button>
+              </template>
+            </el-button-group>
+          </div>
         </div>
       </template>
 
@@ -259,8 +267,8 @@
             </template>
           </div>
 
-          <!-- 参考答案 -->
-          <div class="mt-8 pt-5 border-t border-dashed border-slate-300">
+          <!-- 参考答案：默认不展示，勾选后才出现（与导出/打印一致） -->
+          <div v-if="includeAnswers" class="mt-8 pt-5 border-t border-dashed border-slate-300">
             <p class="font-bold text-slate-800 mb-3">参考答案</p>
             <div class="space-y-1.5">
               <p v-for="(q, i) in questions" :key="q.id" class="text-sm text-slate-700">
@@ -296,7 +304,7 @@ import { homeworkApi, coursewareApi, textbookApi } from '@/api/modules'
 import { useEducationStore } from '@/stores/education'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Plus, MagicStick, Loading, Document, Tickets, Rank } from '@element-plus/icons-vue'
+import { Plus, MagicStick, Loading, Document, Tickets, Rank, Printer } from '@element-plus/icons-vue'
 import type { HomeworkPaper, HomeworkQuestion, Courseware, Textbook, Chapter, HomeworkSourceType, QuestionSourceMode } from '@/types'
 import { isBusyStatus, useBusyPoll } from '@/utils/busyPoll'
 import dayjs from 'dayjs'
@@ -316,6 +324,7 @@ const regenId = ref<number | null>(null)
 const showDetail = ref(false)
 const detailPaper = ref<HomeworkPaper | null>(null)
 const exporting = ref<string>('')
+const includeAnswers = ref(false)
 const formRef = ref()
 const chapterTreeRef = ref()
 
@@ -668,6 +677,7 @@ async function handleCreate() {
 }
 
 async function viewDetail(paper: HomeworkPaper) {
+  includeAnswers.value = false
   detailPaper.value = (await homeworkApi.get(paper.id)) as any
   showDetail.value = true
 }
@@ -678,11 +688,93 @@ function goGrade() {
   router.push({ path: '/grading', query: { paper_id: detailPaper.value.id } })
 }
 
+function escHtml(s: string) {
+  return (s || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+}
+
+function buildPrintHtml() {
+  const p = detailPaper.value
+  if (!p) return ''
+  const ctx = [edu.gradeName(p.grade_id), edu.subjectName(p.subject_id)].filter(Boolean).join(' · ')
+  const kind = p.paper_type === 'exam' ? '考试试卷' : '课后作业'
+  const scoreBit = isExam.value ? `　·　满分 ${totalScore.value} 分` : ''
+  const meta = `${ctx ? `${escHtml(ctx)}　·　` : ''}${kind}　·　共 ${questions.value.length} 题${scoreBit}`
+  const body = questionGroups.value.map((group) => {
+    const head = group.title ? `<p class="sec">${escHtml(group.title)}</p>` : ''
+    const qs = group.questions.map((q) => {
+      const score = isExam.value && q.score ? `<span class="muted">（${q.score} 分）</span>` : ''
+      let opts = ''
+      if (q.options) {
+        opts = Object.entries(q.options)
+          .map(([k, v]) => `<p class="opt">${escHtml(k)}. ${escHtml(String(v))}</p>`)
+          .join('')
+      } else {
+        opts = '<p class="opt muted">答：</p>'
+      }
+      return `<div class="q"><p><b>${q._no}.</b> ${escHtml(q.content || '')} ${score}</p>${opts}</div>`
+    }).join('')
+    return head + qs
+  }).join('')
+  const answers = includeAnswers.value
+    ? `<div class="ans"><p class="sec">参考答案</p>${
+        questions.value.map((q, i) => `<p>${i + 1}. ${escHtml(q.answer || '—')}</p>`).join('')
+      }</div>`
+    : ''
+  return `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
+<title>${escHtml(p.title)}</title>
+<style>
+  @page { size: A4; margin: 16mm; }
+  body { font-family: "PingFang SC","Microsoft YaHei",sans-serif; color:#111; font-size:14px; line-height:1.7; margin:24px; }
+  h1 { text-align:center; font-size:20px; margin:0 0 8px; }
+  .meta { text-align:center; color:#555; font-size:13px; margin:0 0 4px; }
+  .line { border-bottom:1px solid #ddd; margin:16px 0; }
+  .sec { font-weight:700; margin:16px 0 8px; }
+  .q { margin:0 0 14px; }
+  .opt { margin:2px 0 0 22px; }
+  .muted { color:#888; font-size:12px; }
+  .ans { margin-top:28px; padding-top:16px; border-top:1px dashed #bbb; }
+</style></head><body>
+<h1>${escHtml(p.title)}</h1>
+<p class="meta">${meta}</p>
+<p class="meta">姓名：____________　班级：____________　得分：____________</p>
+<div class="line"></div>
+${body}
+${answers}
+</body></html>`
+}
+
+function openPrint() {
+  if (!detailPaper.value || !questions.value.length) return
+  const w = window.open('', '_blank')
+  if (!w) {
+    ElMessage.warning('浏览器拦截了弹窗，请允许后重试')
+    return
+  }
+  w.document.open()
+  w.document.write(buildPrintHtml())
+  w.document.close()
+  w.focus()
+  const go = () => {
+    w.print()
+  }
+  if (w.document.readyState === 'complete') {
+    setTimeout(go, 50)
+  } else {
+    w.onload = go
+    setTimeout(go, 300)
+  }
+}
+
 async function doExport(fmt: 'docx' | 'pdf') {
   if (!detailPaper.value) return
   exporting.value = fmt
   try {
-    const blob = (await homeworkApi.exportFile(detailPaper.value.id, fmt)) as unknown as Blob
+    const blob = (await homeworkApi.exportFile(
+      detailPaper.value.id, fmt, includeAnswers.value,
+    )) as unknown as Blob
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url

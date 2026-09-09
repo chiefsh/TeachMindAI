@@ -178,10 +178,11 @@ async def get_homework(
 async def export_homework(
     paper_id: int,
     format: str = "docx",
+    include_answers: bool = False,
     teacher: Teacher = Depends(get_current_teacher),
     db: AsyncSession = Depends(get_db),
 ):
-    """导出作业/试卷为 docx / pdf"""
+    """导出作业/试卷为 docx / pdf。默认不含参考答案。"""
     fmt = (format or "docx").lower()
     if fmt not in ("docx", "pdf"):
         raise HTTPException(status_code=400, detail="仅支持 docx / pdf")
@@ -198,7 +199,9 @@ async def export_homework(
     ]
     paper_type = getattr(paper.paper_type, "value", paper.paper_type)
     try:
-        data, media_type, ext = build_homework_export(fmt, paper.title, str(paper_type), questions)
+        data, media_type, ext = build_homework_export(
+            fmt, paper.title, str(paper_type), questions, include_answers,
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"导出失败：{e}")
 

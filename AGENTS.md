@@ -92,7 +92,7 @@ tasks/<队列>.py      → Celery 包装（薄，真正逻辑在 service）
 
 ### 作业 / 试卷
 
-- 后端：`api/v1/homework.py`、`schemas/homework.py`、`models/homework.py`、`services/homework_service.py`、`export_service.build_homework_*`；`POST /homework/{id}/regenerate` 可改配置后重出卷
+- 后端：`api/v1/homework.py`、`schemas/homework.py`、`models/homework.py`、`services/homework_service.py`、`export_service.build_homework_*`；`POST /homework/{id}/regenerate` 可改配置后重出卷；导出/打印默认不含参考答案，`include_answers` 可附上
 - 前端：`views/homework/HomeworkView.vue`
 
 ### 批改作业 / 试卷（纸质原卷）

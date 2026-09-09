@@ -568,7 +568,7 @@ def _homework_section_title(sec_idx: int, qtype: str | None) -> str | None:
     return f"{prefix}、{label}"
 
 
-def build_homework_docx(title: str, paper_type: str, questions: list[dict]) -> bytes:
+def build_homework_docx(title: str, paper_type: str, questions: list[dict], include_answers: bool = False) -> bytes:
     from docx import Document
     from docx.shared import Pt, RGBColor
     from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -612,17 +612,18 @@ def build_homework_docx(title: str, paper_type: str, questions: list[dict]) -> b
         else:
             doc.add_paragraph("答：")
 
-    doc.add_page_break()
-    doc.add_heading("参考答案", level=1)
-    for i, q in enumerate(questions, 1):
-        doc.add_paragraph(f"{i}. {q.get('answer') or '—'}")
+    if include_answers:
+        doc.add_page_break()
+        doc.add_heading("参考答案", level=1)
+        for i, q in enumerate(questions, 1):
+            doc.add_paragraph(f"{i}. {q.get('answer') or '—'}")
 
     buf = io.BytesIO()
     doc.save(buf)
     return buf.getvalue()
 
 
-def build_homework_pdf(title: str, paper_type: str, questions: list[dict]) -> bytes:
+def build_homework_pdf(title: str, paper_type: str, questions: list[dict], include_answers: bool = False) -> bytes:
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.units import mm
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -680,11 +681,12 @@ def build_homework_pdf(title: str, paper_type: str, questions: list[dict]) -> by
             story.append(Paragraph("答：", body))
         story.append(Spacer(1, 2 * mm))
 
-    story.append(PageBreak())
-    story.append(Paragraph("参考答案", title_style))
-    story.append(Spacer(1, 4 * mm))
-    for i, q in enumerate(questions, 1):
-        story.append(Paragraph(f"{i}. {esc(q.get('answer') or '—')}", body))
+    if include_answers:
+        story.append(PageBreak())
+        story.append(Paragraph("参考答案", title_style))
+        story.append(Spacer(1, 4 * mm))
+        for i, q in enumerate(questions, 1):
+            story.append(Paragraph(f"{i}. {esc(q.get('answer') or '—')}", body))
 
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=18 * mm, bottomMargin=18 * mm,
@@ -863,15 +865,17 @@ def build_analysis_export(fmt: str, name: str, questions: list[dict]) -> tuple[b
     raise ValueError(f"不支持的导出格式：{fmt}")
 
 
-def build_homework_export(fmt: str, title: str, paper_type: str, questions: list[dict]) -> tuple[bytes, str, str]:
+def build_homework_export(
+    fmt: str, title: str, paper_type: str, questions: list[dict], include_answers: bool = False,
+) -> tuple[bytes, str, str]:
     if fmt == "docx":
         return (
-            build_homework_docx(title, paper_type, questions),
+            build_homework_docx(title, paper_type, questions, include_answers),
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             "docx",
         )
     if fmt == "pdf":
-        return build_homework_pdf(title, paper_type, questions), "application/pdf", "pdf"
+        return build_homework_pdf(title, paper_type, questions, include_answers), "application/pdf", "pdf"
     raise ValueError(f"不支持的导出格式：{fmt}")
 
 

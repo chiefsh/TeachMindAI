@@ -26,15 +26,17 @@ celery_app.conf.update(
         SLOW_QUEUE: {"exchange": SLOW_QUEUE, "routing_key": "slow"},
     },
     task_default_queue=SLOW_QUEUE,
-    task_routes=(
-        ("app.tasks.ai_tasks.optimize_courseware_slide_task", {"queue": FAST_QUEUE}),
-        ("app.tasks.ai_tasks.ocr_grades_task", {"queue": FAST_QUEUE}),
-        ("app.tasks.file_tasks.parse_question_file_task", {"queue": FAST_QUEUE}),
-        ("app.tasks.file_tasks.parse_analysis_file_task", {"queue": FAST_QUEUE}),
-        ("app.tasks.file_tasks.import_grades_task", {"queue": FAST_QUEUE}),
-        ("app.tasks.ai_tasks.*", {"queue": SLOW_QUEUE}),
-        ("app.tasks.file_tasks.*", {"queue": SLOW_QUEUE}),
-        ("app.tasks.knowledge_tasks.*", {"queue": SLOW_QUEUE}),
-    ),
+    # 必须用 dict：元组会被当成多张路由表，投递时 MapRoute 拆包报错。
+    # 精确任务名优先于通配符，因此快通道条目不会落到 * 的慢队列。
+    task_routes={
+        "app.tasks.ai_tasks.optimize_courseware_slide_task": {"queue": FAST_QUEUE},
+        "app.tasks.ai_tasks.ocr_grades_task": {"queue": FAST_QUEUE},
+        "app.tasks.file_tasks.parse_question_file_task": {"queue": FAST_QUEUE},
+        "app.tasks.file_tasks.parse_analysis_file_task": {"queue": FAST_QUEUE},
+        "app.tasks.file_tasks.import_grades_task": {"queue": FAST_QUEUE},
+        "app.tasks.ai_tasks.*": {"queue": SLOW_QUEUE},
+        "app.tasks.file_tasks.*": {"queue": SLOW_QUEUE},
+        "app.tasks.knowledge_tasks.*": {"queue": SLOW_QUEUE},
+    },
     result_expires=3600,
 )

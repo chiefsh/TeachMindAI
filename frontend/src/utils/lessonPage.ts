@@ -52,11 +52,22 @@ const PAGE_SCRIPT = `
 (function(){
   var links = Array.prototype.slice.call(document.querySelectorAll('.toc a'));
   var sections = links
-    .map(function(a){ return document.getElementById(a.getAttribute('href').slice(1)); })
+    .map(function(a){ return document.getElementById((a.getAttribute('href') || '').replace(/^#/, '')); })
     .filter(Boolean);
   function activate(id){
     links.forEach(function(a){ a.classList.toggle('active', a.getAttribute('href') === '#' + id); });
   }
+  // 预览在 sandbox iframe 里，href="#id" 会被当成导航拦掉，必须脚本滚动。
+  links.forEach(function(a){
+    a.addEventListener('click', function(e){
+      var id = (a.getAttribute('href') || '').replace(/^#/, '');
+      var el = id && document.getElementById(id);
+      if (!el) return;
+      e.preventDefault();
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      activate(id);
+    });
+  });
   if (window.IntersectionObserver && sections.length) {
     var io = new IntersectionObserver(function(entries){
       entries.forEach(function(e){ if (e.isIntersecting) activate(e.target.id); });
@@ -70,8 +81,6 @@ const PAGE_SCRIPT = `
       notesBtn.textContent = hidden ? '显示教师讲稿' : '隐藏教师讲稿';
     });
   }
-  var printBtn = document.getElementById('print-page');
-  if (printBtn) printBtn.addEventListener('click', function(){ window.print(); });
   function renderMath(){
     try {
       if (window.renderMathInElement) {
@@ -172,7 +181,6 @@ ${sections}
 <footer>本网页课件由智课星生成，可离线保存与分享</footer>
 <div class="toolbar">
   <button id="toggle-notes" type="button">显示教师讲稿</button>
-  <button id="print-page" type="button">打印 / 存为 PDF</button>
 </div>
 <script src="https://cdn.jsdelivr.net/npm/katex@${KATEX_VERSION}/dist/contrib/auto-render.min.js"></script>
 <script>${PAGE_SCRIPT}</script>

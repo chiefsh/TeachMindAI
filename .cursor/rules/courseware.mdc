@@ -20,3 +20,4 @@ skill 题型分两类，都登记在 `SKILL_CAPABILITIES`：解题型（固定�
 视觉主题：`Courseware.theme` 存主题 key（创建时选，默认 `explore` / 蓝色探索）。Theme System 有两份且必须同步——后端 `services/courseware_theme.py` 供导出用，前端 `utils/coursewareTheme.ts` 供 `revealDeck.ts` / `lessonPage.ts` / 选择器用；增删主题要同时改两边的 key、色值、封面样式、装饰与阴影。未知或旧 key（indigo/emerald/amber/rose/sky/slate）经 ALIASES 回退。页面布局在 `utils/coursewarePages.ts`，按 type 渲染 Cover / 学习目标 / 新知 / 例题 / 互动 / 对比 / 过程 / 小结 / 练习 / 作业，不要让页面落到纯白底。
 
 前端：列表/详情 `views/courseware/`；iframe 用 `coursewareFrame.ts`。导出走 `export_service.build_export`（pptx/docx/pdf，第 5 个参数传 `cw.theme`）；网页课件由前端直接下载 .html。
+单页 AI 优化走 `do_optimize_courseware_slide`：只改当前页文案，禁止把整课 `meta/slides` 或教案结构写进该页。

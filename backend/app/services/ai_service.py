@@ -894,6 +894,132 @@ def _slide_prompt_payload(slide: dict) -> dict:
     return {k: slide.get(k) for k in ("type", *_SLIDE_TEXT_KEYS)}
 
 
+def _as_slide_text(value) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (int, float, bool)):
+        return str(value)
+    if isinstance(value, list):
+        parts = []
+        for x in value:
+            if isinstance(x, str) and x.strip():
+                parts.append(x.strip())
+            elif isinstance(x, dict):
+                t = x.get("text") or x.get("title") or x.get("detail") or x.get("content")
+                if isinstance(t, str) and t.strip():
+                    parts.append(t.strip())
+        return "\n".join(parts) if parts else None
+    # 对象/整课结构不能写进正文，否则页面会变成完整 JSON
+    return None
+
+
+def _as_str_list(value) -> list[str] | None:
+    if not isinstance(value, list):
+        return None
+    out: list[str] = []
+    for x in value:
+        if isinstance(x, str) and x.strip():
+            out.append(x.strip())
+        elif isinstance(x, dict):
+            t = x.get("text") or x.get("title") or x.get("detail") or x.get("content")
+            if isinstance(t, str) and t.strip():
+                out.append(t.strip())
+    return out
+
+
+def _pick_slide_from_lesson(obj: dict, original: dict) -> dict | None:
+    slides = obj.get("slides")
+    if not isinstance(slides, list):
+        return None
+    orig_title = (original.get("title") or "").strip()
+    orig_type = (original.get("type") or "").strip()
+    for s in slides:
+        if isinstance(s, dict) and orig_title and (s.get("title") or "").strip() == orig_title:
+            return s
+    if orig_type:
+        for s in slides:
+            if isinstance(s, dict) and (s.get("type") or "").strip() == orig_type:
+                return s
+    return None
+
+
+def _content_is_structure_dump(text: str) -> bool:
+    t = (text or "").strip()
+    if len(t) < 8 or t[0] not in "{[":
+        return False
+    try:
+        data = json.loads(t)
+    except Exception:
+        return False
+    if isinstance(data, dict):
+        return bool(data.get("slides") or data.get("meta") or data.get("pages"))
+    return isinstance(data, list) and bool(data) and isinstance(data[0], dict)
+
+
+def _coerce_slide_updates(obj: dict, original: dict, mode: str) -> dict:
+    """只留下当前页字段。模型若误输出整课 JSON，按标题/类型抽一页，否则丢弃。"""
+    if not isinstance(obj, dict):
+        return {}
+    if isinstance(obj.get("slides"), list):
+        picked = _pick_slide_from_lesson(obj, original)
+        if not picked:
+            return {}
+        obj = picked
+    if mode == "notes":
+        notes = _as_slide_text(obj.get("notes"))
+        return {"notes": notes} if notes else {}
+
+    out: dict = {}
+    for k in ("title", "subtitle", "content", "notes", "prompt", "solution", "left_title", "right_title"):
+        if k not in obj:
+            continue
+        text = _as_slide_text(obj.get(k))
+        if text is None:
+            continue
+        if k == "content" and _content_is_structure_dump(text):
+            continue
+        out[k] = text
+    if "bullets" in obj:
+        bullets = _as_str_list(obj.get("bullets"))
+        if bullets is not None:
+            out["bullets"] = bullets
+    for k in ("columns", "steps"):
+        val = obj.get(k)
+        if not isinstance(val, list):
+            continue
+        cleaned = []
+        for item in val:
+            if not isinstance(item, dict):
+                continue
+            row = {}
+            for fk in ("title", "detail", "items"):
+                if fk not in item:
+                    continue
+                if fk == "items":
+                    items = _as_str_list(item.get("items"))
+                    if items is not None:
+                        row["items"] = items
+                else:
+                    t = _as_slide_text(item.get(fk))
+                    if t is not None:
+                        row[fk] = t
+            if row:
+                cleaned.append(row)
+        if cleaned:
+            out[k] = cleaned
+    return out
+
+
+def _optimize_updates_unusable(updates: dict, mode: str) -> bool:
+    if not updates:
+        return True
+    if mode == "notes":
+        return not isinstance(updates.get("notes"), str) or not updates["notes"].strip()
+    return not any(k in updates for k in ("title", "content", "bullets", "notes", "prompt", "solution"))
+
+
 async def _mark_slide_edit(courseware_id: int, index: int, status: str, error: str | None = None):
     from sqlalchemy.orm.attributes import flag_modified
     async with AsyncSessionLocal() as db:
@@ -981,13 +1107,13 @@ async def do_optimize_courseware_slide(
             else:
                 slide.pop("skill", None)
         else:
+            cleaned = _coerce_slide_updates(updates, slide, mode)
             for k in _SLIDE_TEXT_KEYS:
-                if k in updates and updates[k] is not None:
-                    slide[k] = updates[k]
-            if updates.get("title"):
-                slide["title"] = updates["title"]
-            kind = page_kind(slide.get("type"))
-            slide["type"] = kind
+                if k in cleaned and cleaned[k] is not None:
+                    slide[k] = cleaned[k]
+            if cleaned.get("title"):
+                slide["title"] = cleaned["title"]
+            slide["type"] = page_kind(slide.get("type"))
         slide["edit_status"] = "idle"
         slide.pop("task_id", None)
         slide.pop("edit_error", None)
@@ -1033,39 +1159,58 @@ async def _rewrite_one_slide(
             out["skill"] = routed
         return out
 
+    from app.services.courseware_theme import page_kind, page_label
+
     hint = _OPTIMIZE_HINTS.get(mode, _OPTIMIZE_HINTS["rewrite"])
     extra = f"\n教师补充要求：{instruction}" if instruction else ""
-    subject_hint = ""
-    if subject_block:
-        subject_hint = f"\n学科：{subject_name or '通用'}\n{subject_block[:1200]}"
+    page_type = page_kind(slide.get("type"))
+    type_label = page_label(page_type)
+    subject_hint = f"\n学科：{subject_name}。用语符合该学科课堂，不要按整课教案来写。" if subject_name else ""
     payload = json.dumps(_slide_prompt_payload(slide), ensure_ascii=False)
     schema_note = (
         '{"title":"","subtitle":"","bullets":[""],"content":"","notes":"","prompt":"","solution":""}'
         if mode != "notes"
         else '{"notes":"教师讲稿全文"}'
     )
-    prompt = f"""你是中小学课件编辑。只改当前这一页，不要输出整课。
+    prompt = f"""你是中小学课件编辑。这次只改「当前这一页」的文案，不是生成整节课。
 
 课件标题：{cw_title}
-页码：第 {index + 1} 页
+当前页：第 {index + 1} 页，类型 {page_type}（{type_label}）
 任务：{hint}{extra}{subject_hint}
 
 当前页 JSON：
 {payload}
 
-【输出】只输出一个 JSON 对象，不要 markdown 围栏，不要解释。字段：
-{schema_note}
-- 保留原知识点，语言口语化、适合课堂。
-- bullets 不超过 8 条；content 用 markdown，公式用 $...$。
+【硬约束】
+- 只输出这一个页面的 JSON 对象，不要 markdown 围栏，不要解释。
+- 禁止输出 meta、slides、pages，禁止写成「教学目标 + 教学过程」的整课教案。
+- 不要改页面类型，不要新增无关知识点，不要把整单元结构塞进 content。
+- 字段：{schema_note}
+- bullets 是字符串数组，最多 8 条；content / notes / prompt / solution 必须是字符串（markdown），公式用 $...$。
 - 不要输出 html、images、type、index。
 """
-    max_tok = max(cfg.max_tokens or 0, 2500)
-    resp = await _call_llm(cfg, [{"role": "user", "content": prompt}], max_tokens=max_tok)
-    raw = _resp_content(resp)
-    obj = _parse_json_object(raw)
-    if not obj:
-        raise ValueError("模型未返回有效 JSON")
-    return obj
+
+    async def _ask(user_prompt: str) -> dict:
+        max_tok = max(cfg.max_tokens or 0, 2500)
+        resp = await _call_llm(cfg, [{"role": "user", "content": user_prompt}], max_tokens=max_tok)
+        raw = _resp_content(resp)
+        obj = _parse_json_object(raw)
+        if not obj:
+            raise ValueError("模型未返回有效 JSON")
+        return _coerce_slide_updates(obj, slide, mode)
+
+    updates = await _ask(prompt)
+    if _optimize_updates_unusable(updates, mode):
+        retry = (
+            f"上次你输出了整课结构或非本页字段。现在必须只输出当前这一页。\n"
+            f"页类型：{page_type}（{type_label}），标题：{slide.get('title') or ''}\n"
+            f"不要 meta，不要 slides 数组，不要教案大纲。字段：{schema_note}\n"
+            f"任务：{hint}{extra}\n\n当前页 JSON：\n{payload}"
+        )
+        updates = await _ask(retry)
+    if _optimize_updates_unusable(updates, mode):
+        raise ValueError("模型未返回当前页可用内容")
+    return updates
 
 
 async def _generate_lesson_content(

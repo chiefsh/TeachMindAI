@@ -1,16 +1,16 @@
 <template>
   <el-drawer v-model="open" title="个人信息" size="400px">
-    <div class="space-y-5">
-      <div class="flex items-center gap-3">
-        <el-avatar :size="48" class="bg-primary-600 text-white">
+    <div class="space-y-6">
+      <div class="flex items-center gap-3 p-3 rounded-xl" style="background: #f4f1ea">
+        <el-avatar :size="48" class="!bg-indigo-500 text-white">
           {{ auth.teacher?.real_name?.charAt(0) || '师' }}
         </el-avatar>
         <div>
-          <p class="font-medium text-slate-800">{{ auth.teacher?.real_name }}</p>
-          <p class="text-xs text-slate-400">{{ auth.teacher?.username }}</p>
+          <p class="font-medium" style="color: var(--ink)">{{ auth.teacher?.real_name }}</p>
+          <p class="text-xs mt-0.5" style="color: var(--ink-muted)">{{ auth.teacher?.username }}</p>
         </div>
       </div>
-      <div v-if="roleNames" class="text-xs text-slate-500">角色：{{ roleNames }}</div>
+      <div v-if="roleNames" class="text-xs" style="color: var(--ink-muted)">角色：{{ roleNames }}</div>
 
       <el-form :model="profileForm" label-width="88px">
         <el-form-item label="用户名">

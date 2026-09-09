@@ -80,7 +80,7 @@ async def upsert_vector(point_id: str, vector: list[float], payload: dict) -> No
 async def search_similar(
     vector: list[float], flt: dict | None = None, limit: int = 5
 ) -> list[dict]:
-    """按向量检索，flt 为 payload 精确过滤（如 {"teacher_id":1,"subject_id":2}）。
+    """按向量检索，flt 为 payload 精确过滤（如 {"subject_id":2}）。
     返回 [{"id":..., "score":..., "payload":...}]。
     """
     client = _get_client()

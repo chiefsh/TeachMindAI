@@ -126,7 +126,7 @@ tasks/<队列>.py      → Celery 包装（薄，真正逻辑在 service）
 
 - 后端：`api/v1/knowledge.py`、`schemas/knowledge.py`、`services/knowledge_graph_service.py`、`services/knowledge_extract_service.py`、`services/embedding_service.py`、`tasks/knowledge_tasks.py`、`core/neo4j_client.py`、`core/qdrant_client.py`
 - 前端：`views/knowledge/KnowledgeGraphView.vue`
-- 知识点在 Neo4j，不在 MySQL
+- 知识点在 Neo4j，不在 MySQL；图谱全站共用，不按教师隔离
 
 ### 系统设置（LLM / 科目提示词）
 

@@ -79,8 +79,6 @@ async def init_schema():
         "FOR (k:KnowledgePoint) REQUIRE k.id IS UNIQUE",
         "CREATE CONSTRAINT concept_id IF NOT EXISTS "
         "FOR (c:Concept) REQUIRE c.id IS UNIQUE",
-        "CREATE INDEX kp_teacher IF NOT EXISTS "
-        "FOR (k:KnowledgePoint) ON (k.teacher_id)",
         "CREATE INDEX kp_subject IF NOT EXISTS "
         "FOR (k:KnowledgePoint) ON (k.subject_id)",
         "CREATE INDEX kp_name IF NOT EXISTS "

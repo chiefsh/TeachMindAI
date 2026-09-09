@@ -8,7 +8,21 @@
   --sidebar-width: 240px;
   --topbar-height: 60px;
 
-  /* 覆盖 Element Plus 主题色，统一为靛蓝，保证与登录页/侧边栏一致 */
+  /* 画布 / 表面 / 文字：暖纸通栏，侧栏略浅，避免深浅对切 */
+  --canvas: #f3f1eb;
+  --surface: #fffcf8;
+  --ink: #1c1917;
+  --ink-secondary: #57534e;
+  --ink-muted: #78716c;
+  --border: #e7e4dc;
+  --border-subtle: #efece4;
+  --sidebar-bg: #faf8f3;
+  --sidebar-text: #5c584f;
+  --sidebar-text-active: #1c1917;
+  --shadow-card: 0 1px 2px rgba(28, 25, 23, 0.04), 0 10px 28px rgba(28, 25, 23, 0.05);
+  --radius-md: 10px;
+  --radius-lg: 16px;
+
   --el-color-primary: #4f46e5;
   --el-color-primary-light-3: #7b74ec;
   --el-color-primary-light-5: #a7a2f2;
@@ -16,6 +30,9 @@
   --el-color-primary-light-8: #e3e1fb;
   --el-color-primary-light-9: #eef2ff;
   --el-color-primary-dark-2: #3f38b7;
+  --el-border-radius-base: 10px;
+  --el-border-radius-small: 8px;
+  --el-font-size-base: 14px;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -23,36 +40,42 @@
 html, body, #app {
   height: 100%;
   font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
-  background: #f8f9fc;
-  color: #1a1a2e;
+  background: var(--canvas);
+  color: var(--ink);
 }
 
-/* 滚动条美化 */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: #f1f5f9; }
-::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #d6d3cc; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #a8a29e; }
 
-/* 卡片通用样式 */
 .card {
-  @apply bg-white rounded-xl shadow-sm border border-slate-100 p-4 sm:p-6;
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-card);
+  @apply p-4 sm:p-6;
 }
 
-/* 页面容器：各业务页统一响应式内边距 */
 .page {
-  @apply p-4 sm:p-5 md:p-6;
+  @apply p-4 sm:p-5 md:p-7;
 }
 
-/* 页面标题 */
 .page-title {
-  @apply text-lg sm:text-xl font-semibold text-slate-800;
+  @apply text-xl sm:text-2xl font-semibold tracking-tight;
+  color: var(--ink);
 }
 
 .page-subtitle {
-  @apply text-xs sm:text-sm text-slate-500 mt-1;
+  @apply text-xs sm:text-sm mt-1.5;
+  color: var(--ink-muted);
 }
 
-/* 表格横向滚动（窄屏不撑破布局） */
+.empty-hint {
+  @apply text-sm py-8 text-center;
+  color: var(--ink-muted);
+}
+
 .table-scroll {
   @apply w-full overflow-x-auto;
 }
@@ -60,7 +83,12 @@ html, body, #app {
   min-width: 560px;
 }
 
-/* Element Plus 弹窗：小屏接近全宽 */
+.brand-mark {
+  @apply relative flex items-center justify-center rounded-xl text-white;
+  background: linear-gradient(145deg, #6366f1 0%, #4338ca 100%);
+  box-shadow: 0 6px 16px rgba(79, 70, 229, 0.28);
+}
+
 @media (max-width: 767px) {
   .el-dialog {
     --el-dialog-width: 92vw !important;
@@ -78,11 +106,47 @@ html, body, #app {
   }
 }
 
-/* 状态徽章 */
 .badge {
   @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
 }
-.badge-pending  { @apply bg-slate-100 text-slate-600; }
-.badge-processing { @apply bg-blue-100 text-blue-700; }
-.badge-done     { @apply bg-green-100 text-green-700; }
-.badge-failed   { @apply bg-red-100 text-red-700; }
+.badge-pending  { @apply bg-stone-100 text-stone-600; }
+.badge-processing { @apply bg-indigo-50 text-indigo-700; }
+.badge-done     { @apply bg-emerald-50 text-emerald-700; }
+.badge-failed   { @apply bg-red-50 text-red-700; }
+
+/* Element Plus：圆角、表头、主按钮与整体暖纸底对齐 */
+.el-button {
+  font-weight: 500;
+}
+.el-button--primary {
+  font-weight: 600;
+}
+.el-dialog {
+  border-radius: var(--radius-lg) !important;
+  overflow: hidden;
+}
+.el-table th.el-table__cell {
+  background: #f7f5f0 !important;
+  color: var(--ink-secondary);
+  font-weight: 600;
+}
+.el-input__wrapper,
+.el-select__wrapper {
+  box-shadow: 0 0 0 1px var(--border) inset;
+}
+.el-input__wrapper.is-focus,
+.el-select__wrapper.is-focused {
+  box-shadow: 0 0 0 1px var(--el-color-primary) inset !important;
+}
+.el-form-item.is-error .el-input__wrapper,
+.el-form-item.is-error .el-select__wrapper {
+  box-shadow: 0 0 0 1px var(--el-color-danger) inset !important;
+}
+
+#nprogress .bar {
+  background: var(--color-primary) !important;
+  height: 2px;
+}
+#nprogress .peg {
+  box-shadow: none;
+}

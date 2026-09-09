@@ -4,7 +4,7 @@
       <div>
         <h1 class="page-title">知识图谱</h1>
         <p class="page-subtitle">
-          知识点系统化沉淀与跨学科串联 · 共 {{ stats.point_count }} 个知识点 / {{ stats.relation_count }} 条关系
+          知识点系统化沉淀与跨学科串联（全站共用） · 共 {{ stats.point_count }} 个知识点 / {{ stats.relation_count }} 条关系
         </p>
       </div>
       <div class="flex flex-wrap gap-2">

@@ -236,7 +236,7 @@ export interface KgNeighbor {
   weight: number; cross_subject: boolean; status: string
 }
 export interface KgNode {
-  id: string; name: string; teacher_id?: number
+  id: string; name: string
   subject_id?: number | null; subject_name?: string
   school_level_id?: number | null; grade_id?: number | null
   description?: string; difficulty?: number; tags?: string[]; source?: string

@@ -6,9 +6,9 @@ alwaysApply: false
 
 # 知识图谱
 
-图在 **Neo4j**，向量去重在 **Qdrant**（`KG_COLLECTION`），MySQL 不存知识点主数据。开关 `KG_ENABLED`。
+图在 **Neo4j**，向量去重在 **Qdrant**（`KG_COLLECTION`），MySQL 不存知识点主数据。开关 `KG_ENABLED`。图谱全站共用，不按教师隔离。
 
 - CRUD/检索：`knowledge_graph_service.py`。关系类型与 `status` 在 API 层更新。
-- 抽取：`knowledge_extract_service.py`（章节/整书/课件回填/试题回填/跨学科建议）。Celery 在 `knowledge_tasks.py`，走 `slow_tasks` 队列。
-- 嵌入：`embedding_service.py`；未配 `EMBEDDING_MODEL` 则退化为名称精确匹配。去重阈值 `KG_DEDUP_THRESHOLD`。
+- 抽取：`knowledge_extract_service.py`（章节/整书/课件回填/试题回填/跨学科建议）。Celery 在 `knowledge_tasks.py`，走 `slow_tasks` 队列。抽取时可用当前教师的嵌入/提示词配置，写入的点边不挂个人。
+- 嵌入：`embedding_service.py`；未配 `EMBEDDING_MODEL` 则退化为名称精确匹配。去重在同学科内做，阈值 `KG_DEDUP_THRESHOLD`。
 - 前端：`KnowledgeGraphView.vue` + `knowledgeApi`。Neo4j/Qdrant 未就绪时启动不阻塞（best-effort）。

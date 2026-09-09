@@ -1,4 +1,7 @@
-"""知识点抽取与入图：从课本章节抽取知识点，或把课件已抽取的知识点回填到图谱。"""
+"""知识点抽取与入图：从课本章节抽取知识点，或把课件已抽取的知识点回填到图谱。
+
+写入的点边全站共用，不挂 teacher_id。teacher_id 仅用于解析嵌入网关 / 科目提示词。
+"""
 import logging
 
 from sqlalchemy import select
@@ -31,7 +34,7 @@ async def _embed_gw(db, teacher_id: int) -> EmbeddingGateway | None:
 
 
 async def _store_points(
-    points: list[dict], *, teacher_id: int, subject_id: int | None,
+    points: list[dict], *, subject_id: int | None,
     subject_name: str, school_level_id: int | None, grade_id: int | None,
     source: str, courseware_id: int | None = None,
     embedding: EmbeddingGateway | None = None,
@@ -43,7 +46,6 @@ async def _store_points(
         if p.get("life_example"):
             desc_parts.append(f"例：{p['life_example']}")
         res = await kg.upsert_knowledge_point(
-            teacher_id=teacher_id,
             name=p.get("name") or "",
             subject_id=subject_id,
             subject_name=subject_name,
@@ -109,7 +111,7 @@ async def extract_and_store_for_chapter(chapter_id: int, teacher_id: int) -> dic
         points = await _extract_knowledge_points(cfg, _CW(), content, subject_name, subject_block)
         gw = await _embed_gw(db, teacher_id)
         ids = await _store_points(
-            points, teacher_id=teacher_id, subject_id=tb.subject_id,
+            points, subject_id=tb.subject_id,
             subject_name=subject_name, school_level_id=school_level_id,
             grade_id=tb.grade_id, source="chapter",
             embedding=gw,
@@ -157,11 +159,10 @@ async def persist_courseware_points(courseware_id: int) -> dict:
             if tb:
                 subject_id, grade_id = tb.subject_id, tb.grade_id
                 subject_name, school_level_id = await _subject_meta(db, tb.subject_id)
-        teacher_id = cw.teacher_id
-        gw = await _embed_gw(db, teacher_id)
+        gw = await _embed_gw(db, cw.teacher_id)
 
     ids = await _store_points(
-        points, teacher_id=teacher_id, subject_id=subject_id,
+        points, subject_id=subject_id,
         subject_name=subject_name, school_level_id=school_level_id,
         grade_id=grade_id, source="courseware", courseware_id=courseware_id,
         embedding=gw,
@@ -182,11 +183,10 @@ async def persist_analysis_points(set_id: int) -> dict:
         )).scalar_one_or_none()
         if not aset:
             return {"stored": 0}
-        teacher_id = aset.teacher_id
         subject_id = aset.subject_id
         grade_id = aset.grade_id
         subject_name, school_level_id = await _subject_meta(db, subject_id)
-        gw = await _embed_gw(db, teacher_id)
+        gw = await _embed_gw(db, aset.teacher_id)
         rows = (await db.execute(
             select(AnalysisQuestion).where(AnalysisQuestion.set_id == set_id)
         )).scalars().all()
@@ -203,7 +203,6 @@ async def persist_analysis_points(set_id: int) -> dict:
         ids: list[str] = []
         for name in names:
             res = await kg.upsert_knowledge_point(
-                teacher_id=teacher_id,
                 name=name,
                 subject_id=subject_id,
                 subject_name=subject_name,
@@ -251,9 +250,9 @@ async def suggest_cross_subject_relations(
         return {"suggested": 0, "error": "未启用向量嵌入，无法自动发现跨学科关联"}
 
     nodes = await neo.run_read(
-        "MATCH (k:KnowledgePoint {teacher_id:$tid}) "
+        "MATCH (k:KnowledgePoint) "
         "RETURN k{.id,.name,.subject_id,.description} AS node LIMIT $lim",
-        {"tid": teacher_id, "lim": max_nodes},
+        {"lim": max_nodes},
     )
     suggested = 0
     for row in nodes:
@@ -264,7 +263,7 @@ async def suggest_cross_subject_relations(
         )
         if not vector:
             continue
-        hits = await vec.search_similar(vector, flt={"teacher_id": teacher_id}, limit=per_node + 3)
+        hits = await vec.search_similar(vector, limit=per_node + 3)
         for h in hits:
             if h["id"] == n["id"]:
                 continue

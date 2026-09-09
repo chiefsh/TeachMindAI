@@ -30,13 +30,13 @@ async def get_graph(
     teacher: Teacher = Depends(get_current_teacher),
 ):
     _require_enabled()
-    return await kg.get_graph(teacher.id, subject_id, grade_id, min(limit, 1000))
+    return await kg.get_graph(subject_id, grade_id, min(limit, 1000))
 
 
 @router.get("/stats")
 async def get_stats(teacher: Teacher = Depends(get_current_teacher)):
     _require_enabled()
-    return await kg.stats(teacher.id)
+    return await kg.stats()
 
 
 @router.get("/points")
@@ -47,14 +47,14 @@ async def list_points(
     teacher: Teacher = Depends(get_current_teacher),
 ):
     _require_enabled()
-    return await kg.search_points(teacher.id, keyword, subject_id, min(limit, 100))
+    return await kg.search_points(keyword, subject_id, min(limit, 100))
 
 
 @router.get("/points/{point_id}")
 async def get_point(point_id: str, teacher: Teacher = Depends(get_current_teacher)):
     _require_enabled()
     node = await kg.get_point(point_id)
-    if not node or node.get("teacher_id") != teacher.id:
+    if not node:
         raise HTTPException(status_code=404, detail="知识点不存在")
     node["prerequisite_path"] = await kg.prerequisite_path(point_id)
     return node
@@ -75,7 +75,7 @@ async def create_point(
     from app.services.embedding_service import resolve_embedding
     gw = await resolve_embedding(db, teacher.id)
     res = await kg.upsert_knowledge_point(
-        teacher_id=teacher.id, name=body.name, subject_id=body.subject_id,
+        name=body.name, subject_id=body.subject_id,
         subject_name=subject_name, school_level_id=school_level_id,
         grade_id=body.grade_id, description=body.description,
         difficulty=body.difficulty, tags=body.tags, source="manual",
@@ -92,7 +92,7 @@ async def create_point(
 async def delete_point(point_id: str, teacher: Teacher = Depends(require_perm("knowledge.manage"))):
     _require_enabled()
     node = await kg.get_point(point_id)
-    if not node or node.get("teacher_id") != teacher.id:
+    if not node:
         raise HTTPException(status_code=404, detail="知识点不存在")
     await kg.delete_point(point_id)
 
@@ -100,10 +100,9 @@ async def delete_point(point_id: str, teacher: Teacher = Depends(require_perm("k
 @router.post("/relations", status_code=201)
 async def create_relation(body: RelationCreate, teacher: Teacher = Depends(require_perm("knowledge.manage"))):
     _require_enabled()
-    # 校验两端归属当前教师
     for pid in (body.from_id, body.to_id):
         node = await kg.get_point(pid)
-        if not node or node.get("teacher_id") != teacher.id:
+        if not node:
             raise HTTPException(status_code=404, detail="知识点不存在")
     try:
         ok = await kg.add_relation(

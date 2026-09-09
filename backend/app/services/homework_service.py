@@ -243,10 +243,10 @@ def _match_kps(content: str, tags: list | None, aliases: list[str]) -> list[str]
     return hit
 
 
-async def _points_from_graph(teacher_id: int, courseware_ids: list[int]) -> list[str]:
+async def _points_from_graph(courseware_ids: list[int]) -> list[str]:
     try:
         from app.services import knowledge_graph_service as kg
-        rows = await kg.points_by_courseware(teacher_id, courseware_ids)
+        rows = await kg.points_by_courseware(courseware_ids)
     except Exception as e:  # noqa: BLE001
         logger.warning("图谱按课件取知识点失败：%s", e)
         return []
@@ -262,7 +262,7 @@ async def _points_from_graph(teacher_id: int, courseware_ids: list[int]) -> list
 
 
 async def _expand_kp_aliases(
-    teacher_id: int, subject_id: int | None, kp_names: list[str],
+    subject_id: int | None, kp_names: list[str],
     embedding,
 ) -> list[str]:
     """用向量把课件/章节知识点扩成近义别名，缓解名称对不齐。"""
@@ -274,9 +274,7 @@ async def _expand_kp_aliases(
         from app.core import qdrant_client as vec
         if not embedding:
             return _uniq(aliases)
-        flt: dict = {"teacher_id": teacher_id}
-        if subject_id:
-            flt["subject_id"] = subject_id
+        flt = {"subject_id": subject_id} if subject_id else None
         for name in kp_names[:12]:
             vector = await embed_text(name, gateway=embedding)
             if not vector:
@@ -402,7 +400,7 @@ async def resolve_scope(db, paper: HomeworkPaper, cfg) -> dict:
             pieces.append(block[:remain])
             used += min(len(block), remain)
         content = "\n\n".join(pieces)
-        kp_names.extend(await _points_from_graph(teacher_id, [c.id for c in coursewares]))
+        kp_names.extend(await _points_from_graph([c.id for c in coursewares]))
         if tb_ids:
             textbook_id = textbook_id or tb_ids[0]
             tb = (await db.execute(
@@ -445,7 +443,7 @@ async def resolve_scope(db, paper: HomeworkPaper, cfg) -> dict:
     except Exception:  # noqa: BLE001
         pass
     aliases = await _expand_kp_aliases(
-        teacher_id, subject_id, kp_names, gw,
+        subject_id, kp_names, gw,
     )
     return {
         "title": title,

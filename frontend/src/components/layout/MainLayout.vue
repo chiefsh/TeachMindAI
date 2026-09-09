@@ -1,83 +1,21 @@
 <template>
-  <div class="flex h-screen overflow-hidden bg-slate-50">
-    <!-- 桌面端固定侧栏 -->
+  <div class="flex h-screen overflow-hidden" style="background: var(--canvas)">
     <aside
       v-if="isDesktop"
-      class="flex-shrink-0 w-60 bg-white border-r border-slate-100 flex flex-col"
+      class="flex-shrink-0 w-60 flex flex-col overflow-hidden"
+      style="border-right: 1px solid var(--border-subtle)"
     >
-      <div class="h-[60px] flex items-center px-5 border-b border-slate-100">
-        <div class="flex items-center gap-2.5">
-          <div class="w-8 h-8 rounded-lg bg-primary-600 flex items-center justify-center">
-            <el-icon class="text-white text-base"><Reading /></el-icon>
-          </div>
-          <span class="font-bold text-slate-800 text-base">智课星</span>
-        </div>
-      </div>
-      <nav class="flex-1 overflow-y-auto py-3 px-3">
-        <div v-for="item in navMenu" :key="item.key" class="mb-0.5">
-          <router-link
-            v-if="item.path"
-            :to="item.path"
-            class="nav-item"
-            :class="{ active: isChildActive(item.path) }"
-          >
-            <el-icon><component :is="item.icon" /></el-icon>
-            <span>{{ item.label }}</span>
-          </router-link>
-          <template v-else>
-            <button
-              type="button"
-              class="nav-item w-full"
-              :class="{ 'nav-group-on': isGroupActive(item) }"
-              :aria-expanded="expandedKey === item.key"
-              @click="toggle(item)"
-            >
-              <el-icon><component :is="item.icon" /></el-icon>
-              <span class="flex-1 text-left">{{ item.label }}</span>
-              <el-icon
-                class="text-xs text-slate-400 transition-transform duration-150"
-                :class="{ 'rotate-180': expandedKey === item.key }"
-              >
-                <ArrowDown />
-              </el-icon>
-            </button>
-            <div
-              v-show="expandedKey === item.key"
-              class="ml-3 pl-2 border-l border-slate-100"
-            >
-              <router-link
-                v-for="child in item.children"
-                :key="child.path"
-                :to="child.path"
-                class="nav-item !py-2 !text-[13px]"
-                :class="{ active: isChildActive(child.path) }"
-              >
-                <el-icon><component :is="child.icon" /></el-icon>
-                <span>{{ child.label }}</span>
-              </router-link>
-            </div>
-          </template>
-        </div>
-      </nav>
-      <div class="border-t border-slate-100 p-3">
-        <div class="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-slate-50">
-          <button type="button" class="flex items-center gap-3 flex-1 min-w-0 text-left" @click="profileOpen = true">
-            <el-avatar :size="32" class="bg-primary-600 text-white flex-shrink-0">
-              {{ auth.teacher?.real_name?.charAt(0) || '师' }}
-            </el-avatar>
-            <div class="flex-1 min-w-0">
-              <p class="text-sm font-medium text-slate-700 truncate">{{ auth.teacher?.real_name }}</p>
-              <p class="text-xs text-slate-400 truncate">{{ auth.teacher?.username }}</p>
-            </div>
-          </button>
-          <el-button link @click="handleLogout" class="!text-slate-400 hover:!text-slate-600">
-            <el-icon><SwitchButton /></el-icon>
-          </el-button>
-        </div>
-      </div>
+      <AppSidebar
+        :nav-menu="navMenu"
+        :expanded-key="expandedKey"
+        :is-child-active="isChildActive"
+        :is-group-active="isGroupActive"
+        @toggle="toggle"
+        @profile="profileOpen = true"
+        @logout="handleLogout"
+      />
     </aside>
 
-    <!-- 移动/平板：抽屉侧栏 -->
     <el-drawer
       v-else
       v-model="drawerOpen"
@@ -86,85 +24,22 @@
       :with-header="false"
       class="mobile-nav-drawer"
     >
-      <div class="h-full bg-white flex flex-col">
-        <div class="h-[56px] flex items-center px-5 border-b border-slate-100">
-          <div class="flex items-center gap-2.5">
-            <div class="w-8 h-8 rounded-lg bg-primary-600 flex items-center justify-center">
-              <el-icon class="text-white text-base"><Reading /></el-icon>
-            </div>
-            <span class="font-bold text-slate-800 text-base">智课星</span>
-          </div>
-        </div>
-        <nav class="flex-1 overflow-y-auto py-3 px-3">
-          <div v-for="item in navMenu" :key="item.key" class="mb-0.5">
-            <router-link
-              v-if="item.path"
-              :to="item.path"
-              class="nav-item"
-              :class="{ active: isChildActive(item.path) }"
-            >
-              <el-icon><component :is="item.icon" /></el-icon>
-              <span>{{ item.label }}</span>
-            </router-link>
-            <template v-else>
-              <button
-                type="button"
-                class="nav-item w-full"
-                :class="{ 'nav-group-on': isGroupActive(item) }"
-                :aria-expanded="expandedKey === item.key"
-                @click="toggle(item)"
-              >
-                <el-icon><component :is="item.icon" /></el-icon>
-                <span class="flex-1 text-left">{{ item.label }}</span>
-                <el-icon
-                  class="text-xs text-slate-400 transition-transform duration-150"
-                  :class="{ 'rotate-180': expandedKey === item.key }"
-                >
-                  <ArrowDown />
-                </el-icon>
-              </button>
-              <div
-                v-show="expandedKey === item.key"
-                class="ml-3 pl-2 border-l border-slate-100"
-              >
-                <router-link
-                  v-for="child in item.children"
-                  :key="child.path"
-                  :to="child.path"
-                  class="nav-item !py-2 !text-[13px]"
-                  :class="{ active: isChildActive(child.path) }"
-                >
-                  <el-icon><component :is="child.icon" /></el-icon>
-                  <span>{{ child.label }}</span>
-                </router-link>
-              </div>
-            </template>
-          </div>
-        </nav>
-        <div class="border-t border-slate-100 p-3">
-          <div class="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-slate-50">
-            <button type="button" class="flex items-center gap-3 flex-1 min-w-0 text-left" @click="profileOpen = true">
-              <el-avatar :size="32" class="bg-primary-600 text-white flex-shrink-0">
-                {{ auth.teacher?.real_name?.charAt(0) || '师' }}
-              </el-avatar>
-              <div class="flex-1 min-w-0">
-                <p class="text-sm font-medium text-slate-700 truncate">{{ auth.teacher?.real_name }}</p>
-                <p class="text-xs text-slate-400 truncate">{{ auth.teacher?.username }}</p>
-              </div>
-            </button>
-            <el-button link @click="handleLogout" class="!text-slate-400 hover:!text-slate-600">
-              <el-icon><SwitchButton /></el-icon>
-            </el-button>
-          </div>
-        </div>
-      </div>
+      <AppSidebar
+        :nav-menu="navMenu"
+        :expanded-key="expandedKey"
+        :is-child-active="isChildActive"
+        :is-group-active="isGroupActive"
+        @toggle="toggle"
+        @profile="profileOpen = true"
+        @logout="handleLogout"
+      />
     </el-drawer>
 
-    <!-- 主区域 -->
     <div class="flex-1 flex flex-col min-w-0 overflow-hidden">
       <header
-        class="min-h-[56px] md:h-[60px] bg-white border-b border-slate-100 flex items-center
+        class="min-h-[56px] md:h-[60px] flex items-center
                px-3 sm:px-4 md:px-6 gap-2 sm:gap-3 flex-shrink-0 flex-wrap py-2 md:py-0"
+        style="background: var(--surface); border-bottom: 1px solid var(--border-subtle)"
       >
         <el-button
           v-if="!isDesktop"
@@ -213,9 +88,9 @@
         </div>
 
         <div v-if="edu.selectedSchoolLevel" class="hidden lg:flex items-center gap-1.5 flex-shrink-0">
-          <el-tag size="small" type="info">{{ edu.selectedSchoolLevel?.name }}</el-tag>
-          <el-tag v-if="edu.selectedGrade" size="small">{{ edu.selectedGrade?.name }}</el-tag>
-          <el-tag v-if="edu.selectedSubject" size="small" type="success">{{ edu.selectedSubject?.name }}</el-tag>
+          <span class="ctx-pill">{{ edu.selectedSchoolLevel?.name }}</span>
+          <span v-if="edu.selectedGrade" class="ctx-pill ctx-pill-ink">{{ edu.selectedGrade?.name }}</span>
+          <span v-if="edu.selectedSubject" class="ctx-pill ctx-pill-accent">{{ edu.selectedSubject?.name }}</span>
         </div>
       </header>
 
@@ -234,18 +109,9 @@ import { useAuthStore } from '@/stores/auth'
 import { useEducationStore } from '@/stores/education'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
-import { Fold, ArrowDown } from '@element-plus/icons-vue'
+import { Fold } from '@element-plus/icons-vue'
 import ProfileDrawer from './ProfileDrawer.vue'
-
-type NavChild = { path: string; label: string; icon: string; perm?: string }
-type NavItem = {
-  key: string
-  label: string
-  icon: string
-  path?: string
-  perm?: string
-  children?: NavChild[]
-}
+import AppSidebar, { type NavItem } from './AppSidebar.vue'
 
 const auth = useAuthStore()
 const edu = useEducationStore()
@@ -363,18 +229,21 @@ async function handleLogout() {
 @media (min-width: 640px) {
   .ctx-select { width: 90px; }
 }
-.nav-item {
-  @apply flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm text-slate-600
-         hover:bg-slate-50 hover:text-slate-900 transition-colors duration-150 mb-0.5;
+.ctx-pill {
+  @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs;
+  background: #f4f1ea;
+  color: var(--ink-secondary);
 }
-.nav-item.active {
-  @apply bg-primary-50 text-primary-700 font-medium;
+.ctx-pill-ink {
+  background: #ece8df;
+  color: var(--ink);
+  font-weight: 600;
 }
-.nav-item .el-icon { @apply text-base; }
-.nav-group-on {
-  @apply text-primary-700 font-medium;
+.ctx-pill-accent {
+  background: var(--el-color-primary-light-9);
+  color: var(--el-color-primary-dark-2);
+  font-weight: 600;
 }
-
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 </style>
@@ -383,5 +252,9 @@ async function handleLogout() {
 .mobile-nav-drawer .el-drawer__body {
   padding: 0 !important;
   overflow: hidden;
+  background: var(--sidebar-bg) !important;
+}
+.mobile-nav-drawer.el-drawer {
+  background: var(--sidebar-bg);
 }
 </style>

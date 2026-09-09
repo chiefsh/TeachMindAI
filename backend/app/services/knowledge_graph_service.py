@@ -2,7 +2,8 @@
 
 - 图存储：Neo4j（节点 KnowledgePoint / Concept，关系 PREREQUISITE / PART_OF / RELATED / APPLIES_IN / CONTRAST）
 - 向量存储：Qdrant（知识点 embedding，用于语义去重与相似检索）
-- 去重：优先向量相似度（同 teacher+subject 内 >= 阈值视为同一点），否则按名称精确匹配。
+- 范围：全站共用，不按教师隔离。
+- 去重：优先向量相似度（同学科内 >= 阈值视为同一点），否则按名称精确匹配。
 """
 import logging
 import uuid
@@ -34,9 +35,14 @@ def _embed_source(name: str, description: str = "") -> str:
     return f"{name}。{description}".strip("。")
 
 
+def _public_node(node: dict) -> dict:
+    """去掉历史遗留的 teacher_id，图谱不按人归属。"""
+    node.pop("teacher_id", None)
+    return node
+
+
 async def upsert_knowledge_point(
     *,
-    teacher_id: int,
     name: str,
     subject_id: int | None = None,
     subject_name: str = "",
@@ -65,21 +71,21 @@ async def upsert_knowledge_point(
         api_key=embed_api_key,
     )
 
-    # ── 去重 ──
+    # ── 去重（全站、同学科）──
     existing_id: str | None = None
     if vector:
-        flt = {"teacher_id": teacher_id}
+        flt = {}
         if subject_id:
             flt["subject_id"] = subject_id
-        hits = await vec.search_similar(vector, flt=flt, limit=1)
+        hits = await vec.search_similar(vector, flt=flt or None, limit=1)
         if hits and hits[0]["score"] >= settings.KG_DEDUP_THRESHOLD:
             existing_id = hits[0]["id"]
     if not existing_id:
         rows = await neo.run_read(
-            "MATCH (k:KnowledgePoint {teacher_id:$tid, name:$name}) "
+            "MATCH (k:KnowledgePoint {name:$name}) "
             "WHERE ($sid IS NULL OR k.subject_id=$sid) "
             "RETURN k.id AS id LIMIT 1",
-            {"tid": teacher_id, "name": name, "sid": subject_id},
+            {"name": name, "sid": subject_id},
         )
         if rows:
             existing_id = rows[0]["id"]
@@ -99,12 +105,12 @@ async def upsert_knowledge_point(
     kp_id = uuid.uuid4().hex
     await neo.run_write(
         "MERGE (k:KnowledgePoint {id:$id}) "
-        "SET k.teacher_id=$tid, k.name=$name, k.subject_id=$sid, k.subject_name=$sname, "
+        "SET k.name=$name, k.subject_id=$sid, k.subject_name=$sname, "
         "    k.school_level_id=$level, k.grade_id=$gid, k.description=$desc, "
         "    k.difficulty=$diff, k.tags=$tags, k.source=$source, "
         "    k.courseware_ids=[], k.question_ids=[], k.created_at=$now, k.updated_at=$now",
         {
-            "id": kp_id, "tid": teacher_id, "name": name, "sid": subject_id,
+            "id": kp_id, "name": name, "sid": subject_id,
             "sname": subject_name, "level": school_level_id, "gid": grade_id,
             "desc": description, "diff": int(difficulty or 3), "tags": tags,
             "source": source, "now": _now(),
@@ -112,20 +118,20 @@ async def upsert_knowledge_point(
     )
     if vector:
         await vec.upsert_vector(kp_id, vector, {
-            "teacher_id": teacher_id, "subject_id": subject_id or 0, "name": name,
+            "subject_id": subject_id or 0, "name": name,
         })
     return {"id": kp_id, "name": name, "merged": False}
 
 
-async def points_by_courseware(teacher_id: int, courseware_ids: list[int]) -> list[dict]:
+async def points_by_courseware(courseware_ids: list[int]) -> list[dict]:
     """按课件 id 取已关联的知识点（名称 + 标签），用于组卷范围约束。"""
     if not settings.KG_ENABLED or not courseware_ids:
         return []
     rows = await neo.run_read(
-        "MATCH (k:KnowledgePoint {teacher_id:$tid}) "
+        "MATCH (k:KnowledgePoint) "
         "WHERE any(cid IN coalesce(k.courseware_ids,[]) WHERE cid IN $cids) "
         "RETURN k.name AS name, k.id AS id, k.tags AS tags",
-        {"tid": teacher_id, "cids": list(courseware_ids)},
+        {"cids": list(courseware_ids)},
     )
     return rows or []
 
@@ -210,20 +216,20 @@ def _edge_out(row: dict) -> dict:
 
 
 async def get_graph(
-    teacher_id: int, subject_id: int | None = None,
+    subject_id: int | None = None,
     grade_id: int | None = None, limit: int = 300,
 ) -> dict:
     """返回可视化用的 {nodes, edges}。含跨学科邻居节点以保证连通。"""
     if not settings.KG_ENABLED:
         return {"nodes": [], "edges": []}
     nodes_rows = await neo.run_read(
-        "MATCH (k:KnowledgePoint) WHERE k.teacher_id=$tid "
-        "AND ($sid IS NULL OR k.subject_id=$sid) "
+        "MATCH (k:KnowledgePoint) WHERE "
+        "($sid IS NULL OR k.subject_id=$sid) "
         "AND ($gid IS NULL OR k.grade_id=$gid) "
         "RETURN k{.*} AS node ORDER BY k.created_at DESC LIMIT $limit",
-        {"tid": teacher_id, "sid": subject_id, "gid": grade_id, "limit": limit},
+        {"sid": subject_id, "gid": grade_id, "limit": limit},
     )
-    nodes = {r["node"]["id"]: r["node"] for r in nodes_rows}
+    nodes = {r["node"]["id"]: _public_node(r["node"]) for r in nodes_rows}
     if not nodes:
         return {"nodes": [], "edges": []}
 
@@ -246,7 +252,7 @@ async def get_graph(
             {"ids": list(missing)},
         )
         for r in extra:
-            nodes[r["node"]["id"]] = r["node"]
+            nodes[r["node"]["id"]] = _public_node(r["node"])
 
     return {"nodes": list(nodes.values()), "edges": edges}
 
@@ -258,7 +264,7 @@ async def get_point(kp_id: str) -> dict | None:
         "MATCH (k:KnowledgePoint {id:$id}) RETURN k{.*} AS node", {"id": kp_id})
     if not rows:
         return None
-    node = rows[0]["node"]
+    node = _public_node(rows[0]["node"])
     nbr = await neo.run_read(
         "MATCH (k:KnowledgePoint {id:$id})-[r]-(o:KnowledgePoint) "
         "RETURN type(r) AS type, "
@@ -279,18 +285,18 @@ async def get_point(kp_id: str) -> dict | None:
 
 
 async def search_points(
-    teacher_id: int, keyword: str = "", subject_id: int | None = None, limit: int = 30
+    keyword: str = "", subject_id: int | None = None, limit: int = 30
 ) -> list[dict]:
     if not settings.KG_ENABLED:
         return []
     rows = await neo.run_read(
-        "MATCH (k:KnowledgePoint) WHERE k.teacher_id=$tid "
-        "AND ($kw='' OR toLower(k.name) CONTAINS toLower($kw)) "
+        "MATCH (k:KnowledgePoint) WHERE "
+        "($kw='' OR toLower(k.name) CONTAINS toLower($kw)) "
         "AND ($sid IS NULL OR k.subject_id=$sid) "
         "RETURN k{.*} AS node ORDER BY k.updated_at DESC LIMIT $limit",
-        {"tid": teacher_id, "kw": keyword or "", "sid": subject_id, "limit": limit},
+        {"kw": keyword or "", "sid": subject_id, "limit": limit},
     )
-    return [r["node"] for r in rows]
+    return [_public_node(r["node"]) for r in rows]
 
 
 async def prerequisite_path(kp_id: str) -> list[dict]:
@@ -313,14 +319,12 @@ async def delete_point(kp_id: str) -> None:
     await vec.delete_vector(kp_id)
 
 
-async def stats(teacher_id: int) -> dict:
+async def stats() -> dict:
     if not settings.KG_ENABLED:
         return {"point_count": 0, "relation_count": 0}
-    n = await neo.run_read(
-        "MATCH (k:KnowledgePoint {teacher_id:$tid}) RETURN count(k) AS c", {"tid": teacher_id})
+    n = await neo.run_read("MATCH (k:KnowledgePoint) RETURN count(k) AS c")
     r = await neo.run_read(
-        "MATCH (a:KnowledgePoint {teacher_id:$tid})-[rel]->(b:KnowledgePoint) RETURN count(rel) AS c",
-        {"tid": teacher_id})
+        "MATCH (a:KnowledgePoint)-[rel]->(b:KnowledgePoint) RETURN count(rel) AS c")
     return {
         "point_count": (n[0]["c"] if n else 0),
         "relation_count": (r[0]["c"] if r else 0),

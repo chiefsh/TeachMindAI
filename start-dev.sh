@@ -20,7 +20,8 @@ pip install -r requirements.txt -q -i https://mirrors.cloud.tencent.com/pypi/sim
 # 执行 Alembic 迁移
 python -m alembic upgrade head 2>/dev/null || true
 # 后台启动 Celery
-# celery -A app.tasks.celery_app worker --loglevel=info -Q ai_tasks,file_tasks &
+# celery -A app.tasks.celery_app worker --loglevel=info -Q fast_tasks --concurrency=2 &
+# celery -A app.tasks.celery_app worker --loglevel=info -Q slow_tasks --concurrency=2 &
 # 启动 FastAPI
 uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload &
 cd ..

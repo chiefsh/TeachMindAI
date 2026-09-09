@@ -7,6 +7,7 @@ import type {
   AnalysisSet, Paginated, KgNode, KgEdge, KgGraph,
   ShareLink, ShareMeta, SharePayload, ShareResourceType,
   GradingAssignment, GradingSubmission, WrongQuestionItem,
+  CollectMeta,
 } from '@/types'
 
 // ─── 工作台 ────────────────────────────────────────────────────────
@@ -87,7 +88,7 @@ export const coursewareApi = {
   create: (data: object) => request.post<Courseware>('/coursewares', data),
   get: (id: number) => request.get<Courseware>(`/coursewares/${id}`),
   getStatus: (id: number) => request.get(`/coursewares/${id}/status`),
-  regenerate: (id: number) => request.post<Courseware>(`/coursewares/${id}/regenerate`),
+  regenerate: (id: number, data: object) => request.post<Courseware>(`/coursewares/${id}/regenerate`, data),
   suggestCopyTitle: (id: number) => request.get<{ title: string }>(`/coursewares/${id}/copy-title`),
   copy: (id: number, title: string) => request.post<Courseware>(`/coursewares/${id}/copy`, { title }),
   rename: (id: number, title: string) => request.patch<Courseware>(`/coursewares/${id}`, { title }),
@@ -152,6 +153,15 @@ export const publicApi = {
   shareMeta: (token: string) => request.get<ShareMeta>(`/public/shares/${token}`),
   shareAccess: (token: string, password?: string) =>
     request.post<SharePayload>(`/public/shares/${token}/access`, { password: password || null }),
+  collectMeta: (token: string) => request.get<CollectMeta>(`/public/grading/${token}`),
+  collectPages: (token: string, studentId: number, formData: FormData) => {
+    formData.append('student_id', String(studentId))
+    return request.post<{ student_id: number; student_name: string; page_count: number }>(
+      `/public/grading/${token}/pages`,
+      formData,
+      { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 10 * 60 * 1000 },
+    )
+  },
 }
 
 export const shareApi = {
@@ -210,6 +220,7 @@ export const gradingApi = {
     request.delete<GradingSubmission>(`/grading/submissions/${submissionId}/pages/${pageId}`),
   gradeAnswers: (submissionId: number, items: object[]) =>
     request.put<GradingSubmission>(`/grading/submissions/${submissionId}/answers`, { items }),
+  collectToken: (id: number) => request.post<{ token: string }>(`/grading/assignments/${id}/collect-token`),
   wrongQuestions: (params?: {
     scope?: 'student' | 'assignment' | 'bank'
     assignment_id?: number; student_id?: number

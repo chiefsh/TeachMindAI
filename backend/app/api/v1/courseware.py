@@ -120,13 +120,28 @@ async def get_courseware_status(
 @router.post("/{cw_id}/regenerate", response_model=CoursewareOut)
 async def regenerate_courseware(
     cw_id: int,
+    data: CoursewareCreate,
     teacher: Teacher = Depends(get_current_teacher),
     db: AsyncSession = Depends(get_db),
 ):
-    """重新生成课件：清空旧内容，重置状态并重新触发生成任务"""
+    """按新配置重新生成：覆盖旧内容。"""
     cw = await _get_or_404(cw_id, teacher.id, db)
+    if cw.gen_status in (ParseStatus.pending, ParseStatus.processing):
+        raise HTTPException(status_code=400, detail="正在生成中，请稍后再试")
+    cw.title = data.title
+    cw.textbook_id = data.textbook_id
+    cw.chapter_range = data.chapter_range
+    cw.page_range = data.page_range
+    cw.courseware_type = data.courseware_type
+    cw.render_style = data.render_style
+    cw.theme = data.theme
+    cw.custom_prompt = data.custom_prompt
+    cw.is_interactive = data.is_interactive
+    flag_modified(cw, "chapter_range")
+    flag_modified(cw, "page_range")
     cw.content = None
     cw.gen_status = ParseStatus.pending
+    cw.task_id = None
     await db.commit()
 
     from app.tasks.ai_tasks import generate_courseware_task

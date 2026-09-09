@@ -13,9 +13,12 @@
           <template v-if="detail?.full_score"> · 满分 {{ detail.full_score }}</template>
         </p>
       </div>
-      <el-button @click="$router.push({ path: '/wrong-questions', query: { assignment_id: id, scope: 'assignment' } })">
-        本次错题
-      </el-button>
+      <div class="flex flex-wrap gap-2">
+        <el-button type="primary" @click="openCollect">手机录入</el-button>
+        <el-button @click="$router.push({ path: '/wrong-questions', query: { assignment_id: id, scope: 'assignment' } })">
+          本次错题
+        </el-button>
+      </div>
     </div>
 
     <div class="card mb-4" v-if="detail">
@@ -94,12 +97,28 @@
         </div>
       </div>
     </div>
+
+    <el-dialog v-model="showCollect" title="手机录入原卷" width="420px">
+      <div v-loading="collectLoading" class="min-h-[8rem]">
+        <p class="text-sm text-slate-600 mb-3">扫码后先选学生，再拍照或从相册上传多张原卷。</p>
+        <div v-if="collectUrl" class="flex gap-4 items-center">
+          <img v-if="collectQr" :src="collectQr" alt="二维码" class="w-36 h-36 rounded-lg border border-slate-200 bg-white" />
+          <div class="flex-1 min-w-0">
+            <p class="text-xs text-slate-400 mb-1">也可复制链接发给手机</p>
+            <el-input :model-value="collectUrl" readonly size="small" />
+            <el-button class="mt-2" size="small" type="primary" @click="copyCollect">复制链接</el-button>
+          </div>
+        </div>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
+import QRCode from 'qrcode'
 import { gradingApi } from '@/api/modules'
 import type { GradingAssignment } from '@/types'
 
@@ -120,6 +139,41 @@ async function load() {
 
 function goStudent(studentId: number) {
   router.push(`/grading/${id.value}/student/${studentId}`)
+}
+
+const showCollect = ref(false)
+const collectLoading = ref(false)
+const collectUrl = ref('')
+const collectQr = ref('')
+
+function collectLink(token: string) {
+  return `${window.location.origin}/c/${token}`
+}
+
+async function openCollect() {
+  showCollect.value = true
+  collectLoading.value = true
+  try {
+    const { token } = await gradingApi.collectToken(id.value)
+    if (detail.value) detail.value.collect_token = token
+    collectUrl.value = collectLink(token)
+    collectQr.value = await QRCode.toDataURL(collectUrl.value, { width: 256, margin: 1 })
+  } catch {
+    collectUrl.value = ''
+    collectQr.value = ''
+  } finally {
+    collectLoading.value = false
+  }
+}
+
+async function copyCollect() {
+  if (!collectUrl.value) return
+  try {
+    await navigator.clipboard.writeText(collectUrl.value)
+    ElMessage.success('已复制')
+  } catch {
+    ElMessage.warning('请手动复制链接')
+  }
 }
 
 watch(() => route.params.id, (v) => {

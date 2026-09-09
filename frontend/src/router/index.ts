@@ -9,6 +9,7 @@ const router = createRouter({
     { path: '/login', component: () => import('@/views/LoginView.vue'), meta: { public: true } },
     { path: '/s/:token', name: 'SessionPlay', component: () => import('@/views/public/SessionPlay.vue'), meta: { public: true } },
     { path: '/share/:token', name: 'ShareView', component: () => import('@/views/public/ShareView.vue'), meta: { public: true } },
+    { path: '/c/:token', name: 'CollectPages', component: () => import('@/views/public/CollectPages.vue'), meta: { public: true } },
     {
       path: '/',
       component: () => import('@/components/layout/MainLayout.vue'),

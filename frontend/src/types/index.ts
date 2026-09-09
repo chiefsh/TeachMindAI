@@ -296,10 +296,26 @@ export interface GradingAssignment {
   student_count: number
   submitted_count: number
   graded_count: number
+  collect_token?: string | null
   created_at: string
   questions?: HomeworkQuestion[]
   question_stats?: GradingQuestionStat[]
   students?: GradingStudentRow[]
+}
+
+export interface CollectStudent {
+  id: number
+  name: string
+  student_no: string
+  page_count: number
+}
+
+export interface CollectMeta {
+  title: string
+  class_name?: string | null
+  paper_type: string
+  assigned_at?: string | null
+  students: CollectStudent[]
 }
 
 export interface GradingQuestionStat {

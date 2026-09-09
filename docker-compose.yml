@@ -1,6 +1,37 @@
 x-timezone: &timezone
   TZ: Asia/Shanghai
 
+x-celery-worker: &celery-worker
+  build: ./backend
+  restart: always
+  environment:
+    <<: *timezone
+    DATABASE_URL: mysql+aiomysql://edu_user:edu_pass@mysql:3306/edu_platform
+    REDIS_URL: redis://redis:6379/0
+    RABBITMQ_URL: amqp://edu_user:edu_pass@rabbitmq:5672/
+    MINIO_ENDPOINT: minio:9000
+    MINIO_PUBLIC_ENDPOINT: ${MINIO_PUBLIC_ENDPOINT:-localhost:9000}
+    MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-edu_minio_user}
+    MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-edu_minio_pass}
+    SECRET_KEY: your-secret-key-change-in-production
+    NEO4J_URI: bolt://neo4j:7687
+    NEO4J_USER: neo4j
+    NEO4J_PASSWORD: edu_neo4j_pass
+    QDRANT_URL: http://qdrant:6333
+    EMBEDDING_MODEL: ${EMBEDDING_MODEL:-}
+    EMBEDDING_API_BASE: ${EMBEDDING_API_BASE:-}
+    EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
+    EMBEDDING_DIM: ${EMBEDDING_DIM:-1024}
+    CELERY_WORKER_CONCURRENCY: ${CELERY_WORKER_CONCURRENCY:-2}
+  depends_on:
+    - rabbitmq
+    - mysql
+    - redis
+    - neo4j
+    - qdrant
+  volumes:
+    - ./backend:/app
+
 services:
   mysql:
     image: mysql:8.0
@@ -124,37 +155,15 @@ services:
       - ./backend:/app
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
-  celery_worker:
-    build: ./backend
-    container_name: edu_celery
-    restart: always
-    environment:
-      <<: *timezone
-      DATABASE_URL: mysql+aiomysql://edu_user:edu_pass@mysql:3306/edu_platform
-      REDIS_URL: redis://redis:6379/0
-      RABBITMQ_URL: amqp://edu_user:edu_pass@rabbitmq:5672/
-      MINIO_ENDPOINT: minio:9000
-      MINIO_PUBLIC_ENDPOINT: ${MINIO_PUBLIC_ENDPOINT:-localhost:9000}
-      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-edu_minio_user}
-      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-edu_minio_pass}
-      SECRET_KEY: your-secret-key-change-in-production
-      NEO4J_URI: bolt://neo4j:7687
-      NEO4J_USER: neo4j
-      NEO4J_PASSWORD: edu_neo4j_pass
-      QDRANT_URL: http://qdrant:6333
-      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-}
-      EMBEDDING_API_BASE: ${EMBEDDING_API_BASE:-}
-      EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
-      EMBEDDING_DIM: ${EMBEDDING_DIM:-1024}
-    depends_on:
-      - rabbitmq
-      - mysql
-      - redis
-      - neo4j
-      - qdrant
-    volumes:
-      - ./backend:/app
-    command: celery -A app.tasks.celery_app worker --loglevel=info -Q ai_tasks,file_tasks
+  celery_worker_fast:
+    <<: *celery-worker
+    container_name: edu_celery_fast
+    command: celery -A app.tasks.celery_app worker --loglevel=info -Q fast_tasks --concurrency=${CELERY_WORKER_CONCURRENCY:-2}
+
+  celery_worker_slow:
+    <<: *celery-worker
+    container_name: edu_celery_slow
+    command: celery -A app.tasks.celery_app worker --loglevel=info -Q slow_tasks --concurrency=${CELERY_WORKER_CONCURRENCY:-2}
 
   frontend:
     build: ./frontend

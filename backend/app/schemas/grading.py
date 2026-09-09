@@ -28,6 +28,7 @@ class AssignmentOut(BaseModel):
     student_count: int = 0
     submitted_count: int = 0
     graded_count: int = 0
+    collect_token: str | None = None
     created_at: datetime
     model_config = {"from_attributes": True}
 
@@ -145,3 +146,28 @@ class WrongItemOut(BaseModel):
     blank_count: int = 0
     last_at: datetime | None = None
     use_count: int | None = None
+
+
+class CollectStudentOut(BaseModel):
+    id: int
+    name: str
+    student_no: str
+    page_count: int = 0
+
+
+class CollectMetaOut(BaseModel):
+    title: str
+    class_name: str | None = None
+    paper_type: str = "homework"
+    assigned_at: date | None = None
+    students: list[CollectStudentOut] = []
+
+
+class CollectUploadOut(BaseModel):
+    student_id: int
+    student_name: str
+    page_count: int
+
+
+class CollectTokenOut(BaseModel):
+    token: str

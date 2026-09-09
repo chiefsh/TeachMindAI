@@ -19,7 +19,7 @@
 - 路由：`frontend/src/router/index.ts`（登录守卫）；侧栏：`frontend/src/components/layout/MainLayout.vue`
 - 全局上下文：`frontend/src/stores/auth.ts`、`frontend/src/stores/education.ts`（学段/年级/科目）
 
-重活走 Celery（`backend/app/tasks/`），进度经 Redis pubsub → `GET/WS /api/v1/ws/task/{task_id}`。
+重活走 Celery（`backend/app/tasks/`）：`celery_worker_fast` 消费 `fast_tasks`，`celery_worker_slow` 消费 `slow_tasks`，默认并发各 2。进度经 Redis pubsub → `GET/WS /api/v1/ws/task/{task_id}`。
 
 **不要读：** `frontend/dist/`、`**/__pycache__/`、`**/*.pyc`、`package-lock.json`。  
 **不要改：** `.env` 里的密钥；`backend/app/core/proxy.py` 必须保持为 `main.py` / Celery 的最先导入。
@@ -31,7 +31,7 @@
 | MySQL | 教师、课本、题库、课件、作业、学生成绩等业务表 |
 | MinIO | 课本/题库/课件等文件（bucket 见 `backend/app/core/config.py`） |
 | Redis | 会话黑名单、Celery 结果、任务进度 pubsub |
-| RabbitMQ | Celery broker；队列 `ai_tasks`、`file_tasks` |
+| RabbitMQ | Celery broker；快队列 `fast_tasks`、慢队列 `slow_tasks` |
 | Neo4j | 知识点与关系 |
 | Qdrant | 知识点向量去重（`KG_COLLECTION`） |
 
@@ -84,7 +84,7 @@ tasks/<队列>.py      → Celery 包装（薄，真正逻辑在 service）
 
 ### 课件 + 课堂互动
 
-- 后端：`api/v1/courseware.py`、`api/v1/interaction.py`、`models/courseware.py`、`models/interaction.py`、`models/subject_prompt.py`、`services/ai_service.py`（`do_generate_courseware`）、`services/courseware_components.py`、`services/skill_service.py`、`tasks/ai_tasks.py`、`services/export_service.py`
+- 后端：`api/v1/courseware.py`、`api/v1/interaction.py`、`models/courseware.py`、`models/interaction.py`、`models/subject_prompt.py`、`services/ai_service.py`（`do_generate_courseware`）、`services/courseware_components.py`、`services/skill_service.py`、`tasks/ai_tasks.py`、`services/export_service.py`；`POST /coursewares/{id}/regenerate` 可改配置后重出
 - 前端：`views/courseware/`、`views/public/SessionPlay.vue`、`utils/coursewareFrame.ts`、`utils/revealDeck.ts`、`utils/lessonPage.ts`、`utils/coursewareTheme.ts`
 - 呈现样式 `render_style`：`ppt` 走 `revealDeck.ts`，`html` 走 `lessonPage.ts`（单页滚动网页，可下载）
 - 视觉主题 `theme`：调色板在 `services/courseware_theme.py` 与 `utils/coursewareTheme.ts`，两份必须同步；在线预览与导出的 PPT/Word/PDF 共用
@@ -98,7 +98,7 @@ tasks/<队列>.py      → Celery 包装（薄，真正逻辑在 service）
 ### 批改作业 / 试卷（纸质原卷）
 
 - 后端：`api/v1/grading.py`、`schemas/grading.py`、`models/grading.py`、`services/grading_service.py`
-- 前端：`views/grading/`（布置列表、学生原卷看图手批、错题本）
+- 前端：`views/grading/`（布置列表、学生原卷看图手批、错题本）；手机录入公开页 `views/public/CollectPages.vue`（`/c/:token`）
 - 卷面来自已生成的 `HomeworkPaper`；答卷是按学生上传的页图，不是答题卡
 - 错题流水 `WrongQuestionLog`：单次布置各题错次、学生错题本、题库 `Question.wrong_count`
 - 考试批完回写 `ExamResult`；作业只记对错不分到成绩模块
@@ -156,6 +156,7 @@ tasks/<队列>.py      → Celery 包装（薄，真正逻辑在 service）
 | `/courseware`、`/courseware/:id` | `courseware/*` |
 | `/homework` | `homework/HomeworkView.vue` |
 | `/grading`、`/grading/:id`、`/grading/:id/student/:studentId` | `grading/*` |
+| `/c/:token` | `public/CollectPages.vue`（免登录，手机录入原卷） |
 | `/wrong-questions` | `grading/WrongQuestionsView.vue` |
 | `/question-analysis`、`/:id` | `question-analysis/*` |
 | `/grades` | `grades/GradesView.vue` |

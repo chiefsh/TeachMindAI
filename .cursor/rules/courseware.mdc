@@ -7,6 +7,7 @@ alwaysApply: false
 # 课件与课堂互动
 
 生成：`POST /coursewares` → Celery `generate_courseware_task` → `ai_service.do_generate_courseware`。内容是幻灯片 JSON（`Courseware.content`），状态 `gen_status`。
+重新生成：`POST /coursewares/{id}/regenerate` 可改标题/课本范围/样式/主题/类型/教师想法后重出，会清空旧内容。
 
 互动页：`_generate_lesson_content` 先 `skill_service.maybe_generate_skill_html`；命中则 sympy+模板出整页 HTML，失败必须回退 LLM。科目提示词来自 `SubjectPrompt`。
 

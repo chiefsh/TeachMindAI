@@ -39,7 +39,8 @@ instance.interceptors.response.use(
     const msg = Array.isArray(rawDetail)
       ? rawDetail.map((d: any) => d?.msg).filter(Boolean).join('；') || '请求参数有误'
       : (rawDetail || err.message || '请求失败')
-    if (status === 401) {
+    const url = String(err.config?.url || '')
+    if (status === 401 && !url.includes('/public/')) {
       localStorage.removeItem('token')
       router.push('/login')
       ElMessage.error('登录已过期，请重新登录')

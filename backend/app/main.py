@@ -29,6 +29,7 @@ _INDEX_SQL = [
     "CREATE INDEX IF NOT EXISTS ix_question_imports_teacher_id ON question_imports (teacher_id)",
     "CREATE INDEX IF NOT EXISTS ix_grading_assignments_teacher_id ON grading_assignments (teacher_id)",
     "CREATE INDEX IF NOT EXISTS ix_paper_submissions_teacher_id ON paper_submissions (teacher_id)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS uq_grading_assignments_collect_token ON grading_assignments (collect_token)",
 ]
 
 
@@ -114,6 +115,10 @@ _COLUMN_SQL = [
         "grading_assignments", "class_id",
         "ALTER TABLE grading_assignments ADD COLUMN class_id INTEGER NULL",
     ),
+    (
+        "grading_assignments", "collect_token",
+        "ALTER TABLE grading_assignments ADD COLUMN collect_token VARCHAR(48) NULL",
+    ),
 ]
 
 
@@ -153,11 +158,11 @@ async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     try:
-        await _ensure_indexes()
+        await _ensure_columns()
     except Exception:
         pass
     try:
-        await _ensure_columns()
+        await _ensure_indexes()
     except Exception:
         pass
     try:
@@ -221,6 +226,7 @@ app.include_router(question.router, prefix="/api/v1")
 app.include_router(courseware.router, prefix="/api/v1")
 app.include_router(homework.router, prefix="/api/v1")
 app.include_router(grading.router, prefix="/api/v1")
+app.include_router(grading.public_router, prefix="/api/v1")
 app.include_router(student.router, prefix="/api/v1")
 app.include_router(classroom.router, prefix="/api/v1")
 app.include_router(settings.router, prefix="/api/v1")

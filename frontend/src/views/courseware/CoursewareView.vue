@@ -58,7 +58,7 @@
               <el-dropdown-menu>
                 <el-dropdown-item command="rename" :icon="EditPen">重命名</el-dropdown-item>
                 <el-dropdown-item command="copy" :icon="CopyDocument">复制</el-dropdown-item>
-                <el-dropdown-item command="regen" :icon="RefreshRight" :disabled="cw.gen_status === 'processing'">
+                <el-dropdown-item command="regen" :icon="RefreshRight" :disabled="!canRegenerate(cw)">
                   重新生成
                 </el-dropdown-item>
                 <el-dropdown-item command="delete" :icon="Delete" divided>删除</el-dropdown-item>
@@ -82,8 +82,11 @@
       />
     </div>
 
-    <!-- 生成课件弹窗 -->
-    <el-dialog v-model="showCreate" title="生成课件" width="560px" :close-on-click-modal="false">
+    <!-- 生成 / 重新生成弹窗 -->
+    <el-dialog v-model="showCreate" :title="regenId ? '重新生成课件' : '生成课件'" width="560px" :close-on-click-modal="false">
+      <p v-if="regenId" class="text-xs text-amber-600 mb-3 -mt-1">
+        将按下方配置重新生成，并覆盖当前课件内容。
+      </p>
       <el-form :model="form" :rules="rules" ref="formRef" label-width="90px">
         <el-form-item label="课件标题" prop="title">
           <el-input v-model="form.title" placeholder="如：第一章 春 — 精讲课件" />
@@ -167,7 +170,7 @@
       <template #footer>
         <el-button @click="showCreate = false">取消</el-button>
         <el-button type="primary" :loading="creating" :icon="MagicStick" @click="handleCreate">
-          开始生成
+          {{ regenId ? '重新生成' : '开始生成' }}
         </el-button>
       </template>
     </el-dialog>
@@ -198,9 +201,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, nextTick } from 'vue'
+import { ref, reactive, onMounted, nextTick, watch } from 'vue'
 import { watchDebounced } from '@vueuse/core'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { coursewareApi, textbookApi } from '@/api/modules'
 import { useEducationStore } from '@/stores/education'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -212,6 +215,7 @@ import { isBusyStatus, useBusyPoll } from '@/utils/busyPoll'
 import dayjs from 'dayjs'
 
 const router = useRouter()
+const route = useRoute()
 const edu = useEducationStore()
 const coursewares = ref<Courseware[]>([])
 const textbooks = ref<Textbook[]>([])
@@ -223,6 +227,7 @@ const showShare = ref(false)
 const shareTarget = ref<Courseware | null>(null)
 const showCreate = ref(false)
 const creating = ref(false)
+const regenId = ref<number | null>(null)
 const regeneratingId = ref<number | null>(null)
 const copyingId = ref<number | null>(null)
 const showCopy = ref(false)
@@ -256,19 +261,22 @@ function flattenChapters(list: Chapter[], depth = 0): { id: number; label: strin
   return out
 }
 
+async function loadChapters(textbookId: number) {
+  chaptersLoading.value = true
+  try {
+    const data = (await textbookApi.getChapters(textbookId)) as Chapter[]
+    chapterOptions.value = flattenChapters(data)
+  } finally {
+    chaptersLoading.value = false
+  }
+}
+
 async function onTextbookChange() {
   form.chapter_ids = []
   form.page_start = null
   form.page_end = null
   chapterOptions.value = []
-  if (!form.textbook_id) return
-  chaptersLoading.value = true
-  try {
-    const data = (await textbookApi.getChapters(form.textbook_id)) as Chapter[]
-    chapterOptions.value = flattenChapters(data)
-  } finally {
-    chaptersLoading.value = false
-  }
+  if (form.textbook_id) await loadChapters(form.textbook_id)
 }
 
 async function load(silent = false) {
@@ -301,7 +309,8 @@ async function loadTextbooks() {
   textbooks.value = res.items || []
 }
 
-function openCreate() {
+function resetForm() {
+  regenId.value = null
   form.title = ''
   form.textbook_id = null
   form.courseware_type = 'standard'
@@ -313,8 +322,89 @@ function openCreate() {
   form.page_end = null
   form.custom_prompt = ''
   form.interactive_features = []
+  form.is_interactive = false
   chapterOptions.value = []
+}
+
+function canRegenerate(cw: Courseware) {
+  return cw.gen_status === 'done' || cw.gen_status === 'failed'
+}
+
+function openCreate() {
+  resetForm()
   showCreate.value = true
+}
+
+function extractChapterIds(range?: Courseware['chapter_range']): number[] {
+  if (!range || typeof range !== 'object') return []
+  const ids = (range as { chapter_ids?: number[] }).chapter_ids
+  return Array.isArray(ids) ? ids.filter((n) => Number.isFinite(n)) : []
+}
+
+async function fillFormFromCw(cw: Courseware) {
+  form.title = cw.title
+  form.textbook_id = cw.textbook_id || null
+  form.courseware_type = cw.is_interactive ? 'interactive' : (cw.courseware_type || 'standard')
+  form.render_style = (cw.render_style || 'html') as RenderStyle
+  form.theme = cw.theme || DEFAULT_THEME
+  form.custom_prompt = cw.custom_prompt || ''
+  form.interactive_features = []
+  form.is_interactive = !!cw.is_interactive
+  const chapterIds = extractChapterIds(cw.chapter_range)
+  const pageStart = cw.page_range?.start ?? null
+  const pageEnd = cw.page_range?.end ?? null
+  if (chapterIds.length) {
+    form.gen_mode = 'chapter'
+    form.chapter_ids = chapterIds
+    form.page_start = null
+    form.page_end = null
+  } else if (pageStart && pageEnd) {
+    form.gen_mode = 'page'
+    form.chapter_ids = []
+    form.page_start = pageStart
+    form.page_end = pageEnd
+  } else {
+    form.gen_mode = 'chapter'
+    form.chapter_ids = []
+    form.page_start = pageStart
+    form.page_end = pageEnd
+  }
+  chapterOptions.value = []
+  if (form.textbook_id) await loadChapters(form.textbook_id)
+}
+
+async function openRegenerate(cw: Courseware) {
+  if (!canRegenerate(cw) && cw.gen_status) {
+    ElMessage.warning('正在生成中，请稍后再试')
+    return
+  }
+  regeneratingId.value = cw.id
+  try {
+    const full = await coursewareApi.get(cw.id)
+    if (!canRegenerate(full)) {
+      ElMessage.warning('正在生成中，请稍后再试')
+      return
+    }
+    regenId.value = full.id
+    await fillFormFromCw(full)
+    showCreate.value = true
+  } catch {
+    ElMessage.error('加载课件配置失败')
+  } finally {
+    regeneratingId.value = null
+  }
+}
+
+watch(showCreate, (open) => {
+  if (!open) regenId.value = null
+})
+
+async function maybeOpenRegenFromQuery() {
+  const raw = route.query.regen
+  const id = Number(Array.isArray(raw) ? raw[0] : raw)
+  if (!id) return
+  router.replace({ path: '/courseware' })
+  await openRegenerate({ id } as Courseware)
 }
 
 // 顶部全局年级/科目变化时同步刷新课件与可选课本
@@ -332,6 +422,8 @@ async function handleCreate() {
       theme: form.theme,
       custom_prompt: form.custom_prompt,
       is_interactive: form.courseware_type === 'interactive',
+      chapter_range: null,
+      page_range: null,
     }
     if (form.textbook_id) {
       if (form.gen_mode === 'chapter' && form.chapter_ids.length) {
@@ -340,8 +432,13 @@ async function handleCreate() {
         payload.page_range = { start: form.page_start, end: form.page_end }
       }
     }
-    await coursewareApi.create(payload)
-    ElMessage.success('课件生成任务已提交')
+    if (regenId.value) {
+      await coursewareApi.regenerate(regenId.value, payload)
+      ElMessage.success('已提交重新生成')
+    } else {
+      await coursewareApi.create(payload)
+      ElMessage.success('课件生成任务已提交')
+    }
     showCreate.value = false
     await load()
   } finally { creating.value = false }
@@ -411,7 +508,7 @@ async function renameCw(cw: Courseware) {
 function onCardMore(cw: Courseware, cmd: string) {
   if (cmd === 'rename') void renameCw(cw)
   else if (cmd === 'copy') void openCopy(cw)
-  else if (cmd === 'regen') void regenerateCw(cw)
+  else if (cmd === 'regen') void openRegenerate(cw)
   else if (cmd === 'delete') void confirmDeleteCw(cw)
 }
 
@@ -422,22 +519,6 @@ async function confirmDeleteCw(cw: Courseware) {
     return
   }
   await deleteCw(cw.id)
-}
-
-async function regenerateCw(cw: Courseware) {
-  try {
-    await ElMessageBox.confirm('重新生成将覆盖当前课件内容，确定继续吗？', '重新生成', { type: 'warning' })
-  } catch {
-    return
-  }
-  regeneratingId.value = cw.id
-  try {
-    await coursewareApi.regenerate(cw.id)
-    ElMessage.success('已重新触发生成')
-    await load()
-  } finally {
-    regeneratingId.value = null
-  }
 }
 
 async function deleteCw(id: number) {
@@ -459,6 +540,7 @@ function formatDate(d: string) { return dayjs(d).format('MM-DD HH:mm') }
 onMounted(async () => {
   await load()
   await loadTextbooks()
+  await maybeOpenRegenFromQuery()
 })
 </script>
 

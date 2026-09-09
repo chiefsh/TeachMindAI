@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     RABBITMQ_URL: str = "amqp://edu_user:edu_pass@localhost:5672/"
     CELERY_BROKER_URL: str = ""
     CELERY_RESULT_BACKEND: str = ""
+    CELERY_WORKER_CONCURRENCY: int = 2
 
     # MinIO
     # MINIO_ENDPOINT：容器/本机访问对象存储（Docker 内用 minio:9000）

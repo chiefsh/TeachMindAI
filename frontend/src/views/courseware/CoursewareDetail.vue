@@ -45,6 +45,7 @@
           <el-button :loading="downloadingPage" :icon="Link" @click="downloadLessonPage">下载 HTML</el-button>
           <el-button :loading="exporting === 'pptx'" :icon="Download" @click="doExport('pptx')">导出 PPT</el-button>
         </el-button-group>
+        <el-button :icon="RefreshRight" @click="goRegenerate">重新生成</el-button>
       </div>
     </div>
 
@@ -58,7 +59,8 @@
     <!-- 生成失败 -->
     <div v-else-if="cw?.gen_status === 'failed'" class="card text-center py-16">
       <el-icon class="text-5xl text-red-400 mb-4"><CircleClose /></el-icon>
-      <p class="text-slate-600 font-medium">课件生成失败，请尝试重新生成</p>
+      <p class="text-slate-600 font-medium">课件生成失败，请调整配置后重新生成</p>
+      <el-button class="mt-4" type="primary" :icon="RefreshRight" @click="goRegenerate">重新生成</el-button>
     </div>
 
     <template v-else-if="slides.length">
@@ -435,7 +437,7 @@ import { coursewareApi, textbookApi, interactionApi } from '@/api/modules'
 import {
   ArrowLeft, ArrowRight, ArrowUp, ArrowDown, Loading, CircleClose, Download, FullScreen,
   VideoPlay, Connection, Plus, CopyDocument, DataAnalysis, Delete, Refresh, EditPen,
-  Monitor, Link, MagicStick, Share,
+  Monitor, Link, MagicStick, Share, RefreshRight,
 } from '@element-plus/icons-vue'
 import QRCode from 'qrcode'
 import { createIframeBlob } from '@/utils/coursewareFrame'
@@ -1040,6 +1042,11 @@ async function load() {
       if (busyIdx >= 0) startOptPoll(busyIdx)
     }
   }
+}
+
+function goRegenerate() {
+  if (!cw.value) return
+  router.push({ path: '/courseware', query: { regen: String(cw.value.id) } })
 }
 
 async function renameCw() {

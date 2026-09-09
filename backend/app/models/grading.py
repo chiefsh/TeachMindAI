@@ -30,6 +30,7 @@ class GradingAssignment(Base, TimestampMixin):
     # collecting / grading / done
     status: Mapped[str] = mapped_column(String(16), default="collecting", server_default="collecting")
     full_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    collect_token: Mapped[str | None] = mapped_column(String(48), nullable=True, unique=True, index=True)
 
     paper = relationship("HomeworkPaper")
     submissions = relationship(

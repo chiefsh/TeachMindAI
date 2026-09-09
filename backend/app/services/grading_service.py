@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import secrets
 import uuid
 from datetime import date
 from pathlib import Path
@@ -323,6 +324,7 @@ def _assignment_out(a: GradingAssignment, roster_n: int | None = None) -> dict:
         "student_count": student_count,
         "submitted_count": submitted,
         "graded_count": graded,
+        "collect_token": getattr(a, "collect_token", None),
         "created_at": a.created_at,
     }
 
@@ -366,6 +368,7 @@ async def create_assignment(db: AsyncSession, teacher_id: int, data) -> GradingA
         assigned_at=assigned_at,
         status="collecting",
         full_score=full,
+        collect_token=secrets.token_urlsafe(16),
     )
     db.add(row)
     await db.flush()
@@ -819,3 +822,77 @@ async def list_wrong_questions(
         })
     out.sort(key=lambda x: (x.get("student_no") or "", -(x["error_count"])))
     return out
+
+
+_COLLECT_MAX_FILES = 20
+_COLLECT_MAX_BYTES = 20 * 1024 * 1024
+
+
+async def _assignment_by_token(db: AsyncSession, token: str) -> GradingAssignment:
+    tok = (token or "").strip()
+    if not tok:
+        raise ValueError("录入链接无效或已失效")
+    row = (await db.execute(
+        select(GradingAssignment)
+        .where(GradingAssignment.collect_token == tok)
+        .options(
+            selectinload(GradingAssignment.paper),
+            selectinload(GradingAssignment.submissions).selectinload(PaperSubmission.pages),
+        )
+    )).scalar_one_or_none()
+    if not row:
+        raise ValueError("录入链接无效或已失效")
+    return row
+
+
+async def ensure_collect_token(db: AsyncSession, assignment_id: int, teacher_id: int) -> str:
+    a = await _assignment_or_404(db, assignment_id, teacher_id)
+    if not a.collect_token:
+        a.collect_token = secrets.token_urlsafe(16)
+        await db.flush()
+    return a.collect_token
+
+
+async def collect_meta(db: AsyncSession, token: str) -> dict:
+    a = await _assignment_by_token(db, token)
+    roster = await _roster(db, a)
+    by_stu = {s.student_id: s for s in (a.submissions or [])}
+    students = []
+    for stu in roster:
+        sub = by_stu.get(stu.id)
+        pages = list(sub.pages) if sub and _rel_loaded(sub, "pages") else []
+        students.append({
+            "id": stu.id,
+            "name": stu.name,
+            "student_no": stu.student_no,
+            "page_count": len(pages),
+        })
+    paper = a.paper if _rel_loaded(a, "paper") else None
+    return {
+        "title": a.title,
+        "class_name": a.class_name,
+        "paper_type": _paper_type(paper) if paper else "homework",
+        "assigned_at": a.assigned_at,
+        "students": students,
+    }
+
+
+async def collect_upload_pages(
+    db: AsyncSession, token: str, student_id: int, files: list[tuple[str, bytes]],
+) -> dict:
+    if not files:
+        raise ValueError("请选择图片")
+    if len(files) > _COLLECT_MAX_FILES:
+        raise ValueError(f"一次最多上传 {_COLLECT_MAX_FILES} 张")
+    for name, data in files:
+        if len(data) > _COLLECT_MAX_BYTES:
+            raise ValueError(f"{name or '图片'} 超过 20MB，请压缩后重试")
+    a = await _assignment_by_token(db, token)
+    _a, sub, stu = await get_or_create_submission(db, a.id, student_id, a.teacher_id)
+    await add_pages(db, sub.id, a.teacher_id, files)
+    page_n = len(sub.pages or [])
+    return {
+        "student_id": stu.id,
+        "student_name": stu.name,
+        "page_count": page_n,
+    }

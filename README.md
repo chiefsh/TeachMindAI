@@ -178,7 +178,7 @@ python3 app/services/skill_runners/analytic_geometry_runner.py \
 5. 推荐路径：**准备课本 PDF（可用 [tchMaterial-parser](https://github.com/happycola233/tchMaterial-parser) 从智慧教育平台下载）→ 上传课本 → 等解析完成 → 生成课件 / 作业**；试卷分析、成绩、知识图谱可按需使用。
 6. 课件详情里开启 **课堂互动** 后，把 `/s/:token` 链接发给学生即可，学生端无需登录。
 
-课本解析、课件生成等耗时任务走 Celery，页面状态为「处理中」时请确认 `celery_worker` 在跑。
+课本解析、课件生成等耗时任务走 Celery，页面状态为「处理中」时请确认 `celery_worker_fast` / `celery_worker_slow` 在跑。
 
 ---
 
@@ -249,7 +249,9 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```bash
 cd backend
 source .venv/bin/activate
-celery -A app.tasks.celery_app worker --loglevel=info -Q ai_tasks,file_tasks
+celery -A app.tasks.celery_app worker --loglevel=info -Q fast_tasks --concurrency=2
+# 另开终端跑慢通道
+celery -A app.tasks.celery_app worker --loglevel=info -Q slow_tasks --concurrency=2
 ```
 
 启动时会 `create_all` 建表、补列，并写入学段 / 年级 / 科目种子数据，无需手跑 Alembic（`alembic/versions/` 目前为空）。
@@ -279,7 +281,7 @@ docker compose up -d --build
 
 ```bash
 docker compose ps
-docker compose logs -f backend celery_worker
+docker compose logs -f backend celery_worker_fast celery_worker_slow
 ```
 
 MySQL / Neo4j 尚未就绪时，后端可能重启一两次，属正常。日志出现 Uvicorn 监听 `8000` 后访问 <http://localhost:3000>。默认开放教师注册；关闭方式见 [ENABLE_REGIST](#注册开关-enable_regist)。
@@ -303,7 +305,7 @@ docker compose down -v       # 删除 MySQL / MinIO / Neo4j 等全部数据
 |---|---|
 | `frontend` | `npm run build` 后由 nginx 托管，`/api` 反代到 `backend:8000` |
 | `backend` | `uvicorn app.main:app --host 0.0.0.0 --port 8000`（compose 里开了 `--reload` 并挂载源码，生产建议去掉 reload、改为复制进镜像） |
-| `celery_worker` | 消费 `ai_tasks`、`file_tasks` |
+| `celery_worker_fast` / `celery_worker_slow` | 分别消费 `fast_tasks`、`slow_tasks`，默认并发 2 |
 | `mysql` / `redis` / `rabbitmq` / `minio` / `neo4j` / `qdrant` | 业务库、缓存、队列、对象存储、图谱、向量 |
 
 机器相关项（如浏览器访问 MinIO 的地址）写在仓库根目录 `.env`，不要改 `docker-compose.yml`。复制 `.env.example` 为 `.env` 后按本机填写；该文件已被 gitignore。
@@ -311,7 +313,7 @@ docker compose down -v       # 删除 MySQL / MinIO / Neo4j 等全部数据
 ```bash
 cp .env.example .env
 # 编辑 MINIO_PUBLIC_ENDPOINT=公网IP:9000
-docker compose up -d backend celery_worker
+docker compose up -d backend celery_worker_fast celery_worker_slow
 ```
 
 上线前建议：
@@ -347,7 +349,7 @@ MySQL：库 `edu_platform`，用户 `edu_user` / `edu_pass`（root：`edu_root_p
 检查 backend 环境变量 `ENABLE_REGIST` 是否为 `false`。登录页读的是 `GET /api/v1/auth/config`，改完需重启 backend，不用重建前端。
 
 **课件 / 课本一直「生成中 / 解析中」**  
-检查 `celery_worker` 是否在跑，RabbitMQ 是否健康。
+检查 `celery_worker_fast` / `celery_worker_slow` 是否在跑，RabbitMQ 是否健康。
 
 **能登录但 AI 功能失败**  
 到系统设置添加模型、设为默认并测试。未配置 LLM 时生成任务会失败。

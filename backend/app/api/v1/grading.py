@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
 
@@ -8,11 +8,13 @@ from app.api.deps import get_current_teacher
 from app.schemas.grading import (
     AssignmentCreate, AssignmentOut, AssignmentDetail, SubmissionDetail,
     AnswerBatchIn, PageOrderIn, WrongItemOut,
+    CollectMetaOut, CollectUploadOut, CollectTokenOut,
 )
 from app.models.grading import PaperSubmission
 from app.services import grading_service as svc
 
 router = APIRouter(prefix="/grading", tags=["批改作业试卷"])
+public_router = APIRouter(prefix="/public/grading", tags=["批改公开收集"])
 
 
 def _err(e: ValueError) -> HTTPException:
@@ -169,3 +171,46 @@ async def list_wrong_questions(
     return await svc.list_wrong_questions(
         db, teacher.id, scope, assignment_id, student_id, grade_id, subject_id,
     )
+
+
+@router.post("/assignments/{assignment_id}/collect-token", response_model=CollectTokenOut)
+async def ensure_collect_token(
+    assignment_id: int,
+    teacher: Teacher = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        token = await svc.ensure_collect_token(db, assignment_id, teacher.id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return CollectTokenOut(token=token)
+
+
+@public_router.get("/{token}", response_model=CollectMetaOut)
+async def public_collect_meta(token: str, db: AsyncSession = Depends(get_db)):
+    try:
+        return await svc.collect_meta(db, token)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@public_router.post("/{token}/pages", response_model=CollectUploadOut)
+async def public_collect_pages(
+    token: str,
+    student_id: int = Form(...),
+    files: list[UploadFile] = File(...),
+    db: AsyncSession = Depends(get_db),
+):
+    payloads: list[tuple[str, bytes]] = []
+    for f in files:
+        payloads.append((f.filename or "page.jpg", await f.read()))
+    if not payloads:
+        raise HTTPException(status_code=400, detail="请选择图片")
+    try:
+        data = await svc.collect_upload_pages(db, token, student_id, payloads)
+    except ValueError as e:
+        msg = str(e)
+        code = 404 if "链接" in msg or "不存在" in msg else 400
+        raise HTTPException(status_code=code, detail=msg)
+    await db.commit()
+    return data

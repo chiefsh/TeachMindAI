@@ -76,9 +76,17 @@
             <span class="text-xs text-slate-600">{{ row.use_count ?? 0 }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="140" align="center">
+        <el-table-column label="错次" width="80" align="center">
+          <template #default="{ row }">
+            <span class="text-xs" :class="(row.wrong_count ?? 0) ? 'text-red-500 font-medium' : 'text-slate-400'">
+              {{ row.wrong_count ?? 0 }}
+            </span>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="180" align="center">
           <template #default="{ row }">
             <el-button size="small" link type="primary" @click="openDetail(row)">查看</el-button>
+            <el-button size="small" link type="primary" @click="openDetail(row, true)">编辑</el-button>
             <el-popconfirm title="确定删除该题目？" @confirm="deleteQ(row.id)">
               <template #reference>
                 <el-button size="small" link type="danger">删除</el-button>
@@ -202,9 +210,72 @@
       </div>
     </el-dialog>
 
-    <!-- 题目详情弹窗 -->
-    <el-dialog v-model="showDetail" title="题目详情" width="800px" @closed="onDetailClosed">
-      <div v-if="detail" class="space-y-4">
+    <!-- 题目详情 / 编辑弹窗 -->
+    <el-dialog
+      v-model="showDetail"
+      :title="editing ? '编辑题目' : '题目详情'"
+      width="800px"
+      :close-on-click-modal="!editing"
+      @closed="onDetailClosed"
+    >
+      <div v-if="detail && editing" class="space-y-4">
+        <div class="flex flex-wrap items-center gap-2">
+          <el-select v-model="editForm.grade_id" placeholder="年级" size="small" style="width:110px" @change="editForm.subject_id = null">
+            <el-option v-for="g in edu.sortedGrades" :key="g.id" :label="g.name" :value="g.id" />
+          </el-select>
+          <el-select v-model="editForm.subject_id" placeholder="科目" size="small" style="width:110px" :disabled="!editForm.grade_id">
+            <el-option v-for="s in edu.subjectsOfGrade(editForm.grade_id)" :key="s.id" :label="s.name" :value="s.id" />
+          </el-select>
+          <el-select v-model="editForm.question_type" placeholder="题型" size="small" style="width:110px" @change="onEditTypeChange">
+            <el-option v-for="t in questionTypes" :key="t.value" :label="t.label" :value="t.value" />
+          </el-select>
+          <el-select v-model="editForm.difficulty" placeholder="难度" size="small" style="width:100px">
+            <el-option v-for="d in difficulties" :key="d.value" :label="d.label" :value="d.value" />
+          </el-select>
+        </div>
+
+        <div>
+          <p class="text-xs font-semibold text-slate-500 mb-1">题干</p>
+          <el-input v-model="editForm.content" type="textarea" :rows="4" placeholder="题目内容" />
+          <div v-if="detail.images?.stem?.length" class="mt-2 flex flex-wrap gap-2">
+            <img
+              v-for="(src, i) in detail.images.stem" :key="i"
+              :src="src" alt="题干配图"
+              class="q-img"
+            />
+          </div>
+        </div>
+
+        <div v-if="isChoiceType(editForm.question_type)">
+          <div class="flex items-center justify-between mb-1">
+            <p class="text-xs font-semibold text-slate-500">选项</p>
+            <el-button size="small" link type="primary" @click="addEditOption">添加选项</el-button>
+          </div>
+          <div v-for="(opt, i) in editForm.options" :key="i" class="flex items-start gap-2 mb-2">
+            <el-input v-model="opt.key" size="small" style="width:56px" placeholder="A" />
+            <el-input v-model="opt.text" type="textarea" :rows="1" placeholder="选项内容" />
+            <el-button size="small" link type="danger" :disabled="editForm.options.length <= 2" @click="editForm.options.splice(i, 1)">删</el-button>
+          </div>
+          <div v-if="hasOptionImages(detail)" class="mt-1 text-xs text-slate-400">选项配图会保留，仅修改文字。</div>
+        </div>
+
+        <div>
+          <p class="text-xs font-semibold text-slate-500 mb-1">答案</p>
+          <el-input v-model="editForm.answer" type="textarea" :rows="2" placeholder="正确答案，可留空" />
+        </div>
+
+        <div>
+          <p class="text-xs font-semibold text-slate-500 mb-1">解析</p>
+          <el-input v-model="editForm.explanation" type="textarea" :rows="3" placeholder="解析说明，可留空" />
+        </div>
+
+        <div>
+          <p class="text-xs font-semibold text-slate-500 mb-1">知识点标签</p>
+          <el-input v-model="editForm.tagsText" size="small" placeholder="多个标签用逗号分隔" />
+        </div>
+      </div>
+
+      <div v-else-if="detail" class="space-y-4">
         <div class="flex flex-wrap items-center gap-1.5">
           <el-tag size="small" type="info">{{ edu.gradeName(detail.grade_id) || '—' }}</el-tag>
           <el-tag size="small" type="success">{{ edu.subjectName(detail.subject_id) || '—' }}</el-tag>
@@ -252,6 +323,10 @@
           <p class="text-xs font-semibold text-slate-500 mb-1">答案</p>
           <div class="text-sm text-green-600 math-text" v-html="renderMathText(detail.answer)" />
         </div>
+        <div v-else>
+          <p class="text-xs font-semibold text-slate-500 mb-1">答案</p>
+          <p class="text-sm text-slate-400">暂无答案</p>
+        </div>
 
         <div v-if="detail.analysis_content || detail.analysis_html">
           <p class="text-xs font-semibold text-slate-500 mb-1">解析</p>
@@ -287,6 +362,16 @@
           <el-tag v-for="t in detail.tags" :key="t" size="small">{{ t }}</el-tag>
         </div>
       </div>
+      <template #footer>
+        <template v-if="editing">
+          <el-button @click="cancelEdit">取消</el-button>
+          <el-button type="primary" :loading="saving" @click="saveEdit">保存</el-button>
+        </template>
+        <template v-else>
+          <el-button @click="showDetail = false">关闭</el-button>
+          <el-button type="primary" @click="startEdit">编辑</el-button>
+        </template>
+      </template>
     </el-dialog>
   </div>
 </template>
@@ -314,7 +399,21 @@ const showImports = ref(false)
 const showCreate = ref(false)
 const showDetail = ref(false)
 const detail = ref<Question | null>(null)
+const editing = ref(false)
+const saving = ref(false)
+const pendingEdit = ref(false)
 const diagramBlob = ref('')
+const editForm = reactive({
+  grade_id: null as number | null,
+  subject_id: null as number | null,
+  question_type: 'short_answer',
+  difficulty: 'medium',
+  content: '',
+  answer: '',
+  explanation: '',
+  tagsText: '',
+  options: [] as { key: string; text: string }[],
+})
 const importing = ref(false)
 const creating = ref(false)
 const selected = ref<Question[]>([])
@@ -422,9 +521,104 @@ function revokeDiagram() {
   }
 }
 
-async function openDetail(row: Question) {
+const CHOICE_TYPES = new Set(['single_choice', 'multi_choice', 'true_false'])
+const OPTION_LETTERS = 'ABCDEFGHIJ'
+
+function isChoiceType(t: string) {
+  return CHOICE_TYPES.has(t)
+}
+
+function fillEditForm(q: Question) {
+  editForm.grade_id = q.grade_id
+  editForm.subject_id = q.subject_id
+  editForm.question_type = q.question_type
+  editForm.difficulty = q.difficulty
+  editForm.content = q.content || ''
+  editForm.answer = q.answer || ''
+  editForm.explanation = q.explanation || ''
+  editForm.tagsText = (q.tags || []).join('，')
+  const keys = optionKeys(q)
+  editForm.options = keys.length
+    ? keys.map(k => ({ key: k, text: String(q.options?.[k] || '') }))
+    : isChoiceType(q.question_type)
+      ? defaultOptions(q.question_type)
+      : []
+}
+
+function defaultOptions(t: string) {
+  if (t === 'true_false') return [{ key: 'A', text: '正确' }, { key: 'B', text: '错误' }]
+  return ['A', 'B', 'C', 'D'].map(k => ({ key: k, text: '' }))
+}
+
+function onEditTypeChange(t: string) {
+  if (!isChoiceType(t)) {
+    editForm.options = []
+    return
+  }
+  if (!editForm.options.length) editForm.options = defaultOptions(t)
+}
+
+function addEditOption() {
+  const used = new Set(editForm.options.map(o => o.key))
+  const next = [...OPTION_LETTERS].find(k => !used.has(k)) || String(editForm.options.length + 1)
+  editForm.options.push({ key: next, text: '' })
+}
+
+function startEdit() {
+  if (!detail.value) return
+  fillEditForm(detail.value)
+  editing.value = true
+}
+
+function cancelEdit() {
+  editing.value = false
+  if (detail.value) fillEditForm(detail.value)
+}
+
+function editOptionsPayload() {
+  const out: Record<string, string> = {}
+  for (const o of editForm.options) {
+    const k = (o.key || '').trim()
+    if (k) out[k] = o.text || ''
+  }
+  return Object.keys(out).length ? out : null
+}
+
+async function saveEdit() {
+  if (!detail.value) return
+  if (!editForm.grade_id || !editForm.subject_id) { ElMessage.warning('请选择年级和科目'); return }
+  if (!(editForm.content || '').trim()) { ElMessage.warning('请输入题目内容'); return }
+  saving.value = true
+  try {
+    const updated = await questionApi.update(detail.value.id, {
+      grade_id: editForm.grade_id,
+      subject_id: editForm.subject_id,
+      question_type: editForm.question_type,
+      difficulty: editForm.difficulty,
+      content: editForm.content,
+      options: isChoiceType(editForm.question_type) ? editOptionsPayload() : null,
+      answer: editForm.answer,
+      explanation: editForm.explanation,
+      tags: editForm.tagsText
+        ? editForm.tagsText.split(/[,，;；、]/).map(s => s.trim()).filter(Boolean)
+        : [],
+    })
+    detail.value = updated
+    const idx = questions.value.findIndex(q => q.id === updated.id)
+    if (idx >= 0) questions.value[idx] = { ...questions.value[idx], ...updated }
+    editing.value = false
+    ElMessage.success('已保存')
+  } finally {
+    saving.value = false
+  }
+}
+
+async function openDetail(row: Question, edit = false) {
   revokeDiagram()
   detail.value = row
+  editing.value = false
+  pendingEdit.value = edit
+  if (edit) fillEditForm(row)
   showDetail.value = true
   try {
     const full = await questionApi.get(row.id)
@@ -432,14 +626,20 @@ async function openDetail(row: Question) {
     if (full.analysis_html) {
       diagramBlob.value = createIframeBlob(full.analysis_html)
     }
+    if (pendingEdit.value) {
+      fillEditForm(full)
+      editing.value = true
+    }
   } catch {
-    /* 列表行仍可展示文字 */
+    if (pendingEdit.value) editing.value = true
   }
 }
 
 function onDetailClosed() {
   revokeDiagram()
   detail.value = null
+  editing.value = false
+  pendingEdit.value = false
 }
 
 function openCreate() {

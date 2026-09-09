@@ -5,8 +5,9 @@ import json
 import logging
 import re
 from collections import defaultdict
+from dataclasses import dataclass
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm.attributes import flag_modified
 
 from app.core.database import AsyncSessionLocal
@@ -70,6 +71,105 @@ _ADJ_DIFF = {
     "hard": {"medium", "hard", "very_hard"},
     "very_hard": {"hard", "very_hard"},
 }
+
+_DIFF_LEVELS = ("easy", "medium", "hard", "very_hard")
+_DIFF_CN = {"easy": "简单", "medium": "中等", "hard": "较难", "very_hard": "特难"}
+_TYPE_CN = {
+    "single_choice": "单选题",
+    "multi_choice": "多选题",
+    "fill_blank": "填空题",
+    "true_false": "判断题",
+    "short_answer": "简答题",
+    "essay": "作文",
+    "calculation": "计算题",
+}
+_CFG_META_KEYS = {"difficulty_mode", "items"}
+
+
+@dataclass
+class TypePlan:
+    qtype: str
+    count: int
+    buckets: dict[str, int]
+
+
+def _as_nonneg_int(v) -> int:
+    try:
+        return max(0, int(v or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def allocate_by_ratio(count: int, ratios: dict | None, fallback: str) -> dict[str, int]:
+    """按占比把 count 拆到各难度，用最大余数法，保证总数不变。"""
+    if count <= 0:
+        return {}
+    raw: list[float] = []
+    for k in _DIFF_LEVELS:
+        try:
+            raw.append(max(0.0, float((ratios or {}).get(k) or 0)))
+        except (TypeError, ValueError):
+            raw.append(0.0)
+    total = sum(raw)
+    if total <= 0:
+        key = fallback if fallback in _DIFF_LEVELS else "medium"
+        return {key: count}
+    exact = [count * r / total for r in raw]
+    floors = [int(x) for x in exact]
+    rem = count - sum(floors)
+    for i in sorted(range(len(_DIFF_LEVELS)), key=lambda j: -(exact[j] - floors[j])):
+        if rem <= 0:
+            break
+        floors[i] += 1
+        rem -= 1
+    return {k: floors[i] for i, k in enumerate(_DIFF_LEVELS) if floors[i] > 0}
+
+
+def parse_question_plan(raw, overall_difficulty: str | None = "medium") -> list[TypePlan]:
+    """兼容旧版 {题型: 数量} 与新版 {difficulty_mode, items:[...]}，按配置顺序返回。"""
+    overall = overall_difficulty if overall_difficulty in _DIFF_LEVELS else "medium"
+    if not isinstance(raw, dict) or not raw:
+        return []
+    mode = raw.get("difficulty_mode")
+    if mode not in ("overall", "per_type"):
+        mode = "overall"
+    specs: list[tuple[str, int, dict | None]] = []
+    items = raw.get("items")
+    if isinstance(items, list):
+        for it in items:
+            if not isinstance(it, dict):
+                continue
+            qtype = _coerce_qtype(it.get("type"))
+            count = _as_nonneg_int(it.get("count"))
+            ratios = it.get("ratios") if isinstance(it.get("ratios"), dict) else None
+            specs.append((qtype, count, ratios))
+    else:
+        for k, v in raw.items():
+            if k in _CFG_META_KEYS:
+                continue
+            qtype = _coerce_qtype(k)
+            if isinstance(v, dict):
+                specs.append((qtype, _as_nonneg_int(v.get("count")), v.get("ratios") if isinstance(v.get("ratios"), dict) else None))
+            else:
+                specs.append((qtype, _as_nonneg_int(v), None))
+    plan: list[TypePlan] = []
+    seen: set[str] = set()
+    for qtype, count, ratios in specs:
+        if not qtype or qtype in seen or count <= 0:
+            continue
+        seen.add(qtype)
+        buckets = allocate_by_ratio(count, ratios, overall) if mode == "per_type" else {overall: count}
+        plan.append(TypePlan(qtype=qtype, count=count, buckets=buckets))
+    return plan
+
+
+def _plan_prompt_lines(plans: list[TypePlan]) -> str:
+    lines: list[str] = []
+    for i, p in enumerate(plans, 1):
+        mix = "、".join(f"{_DIFF_CN.get(k, k)} {n}道" for k, n in p.buckets.items() if n)
+        extra = f"（{mix}）" if mix else ""
+        lines.append(f"{i}. {_TYPE_CN.get(p.qtype, p.qtype)} {p.count} 道{extra}")
+    return "\n".join(lines)
 
 
 def _norm(s: str) -> str:
@@ -423,15 +523,13 @@ async def pick_from_bank(
 
 
 async def generate_by_ai(
-    cfg, *, paper: HomeworkPaper, scope: dict, remain: dict[str, int],
+    cfg, *, paper: HomeworkPaper, scope: dict, remain_plan: list[TypePlan],
 ) -> list[dict]:
-    if not cfg or not any(v > 0 for v in remain.values()):
+    if not cfg or not remain_plan or not any(p.count > 0 for p in remain_plan):
         return []
     from app.services.ai_service import _call_llm, _parse_json_object, _resp_content
 
     is_exam = _enum_val(paper.paper_type) == HomeworkType.exam.value
-    difficulty_map = {"easy": "简单", "medium": "中等", "hard": "较难", "very_hard": "特难"}
-    diff_label = difficulty_map.get(_enum_val(paper.difficulty), "中等")
     kind = "试卷" if is_exam else "作业"
     kp = scope.get("kp_names") or []
     kp_block = "、".join(kp) if kp else "（以材料为准）"
@@ -441,14 +539,16 @@ async def generate_by_ai(
     score_line = (
         "- 每题给出合理分值 score（整数）。\n" if is_exam else "- 不要输出 score 字段。\n"
     )
-    remain_cfg = {k: v for k, v in remain.items() if v > 0}
-    prompt = f"""请根据给定教学材料，出一份{diff_label}难度的{kind}。
+    quota_lines = _plan_prompt_lines(remain_plan)
+    prompt = f"""请根据给定教学材料，出一份{kind}。
 
 【硬约束】
 - 只考察以下知识点，不得超纲（前置知识可当背景，不能当新考点）：{kp_block}
 - 题目必须能从材料中找到依据，不要引入材料未覆盖的概念。
-- 严格按题型数量出题：{json.dumps(remain_cfg, ensure_ascii=False)}
-{score_line}- question_type 取值：single_choice/multi_choice/fill_blank/true_false/short_answer/essay/calculation
+- 严格按照以下题型顺序和数量出题，卷面顺序与此一致：
+{quota_lines}
+- 每题输出 difficulty，取值 easy/medium/hard/very_hard，并与上表难度配额一致。
+{score_line}- type 取值：single_choice/multi_choice/fill_blank/true_false/short_answer/essay/calculation
 - 选择题 options 为 {{"A":"...","B":"...","C":"...","D":"..."}}，非选择题 options 为 null。
 - 只输出 JSON。
 
@@ -460,6 +560,7 @@ async def generate_by_ai(
   "questions": [
     {{
       "type": "single_choice",
+      "difficulty": "medium",
       "content": "题干",
       "options": {{"A": "选项A", "B": "选项B", "C": "选项C", "D": "选项D"}},
       "answer": "A",
@@ -495,9 +596,13 @@ async def generate_by_ai(
                 # 模型声称的知识点完全不在范围内则丢弃
                 continue
         qtype = _coerce_qtype(q.get("type") or q.get("question_type"))
+        diff = str(q.get("difficulty") or "").strip()
+        if diff not in _DIFF_LEVELS:
+            diff = next((k for p in remain_plan if p.qtype == qtype for k in p.buckets), "") or "medium"
         kept.append({
             "type": qtype,
             "question_type": qtype,
+            "difficulty": diff,
             "content": content[:4000],
             "options": q.get("options") if isinstance(q.get("options"), dict) else None,
             "answer": q.get("answer"),
@@ -521,6 +626,20 @@ def _assign_score(is_exam: bool, qtype: str, raw) -> int | None:
     return _DEFAULT_SCORES.get(qtype, 10)
 
 
+async def clear_paper_questions(db, paper_id: int) -> None:
+    """删除卷面题目及依赖的批改/错题记录，避免重新生成叠题。"""
+    from app.models.grading import SubmissionAnswer, WrongQuestionLog
+
+    qids = list((await db.execute(
+        select(HomeworkQuestion.id).where(HomeworkQuestion.paper_id == paper_id)
+    )).scalars().all())
+    if not qids:
+        return
+    await db.execute(delete(WrongQuestionLog).where(WrongQuestionLog.paper_question_id.in_(qids)))
+    await db.execute(delete(SubmissionAnswer).where(SubmissionAnswer.paper_question_id.in_(qids)))
+    await db.execute(delete(HomeworkQuestion).where(HomeworkQuestion.id.in_(qids)))
+
+
 async def generate_homework(paper_id: int):
     async with AsyncSessionLocal() as db:
         paper = (await db.execute(
@@ -530,49 +649,61 @@ async def generate_homework(paper_id: int):
             raise ValueError(f"作业 {paper_id} 不存在，稍后重试")
 
         paper.gen_status = ParseStatus.processing
+        await clear_paper_questions(db, paper.id)
         await db.commit()
 
         try:
             from app.services.ai_service import _get_default_llm
             cfg = await _get_default_llm(paper.teacher_id, db)
             scope = await resolve_scope(db, paper, cfg)
+            if scope.get("grade_id") and not paper.grade_id:
+                paper.grade_id = scope["grade_id"]
+            if scope.get("subject_id") and not paper.subject_id:
+                paper.subject_id = scope["subject_id"]
 
             q_source = _enum_val(paper.question_source) or QuestionSource.ai.value
             use_bank = q_source in (QuestionSource.bank.value, QuestionSource.mixed.value)
             use_ai = q_source in (QuestionSource.ai.value, QuestionSource.mixed.value, QuestionSource.bank.value)
             is_exam = _enum_val(paper.paper_type) == HomeworkType.exam.value
 
-            config = {
-                k: int(v) for k, v in (paper.question_config or {}).items()
-                if int(v or 0) > 0
-            }
-            if not config:
+            plan = parse_question_plan(paper.question_config, _enum_val(paper.difficulty) or "medium")
+            if not plan:
                 raise ValueError("题目数量不能为 0")
 
             difficulty = _enum_val(paper.difficulty) or "medium"
-            remain = dict(config)
-            bank_picked: dict[str, list[Question]] = {k: [] for k in remain}
+            bank_picked: dict[str, list[Question]] = {p.qtype: [] for p in plan}
+            remain_plan: list[TypePlan] = []
             used_ids: set[int] = set()
 
             if use_bank:
-                for qtype, n in list(remain.items()):
-                    rows = await pick_from_bank(
-                        db,
-                        teacher_id=paper.teacher_id,
-                        subject_id=scope.get("subject_id"),
-                        grade_id=scope.get("grade_id"),
-                        qtype=qtype,
-                        difficulty=difficulty,
-                        needed=n,
-                        aliases=scope.get("kp_aliases") or [],
-                        exclude_ids=used_ids,
-                    )
-                    bank_picked[qtype] = rows
-                    used_ids.update(q.id for q in rows)
-                    remain[qtype] = max(0, n - len(rows))
+                for item in plan:
+                    picked: list[Question] = []
+                    leftover: dict[str, int] = {}
+                    for diff, n in item.buckets.items():
+                        rows = await pick_from_bank(
+                            db,
+                            teacher_id=paper.teacher_id,
+                            subject_id=scope.get("subject_id"),
+                            grade_id=scope.get("grade_id"),
+                            qtype=item.qtype,
+                            difficulty=diff,
+                            needed=n,
+                            aliases=scope.get("kp_aliases") or [],
+                            exclude_ids=used_ids,
+                        )
+                        picked.extend(rows)
+                        used_ids.update(q.id for q in rows)
+                        miss = n - len(rows)
+                        if miss:
+                            leftover[diff] = miss
+                    bank_picked[item.qtype] = picked
+                    if leftover:
+                        remain_plan.append(TypePlan(item.qtype, sum(leftover.values()), leftover))
+            else:
+                remain_plan = list(plan)
 
             ai_items: list[dict] = []
-            need_ai = use_ai and any(v > 0 for v in remain.values())
+            need_ai = use_ai and any(p.count > 0 for p in remain_plan)
             # bank 模式题量不够时回退 AI
             if need_ai:
                 if not cfg:
@@ -583,7 +714,7 @@ async def generate_homework(paper_id: int):
                         return
                 else:
                     ai_items = await generate_by_ai(
-                        cfg, paper=paper, scope=scope, remain=remain,
+                        cfg, paper=paper, scope=scope, remain_plan=remain_plan,
                     )
 
             # 按题型配额组装，题库在前；AI 新题写入题库（重复则复用）
@@ -614,7 +745,7 @@ async def generate_homework(paper_id: int):
                             grade_id=int(grade_id),
                             content=item["content"],
                             question_type=item.get("type"),
-                            difficulty=difficulty,
+                            difficulty=item.get("difficulty") or difficulty,
                             options=item.get("options"),
                             answer=item.get("answer"),
                             explanation=item.get("explanation"),
@@ -647,7 +778,8 @@ async def generate_homework(paper_id: int):
 
             order = 0
             paper_qids: set[int] = set()
-            for qtype, n in config.items():
+            for item in plan:
+                qtype, n = item.qtype, item.count
                 slot = 0
                 for q in bank_picked.get(qtype) or []:
                     if slot >= n:
@@ -663,6 +795,7 @@ async def generate_homework(paper_id: int):
                         content=q.content,
                         options=q.options,
                         answer=q.answer,
+                        question_type=qtype,
                         score=_assign_score(is_exam, qtype, None),
                         source=QuestionSource.bank.value,
                     ))
@@ -683,6 +816,7 @@ async def generate_homework(paper_id: int):
                         content=item["content"],
                         options=item.get("options"),
                         answer=item.get("answer"),
+                        question_type=qtype,
                         score=_assign_score(is_exam, qtype, item.get("score")),
                         source=QuestionSource.ai.value,
                     ))

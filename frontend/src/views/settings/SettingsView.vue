@@ -5,23 +5,7 @@
       <p class="page-subtitle">{{ currentMenu?.desc }}</p>
     </div>
 
-    <div class="flex flex-col md:flex-row gap-4 md:gap-6 items-start">
-      <aside class="w-full md:w-48 flex-shrink-0">
-        <div class="card !p-2 flex md:flex-col gap-1 overflow-x-auto">
-          <button
-            v-for="m in menus" :key="m.key"
-            type="button"
-            class="settings-nav"
-            :class="{ active: activeMenu === m.key }"
-            @click="switchMenu(m.key)"
-          >
-            <el-icon><component :is="m.icon" /></el-icon>
-            <span>{{ m.label }}</span>
-          </button>
-        </div>
-      </aside>
-
-      <div class="flex-1 min-w-0 w-full space-y-4">
+    <div class="space-y-4">
         <!-- 个人信息 -->
         <template v-if="activeMenu === 'profile'">
           <div class="card">
@@ -157,7 +141,7 @@
         </template>
 
         <!-- 提示词设置 -->
-        <template v-else>
+        <template v-else-if="activeMenu === 'prompts'">
           <div class="card">
             <div class="flex items-center justify-between mb-1">
               <h2 class="text-sm font-semibold text-slate-700">科目课件生成提示词</h2>
@@ -196,7 +180,6 @@
             <el-empty v-if="!promptsLoading && !subjectPrompts.length" :image-size="60" description="暂无科目提示词" />
           </div>
         </template>
-      </div>
     </div>
 
     <!-- 编辑科目提示词弹窗 -->
@@ -298,30 +281,44 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { settingsApi, educationApi, authApi } from '@/api/modules'
 import { useEducationStore } from '@/stores/education'
 import { useAuthStore } from '@/stores/auth'
 import { ElMessage } from 'element-plus'
-import { Plus, User, Cpu, ChatDotRound } from '@element-plus/icons-vue'
+import { Plus } from '@element-plus/icons-vue'
 import type { LLMConfig, EmbeddingConfig, TeacherSubject, SubjectPrompt } from '@/types'
 
-type MenuKey = 'profile' | 'models' | 'prompts'
+const VALID_TABS = ['profile', 'models', 'prompts'] as const
+type MenuKey = typeof VALID_TABS[number]
 
 const menus = [
-  { key: 'profile' as const, label: '个人信息', icon: User, desc: '管理账号资料、密码和教学科目' },
-  { key: 'models' as const, label: '模型设置', icon: Cpu, desc: '配置对话大模型与向量嵌入' },
-  { key: 'prompts' as const, label: '提示词设置', icon: ChatDotRound, desc: '为各科目定制课件生成提示词' },
+  { key: 'profile' as const, label: '个人信息', desc: '管理账号资料、密码和教学科目' },
+  { key: 'models' as const, label: '模型设置', desc: '配置对话大模型与向量嵌入' },
+  { key: 'prompts' as const, label: '提示词设置', desc: '为各科目定制课件生成提示词' },
 ]
 
-const activeMenu = ref<MenuKey>('profile')
-const currentMenu = computed(() => menus.find(m => m.key === activeMenu.value))
+const route = useRoute()
+const router = useRouter()
 const promptsLoaded = ref(false)
 
-function switchMenu(key: MenuKey) {
-  activeMenu.value = key
-  if (key === 'prompts' && !promptsLoaded.value) loadSubjectPrompts()
-}
+const activeMenu = computed<MenuKey>(() => {
+  const tab = String(route.params.tab || 'profile')
+  return (VALID_TABS as readonly string[]).includes(tab) ? tab as MenuKey : 'profile'
+})
+const currentMenu = computed(() => menus.find(m => m.key === activeMenu.value))
+
+watch(
+  () => route.params.tab,
+  (tab) => {
+    const t = String(tab || '')
+    if (!(VALID_TABS as readonly string[]).includes(t)) {
+      router.replace('/settings/profile')
+    }
+  },
+  { immediate: true },
+)
 
 const auth = useAuthStore()
 const edu = useEducationStore()
@@ -562,6 +559,10 @@ async function loadSubjectPrompts() {
   }
 }
 
+watch(activeMenu, (key) => {
+  if (key === 'prompts' && !promptsLoaded.value) loadSubjectPrompts()
+}, { immediate: true })
+
 function editPrompt(sp: SubjectPrompt) {
   promptForm.subject_name = sp.subject_name
   promptForm.prompt = sp.prompt
@@ -597,13 +598,3 @@ onMounted(async () => {
 })
 </script>
 
-<style scoped>
-.settings-nav {
-  @apply flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm text-slate-600
-         whitespace-nowrap hover:bg-slate-50 hover:text-slate-900 transition-colors;
-}
-.settings-nav.active {
-  @apply bg-primary-50 text-primary-700 font-medium;
-}
-.settings-nav .el-icon { @apply text-base; }
-</style>

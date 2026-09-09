@@ -1,0 +1,12 @@
+---
+description: 行政班与学生花名册
+globs: backend/app/api/v1/classroom.py,backend/app/services/classroom_service.py,backend/app/models/student.py,frontend/src/views/students/**
+alwaysApply: false
+---
+
+# 班级 / 学生
+
+- 模型：`SchoolClass`（教师 × 年级 × 班名唯一）+ `Student.class_id`。`class_name` 与班名同步，兼容旧查询。
+- 接口：`/classes` 建班改名删除；`/classes/{id}/students` 花名册与批量导入。学生改删走 `/students/{id}`。
+- 前端：`StudentsView.vue`，先选顶部年级再建班。批改必须选班级。
+- 有学生的班不能删。成绩导入仍可自动建学生，列表班级时会把旧 `class_name` 收成班级。

@@ -7,7 +7,7 @@ alwaysApply: false
 # 前端约定
 
 - Vue 3 `<script setup>` + TypeScript。UI：Element Plus；样式：Tailwind（`primary-*`）。
-- 路由在 `router/index.ts`；非 `meta.public` 必须登录。侧栏分组在 `components/layout/MainLayout.vue`。
+- 路由在 `router/index.ts`；非 `meta.public` 必须登录。侧栏一/二级菜单在 `components/layout/MainLayout.vue`。
 - HTTP：`api/index.ts`（baseURL `/api/v1`，Bearer token）。**业务接口只加在 `api/modules.ts`**，类型加在 `types/index.ts`。
 - 状态：`stores/auth.ts`（登录）、`stores/education.ts`（学段/年级/科目筛选，localStorage 持久化）。页面级状态留在 View 内。
 - 页面按功能目录：`views/<feature>/`。公式用 `utils/mathText.ts` / `utils/markdown.ts`。

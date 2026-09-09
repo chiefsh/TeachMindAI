@@ -10,7 +10,7 @@ from app.models.student import Student, ExamResult, EntryMethod, GradeReport, Re
 from app.models.teacher_setting import TeacherSetting
 from app.models.textbook import ParseStatus
 from app.schemas.student import (
-    StudentCreate, StudentOut, ExamResultCreate, ExamResultOut, GradeStats,
+    StudentCreate, StudentUpdate, StudentOut, ExamResultCreate, ExamResultOut, GradeStats,
     AnalysisCreate, AnalysisRegenerate, GradeReportOut, ExamSummaryOut, GradeLineConfig,
 )
 from app.api.deps import get_current_teacher
@@ -40,6 +40,7 @@ async def _get_grade_lines(db: AsyncSession, teacher_id: int) -> tuple[float, fl
 @router.get("", response_model=list[StudentOut])
 async def list_students(
     grade_id: Optional[int] = None,
+    class_id: Optional[int] = None,
     class_name: Optional[str] = None,
     teacher: Teacher = Depends(get_current_teacher),
     db: AsyncSession = Depends(get_db),
@@ -47,6 +48,8 @@ async def list_students(
     q = select(Student).where(Student.teacher_id == teacher.id)
     if grade_id:
         q = q.where(Student.grade_id == grade_id)
+    if class_id:
+        q = q.where(Student.class_id == class_id)
     if class_name:
         q = q.where(Student.class_name == class_name)
     result = await db.execute(q.order_by(Student.class_name, Student.student_no))
@@ -59,11 +62,45 @@ async def create_student(
     teacher: Teacher = Depends(get_current_teacher),
     db: AsyncSession = Depends(get_db),
 ):
-    s = Student(teacher_id=teacher.id, **data.model_dump())
-    db.add(s)
-    await db.flush()
-    await db.refresh(s)
-    return s
+    from app.services import classroom_service as class_svc
+    try:
+        return await class_svc.add_student(
+            db, teacher.id,
+            student_no=data.student_no,
+            name=data.name,
+            grade_id=data.grade_id,
+            class_id=data.class_id,
+            class_name=data.class_name,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.patch("/{student_id}", response_model=StudentOut)
+async def update_student(
+    student_id: int,
+    data: StudentUpdate,
+    teacher: Teacher = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services import classroom_service as class_svc
+    try:
+        return await class_svc.update_student(db, teacher.id, student_id, data)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.delete("/{student_id}", status_code=204)
+async def delete_student(
+    student_id: int,
+    teacher: Teacher = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services import classroom_service as class_svc
+    try:
+        await class_svc.delete_student(db, teacher.id, student_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 class ManualGradeRow(BaseModel):

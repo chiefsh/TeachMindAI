@@ -9,7 +9,7 @@ from app.core.database import engine, Base
 from app.core.redis_client import close_redis
 from app.core.minio_client import init_buckets
 from app.core.seed import seed_education_data, seed_subject_prompts
-from app.api.v1 import auth, education, textbook, question, courseware, homework, student, settings, ws, dashboard, interaction, question_analysis, knowledge, share
+from app.api.v1 import auth, education, textbook, question, courseware, homework, student, settings, ws, dashboard, interaction, question_analysis, knowledge, share, grading, classroom
 
 
 # create_all 不会给已有表补索引，启动时幂等补齐热查询字段
@@ -27,6 +27,8 @@ _INDEX_SQL = [
     "CREATE INDEX IF NOT EXISTS ix_homework_papers_teacher_id ON homework_papers (teacher_id)",
     "CREATE INDEX IF NOT EXISTS ix_homework_papers_textbook_id ON homework_papers (textbook_id)",
     "CREATE INDEX IF NOT EXISTS ix_question_imports_teacher_id ON question_imports (teacher_id)",
+    "CREATE INDEX IF NOT EXISTS ix_grading_assignments_teacher_id ON grading_assignments (teacher_id)",
+    "CREATE INDEX IF NOT EXISTS ix_paper_submissions_teacher_id ON paper_submissions (teacher_id)",
 ]
 
 
@@ -88,6 +90,30 @@ _COLUMN_SQL = [
         "homework_questions", "source",
         "ALTER TABLE homework_questions ADD COLUMN source VARCHAR(16) NULL",
     ),
+    (
+        "homework_questions", "question_type",
+        "ALTER TABLE homework_questions ADD COLUMN question_type VARCHAR(32) NULL",
+    ),
+    (
+        "homework_papers", "grade_id",
+        "ALTER TABLE homework_papers ADD COLUMN grade_id INTEGER NULL",
+    ),
+    (
+        "homework_papers", "subject_id",
+        "ALTER TABLE homework_papers ADD COLUMN subject_id INTEGER NULL",
+    ),
+    (
+        "questions", "wrong_count",
+        "ALTER TABLE questions ADD COLUMN wrong_count INTEGER NOT NULL DEFAULT 0",
+    ),
+    (
+        "students", "class_id",
+        "ALTER TABLE students ADD COLUMN class_id INTEGER NULL",
+    ),
+    (
+        "grading_assignments", "class_id",
+        "ALTER TABLE grading_assignments ADD COLUMN class_id INTEGER NULL",
+    ),
 ]
 
 
@@ -123,6 +149,7 @@ async def _ensure_columns():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # 启动时建表（生产环境应使用 Alembic）
+    import app.models  # noqa: F401  # 注册全部模型到 metadata
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     try:
@@ -193,7 +220,9 @@ app.include_router(textbook.router, prefix="/api/v1")
 app.include_router(question.router, prefix="/api/v1")
 app.include_router(courseware.router, prefix="/api/v1")
 app.include_router(homework.router, prefix="/api/v1")
+app.include_router(grading.router, prefix="/api/v1")
 app.include_router(student.router, prefix="/api/v1")
+app.include_router(classroom.router, prefix="/api/v1")
 app.include_router(settings.router, prefix="/api/v1")
 app.include_router(dashboard.router, prefix="/api/v1")
 app.include_router(interaction.router, prefix="/api/v1")

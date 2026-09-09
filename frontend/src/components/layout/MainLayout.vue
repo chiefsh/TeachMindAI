@@ -13,21 +13,50 @@
           <span class="font-bold text-slate-800 text-base">智课星</span>
         </div>
       </div>
-      <nav class="flex-1 overflow-y-auto py-4 px-3">
-        <div v-for="group in navGroups" :key="group.title" class="mb-5">
-          <p class="text-[10px] font-semibold text-slate-400 uppercase tracking-widest px-3 mb-1.5">
-            {{ group.title }}
-          </p>
+      <nav class="flex-1 overflow-y-auto py-3 px-3">
+        <div v-for="item in navMenu" :key="item.key" class="mb-0.5">
           <router-link
-            v-for="item in group.items"
-            :key="item.path"
+            v-if="item.path"
             :to="item.path"
             class="nav-item"
-            :class="{ active: $route.path.startsWith(item.path) }"
+            :class="{ active: isChildActive(item.path) }"
           >
             <el-icon><component :is="item.icon" /></el-icon>
             <span>{{ item.label }}</span>
           </router-link>
+          <template v-else>
+            <button
+              type="button"
+              class="nav-item w-full"
+              :class="{ 'nav-group-on': isGroupActive(item) }"
+              :aria-expanded="expandedKey === item.key"
+              @click="toggle(item)"
+            >
+              <el-icon><component :is="item.icon" /></el-icon>
+              <span class="flex-1 text-left">{{ item.label }}</span>
+              <el-icon
+                class="text-xs text-slate-400 transition-transform duration-150"
+                :class="{ 'rotate-180': expandedKey === item.key }"
+              >
+                <ArrowDown />
+              </el-icon>
+            </button>
+            <div
+              v-show="expandedKey === item.key"
+              class="ml-3 pl-2 border-l border-slate-100"
+            >
+              <router-link
+                v-for="child in item.children"
+                :key="child.path"
+                :to="child.path"
+                class="nav-item !py-2 !text-[13px]"
+                :class="{ active: isChildActive(child.path) }"
+              >
+                <el-icon><component :is="child.icon" /></el-icon>
+                <span>{{ child.label }}</span>
+              </router-link>
+            </div>
+          </template>
         </div>
       </nav>
       <div class="border-t border-slate-100 p-3">
@@ -64,22 +93,50 @@
             <span class="font-bold text-slate-800 text-base">智课星</span>
           </div>
         </div>
-        <nav class="flex-1 overflow-y-auto py-4 px-3">
-          <div v-for="group in navGroups" :key="group.title" class="mb-5">
-            <p class="text-[10px] font-semibold text-slate-400 uppercase tracking-widest px-3 mb-1.5">
-              {{ group.title }}
-            </p>
+        <nav class="flex-1 overflow-y-auto py-3 px-3">
+          <div v-for="item in navMenu" :key="item.key" class="mb-0.5">
             <router-link
-              v-for="item in group.items"
-              :key="item.path"
+              v-if="item.path"
               :to="item.path"
               class="nav-item"
-              :class="{ active: $route.path.startsWith(item.path) }"
-              @click="drawerOpen = false"
+              :class="{ active: isChildActive(item.path) }"
             >
               <el-icon><component :is="item.icon" /></el-icon>
               <span>{{ item.label }}</span>
             </router-link>
+            <template v-else>
+              <button
+                type="button"
+                class="nav-item w-full"
+                :class="{ 'nav-group-on': isGroupActive(item) }"
+                :aria-expanded="expandedKey === item.key"
+                @click="toggle(item)"
+              >
+                <el-icon><component :is="item.icon" /></el-icon>
+                <span class="flex-1 text-left">{{ item.label }}</span>
+                <el-icon
+                  class="text-xs text-slate-400 transition-transform duration-150"
+                  :class="{ 'rotate-180': expandedKey === item.key }"
+                >
+                  <ArrowDown />
+                </el-icon>
+              </button>
+              <div
+                v-show="expandedKey === item.key"
+                class="ml-3 pl-2 border-l border-slate-100"
+              >
+                <router-link
+                  v-for="child in item.children"
+                  :key="child.path"
+                  :to="child.path"
+                  class="nav-item !py-2 !text-[13px]"
+                  :class="{ active: isChildActive(child.path) }"
+                >
+                  <el-icon><component :is="child.icon" /></el-icon>
+                  <span>{{ child.label }}</span>
+                </router-link>
+              </div>
+            </template>
           </div>
         </nav>
         <div class="border-t border-slate-100 p-3">
@@ -172,7 +229,16 @@ import { useAuthStore } from '@/stores/auth'
 import { useEducationStore } from '@/stores/education'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
-import { Fold } from '@element-plus/icons-vue'
+import { Fold, ArrowDown } from '@element-plus/icons-vue'
+
+type NavChild = { path: string; label: string; icon: string }
+type NavItem = {
+  key: string
+  label: string
+  icon: string
+  path?: string
+  children?: NavChild[]
+}
 
 const auth = useAuthStore()
 const edu = useEducationStore()
@@ -182,45 +248,79 @@ const route = useRoute()
 const isDesktop = useMediaQuery('(min-width: 1024px)')
 const drawerOpen = ref(false)
 
-watch(isDesktop, (v) => { if (v) drawerOpen.value = false })
-watch(() => route.path, () => { drawerOpen.value = false })
-
-const navGroups = [
+const navMenu: NavItem[] = [
+  { key: 'dashboard', label: '工作台', icon: 'HomeFilled', path: '/dashboard' },
   {
-    title: '概览',
-    items: [
-      { path: '/dashboard', label: '工作台', icon: 'HomeFilled' },
-    ],
-  },
-  {
-    title: '教学资源',
-    items: [
-      { path: '/textbook',      label: '课本管理', icon: 'Collection' },
+    key: 'resources',
+    label: '教学资源',
+    icon: 'Collection',
+    children: [
+      { path: '/textbook', label: '课本管理', icon: 'Collection' },
       { path: '/question-bank', label: '题库管理', icon: 'EditPen' },
+      { path: '/students', label: '班级/学生', icon: 'User' },
     ],
   },
   {
-    title: 'AI 生成',
-    items: [
+    key: 'ai',
+    label: 'AI 生成',
+    icon: 'VideoPlay',
+    children: [
       { path: '/courseware', label: '课件生成', icon: 'VideoPlay' },
-      { path: '/homework',   label: '作业/考试', icon: 'Tickets' },
+      { path: '/homework', label: '作业/考试', icon: 'Tickets' },
       { path: '/question-analysis', label: '试题分析', icon: 'DataAnalysis' },
     ],
   },
   {
-    title: '数据分析',
-    items: [
+    key: 'analytics',
+    label: '学情分析',
+    icon: 'TrendCharts',
+    children: [
+      { path: '/grading', label: '批改作业/试卷', icon: 'Finished' },
+      { path: '/wrong-questions', label: '错题本', icon: 'Flag' },
       { path: '/grades', label: '学生成绩', icon: 'TrendCharts' },
       { path: '/knowledge', label: '知识图谱', icon: 'Connection' },
     ],
   },
   {
-    title: '系统',
-    items: [
-      { path: '/settings', label: '系统设置', icon: 'Setting' },
+    key: 'settings',
+    label: '系统设置',
+    icon: 'Setting',
+    children: [
+      { path: '/settings/profile', label: '个人信息', icon: 'User' },
+      { path: '/settings/models', label: '模型设置', icon: 'Cpu' },
+      { path: '/settings/prompts', label: '提示词设置', icon: 'ChatDotRound' },
     ],
   },
 ]
+
+function isChildActive(path: string) {
+  return route.path === path || route.path.startsWith(path + '/')
+}
+
+function isGroupActive(item: NavItem) {
+  if (item.path) return isChildActive(item.path)
+  return item.children?.some(c => isChildActive(c.path)) ?? false
+}
+
+function groupOf(path: string) {
+  return navMenu.find(g =>
+    (g.path && (path === g.path || path.startsWith(g.path + '/')))
+    || g.children?.some(c => path === c.path || path.startsWith(c.path + '/')),
+  )?.key ?? ''
+}
+
+const expandedKey = ref(groupOf(route.path))
+
+function toggle(item: NavItem) {
+  if (!item.children) return
+  expandedKey.value = expandedKey.value === item.key ? '' : item.key
+}
+
+watch(isDesktop, (v) => { if (v) drawerOpen.value = false })
+watch(() => route.path, (p) => {
+  drawerOpen.value = false
+  expandedKey.value = groupOf(p)
+})
 
 async function handleLogout() {
   await ElMessageBox.confirm('确定退出登录吗？', '提示', { type: 'warning' })
@@ -245,6 +345,9 @@ async function handleLogout() {
   @apply bg-primary-50 text-primary-700 font-medium;
 }
 .nav-item .el-icon { @apply text-base; }
+.nav-group-on {
+  @apply text-primary-700 font-medium;
+}
 
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }

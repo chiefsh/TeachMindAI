@@ -58,6 +58,7 @@ export interface Question {
   tags?: string[]; created_at: string
   images?: QuestionImages | null
   use_count?: number
+  wrong_count?: number
   analysis_content?: AnalysisContent | null
   analysis_html?: string | null
   has_diagram?: boolean
@@ -93,6 +94,7 @@ export interface HomeworkQuestion {
   options?: Record<string, string> | null; answer?: string | null; score?: number | null
   source?: 'ai' | 'bank' | null
   question_id?: number | null
+  question_type?: QuestionType | string | null
 }
 
 export type HomeworkSourceType = 'courseware' | 'textbook' | 'chapters'
@@ -101,17 +103,25 @@ export type QuestionSourceMode = 'ai' | 'bank' | 'mixed'
 export interface HomeworkPaper {
   id: number; title: string; paper_type: string; difficulty: DifficultyLevel
   gen_status: ParseStatus; courseware_id?: number; created_at: string
-  content?: string; question_config?: Record<string, number>
+  content?: string
+  question_config?: Record<string, any>
   questions?: HomeworkQuestion[]
   source_type?: HomeworkSourceType
   question_source?: QuestionSourceMode
   textbook_id?: number | null
   chapter_ids?: number[] | null
   courseware_ids?: number[] | null
+  grade_id?: number | null
+  subject_id?: number | null
 }
 
 export interface Student {
-  id: number; student_no: string; name: string; grade_id: number; class_name?: string
+  id: number; student_no: string; name: string; grade_id: number
+  class_id?: number | null; class_name?: string
+}
+
+export interface SchoolClass {
+  id: number; grade_id: number; name: string; student_count: number; created_at: string
 }
 
 export interface ExamResult {
@@ -266,4 +276,108 @@ export interface SharePayload {
   title: string
   expires_at: string
   payload: Record<string, any>
+}
+
+export type GradeVerdict = 'correct' | 'partial' | 'wrong' | 'blank'
+
+export interface GradingAssignment {
+  id: number
+  paper_id: number
+  paper_title: string
+  paper_type: string
+  title: string
+  grade_id: number
+  subject_id: number
+  class_id?: number | null
+  class_name?: string | null
+  assigned_at: string
+  status: string
+  full_score?: number | null
+  student_count: number
+  submitted_count: number
+  graded_count: number
+  created_at: string
+  questions?: HomeworkQuestion[]
+  question_stats?: GradingQuestionStat[]
+  students?: GradingStudentRow[]
+}
+
+export interface GradingQuestionStat {
+  paper_question_id: number
+  sort_order: number
+  content: string
+  question_id?: number | null
+  error_count: number
+  blank_count: number
+  graded_count: number
+  error_rate: number
+}
+
+export interface GradingStudentRow {
+  student_id: number
+  name: string
+  student_no: string
+  class_name?: string | null
+  submission_id?: number | null
+  status: string
+  page_count: number
+  graded_count: number
+  question_count: number
+  total_score?: number | null
+  full_score?: number | null
+}
+
+export interface GradingPage {
+  id: number
+  page_index: number
+  url: string
+  file_name?: string | null
+}
+
+export interface GradingAnswer {
+  id: number
+  paper_question_id: number
+  question_id?: number | null
+  student_answer?: string | null
+  verdict?: GradeVerdict | string | null
+  is_correct?: boolean | null
+  score?: number | null
+  max_score?: number | null
+  comment?: string | null
+  grade_method?: string
+  page_index?: number | null
+}
+
+export interface GradingSubmission {
+  id: number
+  assignment_id: number
+  student_id: number
+  student_name: string
+  student_no: string
+  status: string
+  total_score?: number | null
+  full_score?: number | null
+  paper_type: string
+  assignment_title: string
+  pages: GradingPage[]
+  answers: GradingAnswer[]
+  questions: HomeworkQuestion[]
+  roster: GradingStudentRow[]
+}
+
+export interface WrongQuestionItem {
+  student_id?: number | null
+  student_name?: string | null
+  student_no?: string | null
+  assignment_id?: number | null
+  assignment_title?: string | null
+  paper_question_id?: number | null
+  question_id?: number | null
+  sort_order?: number | null
+  content: string
+  question_type?: string | null
+  error_count: number
+  blank_count?: number
+  last_at?: string | null
+  use_count?: number | null
 }

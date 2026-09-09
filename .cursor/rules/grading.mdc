@@ -1,0 +1,17 @@
+---
+description: 纸质作业/试卷批改与错题
+globs: backend/app/api/v1/grading.py,backend/app/models/grading.py,backend/app/schemas/grading.py,backend/app/services/grading_service.py,frontend/src/views/grading/**
+alwaysApply: false
+---
+
+# 批改作业 / 试卷
+
+纸质原卷、答案写在卷面上（非答题卡）。一期：按学生上传页图 + 看图手批。
+
+- 模型：`GradingAssignment`（一次布置）→ `PaperSubmission`（某生答卷）→ `SubmissionPage`（原图，MinIO `grading-papers`）+ `SubmissionAnswer`（逐题 verdict）。
+- 错题账本：`WrongQuestionLog`（按答卷行唯一）。改判先改账再动 `Question.wrong_count`。
+- 卷面仍用 `HomeworkPaper` / `HomeworkQuestion`，不要另建题目表。
+- 布置必须选 `SchoolClass`；花名册来自该班学生。没有班级时引导去 `/students`。
+- 考试批完回写 `ExamResult`；作业不进成绩模块。
+- 前端：`GradingView` 布置，`GradingDetail` 花名册与各题错次，`GradingStudent` 看图批改，`WrongQuestionsView` 三层汇总。
+- 不要把成绩手录做进本模块；AI 看图预批尚未接入。

@@ -46,6 +46,7 @@ class Question(Base, TimestampMixin):
     tags: Mapped[list | None] = mapped_column(JSON, nullable=True)      # 知识点标签
     content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     use_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+    wrong_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
 
     teacher = relationship("Teacher", back_populates="questions")
     subject = relationship("Subject")

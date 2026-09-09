@@ -71,9 +71,15 @@ tasks/<队列>.py      → Celery 包装（薄，真正逻辑在 service）
 - 后端：`api/v1/textbook.py`、`schemas/textbook.py`、`models/textbook.py`、`services/file_service.py`（`parse_textbook_file`）、`tasks/file_tasks.py`、`services/liteparse_service.py`
 - 前端：`views/textbook/TextbookView.vue`
 
+### 班级 / 学生
+
+- 后端：`api/v1/classroom.py`、`api/v1/student.py`（花名册增删改）、`models/student.py`（`SchoolClass` + `Student.class_id`）、`services/classroom_service.py`
+- 前端：`views/students/StudentsView.vue`；侧栏「班级/学生」
+- 行政班按教师 + 年级；学生必须归入班级。批改布置选班级后用该班花名册。成绩模块只负责分数，不负责建班。
+
 ### 题库
 
-- 后端：`api/v1/question.py`、`schemas/question.py`、`models/question.py`、`file_service.parse_question_file`、`ai_service.parse_questions_from_text/image`
+- 后端：`api/v1/question.py`、`schemas/question.py`、`models/question.py`、`file_service.parse_question_file`、`ai_service.parse_questions_from_text/image`、`question_bank_service.py`（去重入库、`PATCH` 改题）
 - 前端：`views/question-bank/QuestionBankView.vue`
 
 ### 课件 + 课堂互动
@@ -86,8 +92,16 @@ tasks/<队列>.py      → Celery 包装（薄，真正逻辑在 service）
 
 ### 作业 / 试卷
 
-- 后端：`api/v1/homework.py`、`schemas/homework.py`、`models/homework.py`、`services/homework_service.py`、`export_service.build_homework_*`
+- 后端：`api/v1/homework.py`、`schemas/homework.py`、`models/homework.py`、`services/homework_service.py`、`export_service.build_homework_*`；`POST /homework/{id}/regenerate` 可改配置后重出卷
 - 前端：`views/homework/HomeworkView.vue`
+
+### 批改作业 / 试卷（纸质原卷）
+
+- 后端：`api/v1/grading.py`、`schemas/grading.py`、`models/grading.py`、`services/grading_service.py`
+- 前端：`views/grading/`（布置列表、学生原卷看图手批、错题本）
+- 卷面来自已生成的 `HomeworkPaper`；答卷是按学生上传的页图，不是答题卡
+- 错题流水 `WrongQuestionLog`：单次布置各题错次、学生错题本、题库 `Question.wrong_count`
+- 考试批完回写 `ExamResult`；作业只记对错不分到成绩模块
 
 ### 试题分析
 
@@ -138,12 +152,15 @@ tasks/<队列>.py      → Celery 包装（薄，真正逻辑在 service）
 | `/dashboard` | `dashboard/DashboardView.vue` |
 | `/textbook` | `textbook/TextbookView.vue` |
 | `/question-bank` | `question-bank/QuestionBankView.vue` |
+| `/students` | `students/StudentsView.vue` |
 | `/courseware`、`/courseware/:id` | `courseware/*` |
 | `/homework` | `homework/HomeworkView.vue` |
+| `/grading`、`/grading/:id`、`/grading/:id/student/:studentId` | `grading/*` |
+| `/wrong-questions` | `grading/WrongQuestionsView.vue` |
 | `/question-analysis`、`/:id` | `question-analysis/*` |
 | `/grades` | `grades/GradesView.vue` |
 | `/knowledge` | `knowledge/KnowledgeGraphView.vue` |
-| `/settings` | `settings/SettingsView.vue` |
+| `/settings`、`/settings/:tab` | `settings/SettingsView.vue`（`profile` / `models` / `prompts`） |
 
 ## 改代码约定
 

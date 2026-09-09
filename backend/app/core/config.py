@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     MINIO_BUCKET_TEXTBOOKS: str = "textbooks"
     MINIO_BUCKET_QUESTIONS: str = "question-banks"
     MINIO_BUCKET_COURSEWARES: str = "coursewares"
+    MINIO_BUCKET_GRADING: str = "grading-papers"
 
     # AES加密（用于LLM API Key存储）
     ENCRYPTION_KEY: str = "edu-platform-32-byte-encrypt-key"

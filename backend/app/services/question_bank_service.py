@@ -138,6 +138,76 @@ def build_question(
     return q
 
 
+def bump_use_count(q: Question | None, n: int = 1) -> None:
+    """组卷选用某题时累加使用次数，由调用方 commit。"""
+    if q is None:
+        return
+    q.use_count = (q.use_count or 0) + n
+
+
+class QuestionEmptyError(ValueError):
+    pass
+
+
+class QuestionDuplicateError(ValueError):
+    pass
+
+
+def _clean_options(raw) -> dict | None:
+    if not isinstance(raw, dict):
+        return None
+    cleaned: dict[str, str] = {}
+    for k, v in raw.items():
+        key = str(k).strip()
+        if not key:
+            continue
+        cleaned[key] = _option_text(v)
+    return cleaned or None
+
+
+async def apply_question_update(db: AsyncSession, q: Question, data: dict) -> Question:
+    """按传入字段改题；题干/选项/题型变化时重算指纹并查重。"""
+    if "content" in data:
+        text = strip_stem_number(data.get("content"))
+        if not text:
+            raise QuestionEmptyError("题目内容不能为空")
+        q.content = text[:_CONTENT_MAX]
+    if "question_type" in data and data["question_type"] is not None:
+        q.question_type = coerce_question_type(data["question_type"])
+    if "difficulty" in data and data["difficulty"] is not None:
+        q.difficulty = coerce_difficulty(data["difficulty"])
+    if "options" in data:
+        q.options = _clean_options(data.get("options"))
+        flag_modified(q, "options")
+    if "answer" in data:
+        ans = data.get("answer")
+        q.answer = (str(ans).strip() if ans is not None else "") or None
+    if "explanation" in data:
+        expl = data.get("explanation")
+        q.explanation = (str(expl).strip() if expl is not None else "") or None
+    if "subject_id" in data and data["subject_id"] is not None:
+        q.subject_id = int(data["subject_id"])
+    if "grade_id" in data and data["grade_id"] is not None:
+        q.grade_id = int(data["grade_id"])
+    if "tags" in data:
+        q.tags = coerce_tags(data.get("tags"))
+        flag_modified(q, "tags")
+
+    digest = question_content_hash(q.content, q.options, q.question_type)
+    if digest != (q.content_hash or ""):
+        clash = (await db.execute(
+            select(Question.id).where(
+                Question.teacher_id == q.teacher_id,
+                Question.content_hash == digest,
+                Question.id != q.id,
+            ).limit(1)
+        )).scalar_one_or_none()
+        if clash:
+            raise QuestionDuplicateError("题库中已有相同题干与选项的题目")
+        q.content_hash = digest
+    return q
+
+
 async def upsert_question_models(
     db: AsyncSession, questions: list[Question],
 ) -> tuple[list[Question], int, int]:

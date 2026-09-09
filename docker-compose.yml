@@ -1,5 +1,3 @@
-version: "3.9"
-
 x-timezone: &timezone
   TZ: Asia/Shanghai
 

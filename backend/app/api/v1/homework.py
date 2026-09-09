@@ -3,6 +3,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_
 from sqlalchemy.orm import selectinload
+from sqlalchemy.orm.attributes import flag_modified
 from typing import Optional
 from urllib.parse import quote
 import io
@@ -50,14 +51,10 @@ async def list_homework(
     return result.scalars().all()
 
 
-@router.post("", response_model=HomeworkOut, status_code=201)
-async def create_homework(
-    data: HomeworkCreate,
-    teacher: Teacher = Depends(get_current_teacher),
-    db: AsyncSession = Depends(get_db),
-):
-    cfg = data.question_config or {}
-    if not any(int(v or 0) > 0 for v in cfg.values()):
+async def _validated_paper_fields(db: AsyncSession, teacher: Teacher, data: HomeworkCreate) -> dict:
+    from app.services.homework_service import parse_question_plan
+    plan = parse_question_plan(data.question_config, getattr(data.difficulty, "value", data.difficulty))
+    if not plan:
         raise HTTPException(status_code=400, detail="请至少配置一道题")
 
     cw_ids = list(data.courseware_ids or [])
@@ -93,31 +90,79 @@ async def create_homework(
         )).scalar_one_or_none()
         if not tb:
             raise HTTPException(status_code=400, detail="课本不存在或无权使用")
+        grade_id = tb.grade_id
+        subject_id = tb.subject_id
+    else:
+        grade_id = subject_id = None
 
-    paper = HomeworkPaper(
-        teacher_id=teacher.id,
-        courseware_id=cw_ids[0] if cw_ids else None,
-        courseware_ids=cw_ids or None,
-        textbook_id=textbook_id,
-        chapter_ids=chapter_ids or None,
-        source_type=data.source_type.value,
-        question_source=data.question_source.value,
-        title=data.title,
-        paper_type=data.paper_type,
-        difficulty=data.difficulty,
-        question_config=data.question_config,
-        gen_status=ParseStatus.pending,
-    )
-    db.add(paper)
-    await db.flush()
-    await db.refresh(paper)
-    await db.commit()
+    return {
+        "courseware_id": cw_ids[0] if cw_ids else None,
+        "courseware_ids": cw_ids or None,
+        "textbook_id": textbook_id,
+        "chapter_ids": chapter_ids or None,
+        "source_type": data.source_type.value,
+        "question_source": data.question_source.value,
+        "title": data.title,
+        "grade_id": grade_id,
+        "subject_id": subject_id,
+        "paper_type": data.paper_type,
+        "difficulty": data.difficulty,
+        "question_config": data.question_config,
+    }
 
+
+def _apply_paper_fields(paper: HomeworkPaper, fields: dict) -> None:
+    for key, value in fields.items():
+        setattr(paper, key, value)
+    flag_modified(paper, "courseware_ids")
+    flag_modified(paper, "chapter_ids")
+    flag_modified(paper, "question_config")
+
+
+async def _enqueue_generate(paper: HomeworkPaper, db: AsyncSession) -> HomeworkPaper:
     from app.tasks.ai_tasks import generate_homework_task
     task = generate_homework_task.delay(paper_id=paper.id)
     paper.task_id = task.id
     await db.commit()
     return paper
+
+
+@router.post("", response_model=HomeworkOut, status_code=201)
+async def create_homework(
+    data: HomeworkCreate,
+    teacher: Teacher = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+):
+    fields = await _validated_paper_fields(db, teacher, data)
+    paper = HomeworkPaper(
+        teacher_id=teacher.id,
+        gen_status=ParseStatus.pending,
+        **fields,
+    )
+    db.add(paper)
+    await db.flush()
+    await db.refresh(paper)
+    await db.commit()
+    return await _enqueue_generate(paper, db)
+
+
+@router.post("/{paper_id}/regenerate", response_model=HomeworkOut)
+async def regenerate_homework(
+    paper_id: int,
+    data: HomeworkCreate,
+    teacher: Teacher = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+):
+    paper = await _get_or_404(paper_id, teacher.id, db)
+    if paper.gen_status in (ParseStatus.pending, ParseStatus.processing):
+        raise HTTPException(status_code=400, detail="正在生成中，请稍后再试")
+    fields = await _validated_paper_fields(db, teacher, data)
+    _apply_paper_fields(paper, fields)
+    paper.content = None
+    paper.gen_status = ParseStatus.pending
+    paper.task_id = None
+    await db.commit()
+    return await _enqueue_generate(paper, db)
 
 
 @router.get("/{paper_id}", response_model=HomeworkDetail)
@@ -145,7 +190,10 @@ async def export_homework(
         raise HTTPException(status_code=400, detail="作业尚未生成完成，无法导出")
 
     questions = [
-        {"content": q.content, "options": q.options, "answer": q.answer, "score": q.score}
+        {
+            "content": q.content, "options": q.options, "answer": q.answer,
+            "score": q.score, "question_type": q.question_type,
+        }
         for q in sorted(paper.questions, key=lambda x: x.sort_order)
     ]
     paper_type = getattr(paper.paper_type, "value", paper.paper_type)

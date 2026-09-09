@@ -8,5 +8,7 @@ alwaysApply: false
 
 - 模型：`HomeworkPaper` + `HomeworkQuestion`。范围 `source_type`：课件 / 整本课本 / 指定章节；题目来源 `question_source`：ai / bank / mixed。
 - 生成：Celery `generate_homework_task` → `homework_service.generate_homework`（解析知识点 → 题库筛选 → AI 补缺）。作业不记分，考试才赋分。
+- `question_config`：`difficulty_mode=overall` 用卷面总难度；`per_type` 按各题型 `ratios` 拆难度。`items` 顺序即卷面大题顺序。旧版 `{题型:数量}` 仍可解析。
+- 重新生成：`POST /homework/{id}/regenerate`，可改配置；组卷前会清掉旧题及依赖的批改记录。
 - 导出：`export_service.build_homework_docx/pdf`（作业不展示满分）。
-- 前端：`HomeworkView.vue` + `homeworkApi`。不要把成绩录入做到本模块（成绩在 student/grades）。
+- 前端：`HomeworkView.vue` + `homeworkApi`。不要把成绩录入做到本模块（成绩在 student/grades）。纸质批改走独立模块 `grading`（列表上的「批改」只是跳转）。

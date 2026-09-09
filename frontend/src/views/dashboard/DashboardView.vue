@@ -23,7 +23,7 @@
     <!-- 快捷入口 -->
     <div class="card mb-6">
       <h3 class="text-sm font-semibold text-slate-600 mb-4">快捷操作</h3>
-      <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+      <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         <router-link
           v-for="action in quickActions"
           :key="action.label"
@@ -40,7 +40,7 @@
     <div class="card">
       <div class="flex items-center justify-between mb-4">
         <h3 class="text-sm font-semibold text-slate-600">我的教学科目</h3>
-        <router-link to="/settings" class="text-xs text-primary-600 hover:underline">管理科目 →</router-link>
+        <router-link to="/settings/profile" class="text-xs text-primary-600 hover:underline">管理科目 →</router-link>
       </div>
       <div v-if="edu.mySubjects.length" class="flex flex-wrap gap-2">
         <div
@@ -55,7 +55,7 @@
       </div>
       <div v-else class="text-sm text-slate-400 py-4 text-center">
         暂未配置教学科目，前往
-        <router-link to="/settings" class="text-primary-600 hover:underline">系统设置</router-link>
+        <router-link to="/settings/profile" class="text-primary-600 hover:underline">系统设置</router-link>
         添加
       </div>
     </div>
@@ -90,7 +90,9 @@ const quickActions = [
   { label: '上传课本', path: '/textbook',      icon: 'Upload' },
   { label: '导入题库', path: '/question-bank', icon: 'EditPen' },
   { label: '生成课件', path: '/courseware',    icon: 'MagicStick' },
+  { label: '班级学生', path: '/students',      icon: 'User' },
   { label: '布置作业', path: '/homework',      icon: 'Tickets' },
+  { label: '批改作业', path: '/grading',       icon: 'Finished' },
   { label: '试题分析', path: '/question-analysis', icon: 'DataAnalysis' },
 ]
 </script>

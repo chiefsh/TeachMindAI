@@ -9,7 +9,8 @@ class HomeworkCreate(BaseModel):
     title: str
     paper_type: HomeworkType = HomeworkType.homework
     difficulty: DifficultyLevel = DifficultyLevel.medium
-    question_config: dict      # {"single_choice":5,"fill_blank":3,"short_answer":2}
+    # 旧：{"single_choice":5}  新：{"difficulty_mode":"overall|per_type","items":[{"type","count","ratios"}]}
+    question_config: dict
     source_type: HomeworkSourceType = HomeworkSourceType.courseware
     question_source: QuestionSource = QuestionSource.ai
     courseware_ids: list[int] = Field(default_factory=list)
@@ -45,6 +46,9 @@ class HomeworkOut(BaseModel):
     chapter_ids: list | None = None
     source_type: str | None = None
     question_source: str | None = None
+    question_config: dict | None = None
+    grade_id: int | None = None
+    subject_id: int | None = None
     created_at: datetime
     model_config = {"from_attributes": True}
 
@@ -55,6 +59,7 @@ class HomeworkQuestionOut(BaseModel):
     content: str
     options: dict | None = None
     answer: str | None = None
+    question_type: str | None = None
     score: float | int | None = None
     source: str | None = None
     question_id: int | None = None
@@ -63,5 +68,4 @@ class HomeworkQuestionOut(BaseModel):
 
 class HomeworkDetail(HomeworkOut):
     content: str | None
-    question_config: dict | None
     questions: list[HomeworkQuestionOut] = []

@@ -9,7 +9,8 @@ import './assets/main.css'
 import {
   Reading, HomeFilled, Collection, EditPen, VideoPlay, Tickets,
   DataAnalysis, TrendCharts, Setting, SwitchButton,
-  Connection, CopyDocument, Printer,
+  Connection, CopyDocument, Printer, Finished, Flag, User,
+  Cpu, ChatDotRound,
 } from '@element-plus/icons-vue'
 
 import App from './App.vue'
@@ -21,7 +22,8 @@ const app = createApp(App)
 const icons = {
   Reading, HomeFilled, Collection, EditPen, VideoPlay, Tickets,
   DataAnalysis, TrendCharts, Setting, SwitchButton,
-  Connection, CopyDocument, Printer,
+  Connection, CopyDocument, Printer, Finished, Flag, User,
+  Cpu, ChatDotRound,
 }
 for (const [key, component] of Object.entries(icons)) {
   app.component(key, component)

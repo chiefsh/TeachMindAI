@@ -47,6 +47,7 @@ BUCKETS = [
     settings.MINIO_BUCKET_TEXTBOOKS,
     settings.MINIO_BUCKET_QUESTIONS,
     settings.MINIO_BUCKET_COURSEWARES,
+    settings.MINIO_BUCKET_GRADING,
 ]
 
 

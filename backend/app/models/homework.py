@@ -40,10 +40,12 @@ class HomeworkPaper(Base, TimestampMixin):
         String(16), default=QuestionSource.ai.value, server_default="ai",
     )
     title: Mapped[str] = mapped_column(String(256), nullable=False)
+    grade_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("grades.id"), nullable=True, index=True)
+    subject_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("subjects.id"), nullable=True, index=True)
     paper_type: Mapped[HomeworkType] = mapped_column(SAEnum(HomeworkType), default=HomeworkType.homework)
     difficulty: Mapped[DifficultyLevel] = mapped_column(SAEnum(DifficultyLevel), default=DifficultyLevel.medium)
     question_config: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    # {"single_choice":5,"fill_blank":3,"short_answer":2}
+    # 旧 {"single_choice":5}；新 {"difficulty_mode","items":[{"type","count","ratios"}]}
     gen_status: Mapped[ParseStatus] = mapped_column(SAEnum(ParseStatus), default=ParseStatus.pending)
     task_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     content: Mapped[str | None] = mapped_column(Text, nullable=True)   # 生成的完整试卷内容
@@ -64,6 +66,7 @@ class HomeworkQuestion(Base):
     content: Mapped[str] = mapped_column(Text, nullable=False)   # 题目内容（题库题或AI生成题）
     options: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     answer: Mapped[str | None] = mapped_column(Text, nullable=True)
+    question_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
     score: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 考试有分；作业为 null
     source: Mapped[str | None] = mapped_column(String(16), nullable=True)  # ai | bank
 

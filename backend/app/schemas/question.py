@@ -19,6 +19,7 @@ class QuestionOut(BaseModel):
     grade_id: int
     tags: list | None
     use_count: int = 0
+    wrong_count: int = 0
     created_at: datetime
     model_config = {"from_attributes": True}
 
@@ -33,6 +34,19 @@ class QuestionCreate(BaseModel):
     explanation: str | None = None
     subject_id: int
     grade_id: int
+    tags: list[str] | None = None
+
+
+class QuestionUpdate(BaseModel):
+    """只更新传入字段。答案/解析可传空字符串清空。"""
+    question_type: QuestionType | None = None
+    difficulty: DifficultyLevel | None = None
+    content: str | None = None
+    options: dict | None = None
+    answer: str | None = None
+    explanation: str | None = None
+    subject_id: int | None = None
+    grade_id: int | None = None
     tags: list[str] | None = None
 
 

@@ -6,7 +6,7 @@ alwaysApply: false
 
 # 学生成绩
 
-- 模型：`Student`、`ExamResult`、`GradeReport`。学生按 `teacher_id` + `grade_id`。
+- 模型：`Student`、`ExamResult`、`GradeReport`。学生按 `teacher_id` + `grade_id`。花名册与行政班在「班级/学生」模块（`SchoolClass`），本模块只做成绩。
 - 录入：单个/批量文件/图片 OCR（`do_ocr_grades`）/ `manual-grades`。
 - 统计：纯函数 `grade_stats.compute_grade_stats`（及格线 60%、优秀线 85%）。高低分线配置在教师设置接口。
 - 报告：`GradeReport.report_type` 为 `stats` 或 `ai`；AI 走 `do_analyze_grades`。

@@ -8,7 +8,14 @@ class StudentCreate(BaseModel):
     student_no: str
     name: str
     grade_id: int
+    class_id: int | None = None
     class_name: str | None = None
+
+
+class StudentUpdate(BaseModel):
+    student_no: str | None = None
+    name: str | None = None
+    class_id: int | None = None
 
 
 class StudentOut(BaseModel):
@@ -16,8 +23,36 @@ class StudentOut(BaseModel):
     student_no: str
     name: str
     grade_id: int
+    class_id: int | None = None
     class_name: str | None
     model_config = {"from_attributes": True}
+
+
+class ClassCreate(BaseModel):
+    grade_id: int
+    name: str
+
+
+class ClassUpdate(BaseModel):
+    name: str | None = None
+
+
+class ClassOut(BaseModel):
+    id: int
+    grade_id: int
+    name: str
+    student_count: int = 0
+    created_at: datetime
+    model_config = {"from_attributes": True}
+
+
+class StudentBatchRow(BaseModel):
+    student_no: str = ""
+    name: str = ""
+
+
+class StudentBatchIn(BaseModel):
+    rows: list[StudentBatchRow]
 
 
 class ExamResultCreate(BaseModel):

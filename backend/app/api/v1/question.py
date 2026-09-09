@@ -10,7 +10,9 @@ from app.core.config import settings
 from app.models.teacher import Teacher
 from app.models.question import Question, QuestionType, DifficultyLevel, QuestionImport
 from app.models.textbook import ParseStatus
-from app.schemas.question import QuestionOut, QuestionCreate, QuestionFilter, QuestionImportOut, QuestionBatchDeleteIn
+from app.schemas.question import (
+    QuestionOut, QuestionCreate, QuestionUpdate, QuestionFilter, QuestionImportOut, QuestionBatchDeleteIn,
+)
 from app.api.deps import get_current_teacher
 from app.services.question_media import (
     public_images, verify_asset_sig, is_safe_object_name,
@@ -270,6 +272,36 @@ async def get_question(
     q = result.scalar_one_or_none()
     if not q:
         raise HTTPException(status_code=404, detail="题目不存在")
+    return _to_out(q, include_html=True)
+
+
+@router.patch("/{question_id}", response_model=QuestionOut)
+async def update_question(
+    question_id: int,
+    data: QuestionUpdate,
+    teacher: Teacher = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(Question).where(Question.id == question_id, Question.teacher_id == teacher.id)
+    )
+    q = result.scalar_one_or_none()
+    if not q:
+        raise HTTPException(status_code=404, detail="题目不存在")
+    payload = data.model_dump(exclude_unset=True)
+    if not payload:
+        return _to_out(q, include_html=True)
+    from app.services.question_bank_service import (
+        apply_question_update, QuestionEmptyError, QuestionDuplicateError,
+    )
+    try:
+        await apply_question_update(db, q, payload)
+    except QuestionEmptyError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except QuestionDuplicateError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    await db.flush()
+    await db.refresh(q)
     return _to_out(q, include_html=True)
 
 

@@ -546,6 +546,28 @@ def build_pdf(content: dict, title: str, images: dict[int, bytes], theme: str | 
 
 # ---------- 作业 / 试卷导出 ----------
 
+_HW_TYPE_CN = {
+    "single_choice": "单选题",
+    "multi_choice": "多选题",
+    "fill_blank": "填空题",
+    "true_false": "判断题",
+    "short_answer": "简答题",
+    "essay": "作文",
+    "calculation": "计算题",
+}
+_HW_SEC = "一二三四五六七八九十"
+
+
+def _homework_section_title(sec_idx: int, qtype: str | None) -> str | None:
+    if not qtype:
+        return None
+    label = _HW_TYPE_CN.get(qtype)
+    if not label:
+        return None
+    prefix = _HW_SEC[sec_idx] if sec_idx < len(_HW_SEC) else str(sec_idx + 1)
+    return f"{prefix}、{label}"
+
+
 def build_homework_docx(title: str, paper_type: str, questions: list[dict]) -> bytes:
     from docx import Document
     from docx.shared import Pt, RGBColor
@@ -566,7 +588,16 @@ def build_homework_docx(title: str, paper_type: str, questions: list[dict]) -> b
     info.alignment = WD_ALIGN_PARAGRAPH.CENTER
     doc.add_paragraph("")
 
+    last_type = object()
+    sec_idx = -1
     for i, q in enumerate(questions, 1):
+        qtype = q.get("question_type")
+        if qtype and qtype != last_type:
+            sec_idx += 1
+            last_type = qtype
+            title_txt = _homework_section_title(sec_idx, qtype)
+            if title_txt:
+                doc.add_paragraph(title_txt)
         p = doc.add_paragraph()
         p.add_run(f"{i}. {q.get('content', '')}")
         score = q.get("score")
@@ -627,7 +658,17 @@ def build_homework_pdf(title: str, paper_type: str, questions: list[dict]) -> by
         Paragraph("姓名：____________　班级：____________　得分：____________", meta_style),
         Spacer(1, 6 * mm),
     ]
+    last_type = object()
+    sec_idx = -1
     for i, q in enumerate(questions, 1):
+        qtype = q.get("question_type")
+        if qtype and qtype != last_type:
+            sec_idx += 1
+            last_type = qtype
+            title_txt = _homework_section_title(sec_idx, qtype)
+            if title_txt:
+                story.append(Paragraph(esc(title_txt), body))
+                story.append(Spacer(1, 1 * mm))
         score = q.get("score")
         suffix = f"（{score} 分）" if paper_type == "exam" and score else ""
         story.append(Paragraph(f"{i}. {esc(q.get('content', ''))} {suffix}", body))

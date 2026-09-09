@@ -1,11 +1,12 @@
 import request from './index'
 import type {
   Textbook, Chapter, Question, QuestionImport, Courseware, HomeworkPaper,
-  Student, ExamResult, ExamSummary, GradeReport, LLMConfig, EmbeddingConfig, TeacherSubject,
+  Student, SchoolClass, ExamResult, ExamSummary, GradeReport, LLMConfig, EmbeddingConfig, TeacherSubject,
   SchoolLevel, Grade, Subject, SubjectPrompt,
   CoursewareSession, SessionBoard, PublicSession,
   AnalysisSet, Paginated, KgNode, KgEdge, KgGraph,
   ShareLink, ShareMeta, SharePayload, ShareResourceType,
+  GradingAssignment, GradingSubmission, WrongQuestionItem,
 } from '@/types'
 
 // ─── 工作台 ────────────────────────────────────────────────────────
@@ -67,6 +68,7 @@ export const questionApi = {
   list: (params?: object) => request.get<{ total: number; items: Question[] }>('/questions', { params }),
   get: (id: number) => request.get<Question>(`/questions/${id}`),
   create: (data: object) => request.post<Question>('/questions', data),
+  update: (id: number, data: object) => request.patch<Question>(`/questions/${id}`, data),
   manual: (data: { text: string; subject_id: number; grade_id: number; use_ai: boolean }) =>
     request.post<{ count: number; created?: number; skipped?: number; items: Question[] }>('/questions/manual', data),
   importFile: (formData: FormData) => request.post('/questions/import-file', formData, {
@@ -168,16 +170,59 @@ export const shareApi = {
 export const homeworkApi = {
   list: (params?: { grade_id?: number; subject_id?: number }) => request.get<HomeworkPaper[]>('/homework', { params }),
   create: (data: object) => request.post<HomeworkPaper>('/homework', data),
+  regenerate: (id: number, data: object) => request.post<HomeworkPaper>(`/homework/${id}/regenerate`, data),
   get: (id: number) => request.get<HomeworkPaper>(`/homework/${id}`),
   exportFile: (id: number, format: 'docx' | 'pdf') =>
     request.get<Blob>(`/homework/${id}/export`, { params: { format }, responseType: 'blob' }),
   delete: (id: number) => request.delete(`/homework/${id}`),
 }
 
+export const classApi = {
+  list: (params?: { grade_id?: number }) => request.get<SchoolClass[]>('/classes', { params }),
+  create: (data: { grade_id: number; name: string }) => request.post<SchoolClass>('/classes', data),
+  update: (id: number, data: { name: string }) => request.patch<SchoolClass>(`/classes/${id}`, data),
+  delete: (id: number) => request.delete(`/classes/${id}`),
+  students: (id: number) => request.get<Student[]>(`/classes/${id}/students`),
+  addStudent: (id: number, data: { student_no: string; name: string; grade_id: number }) =>
+    request.post<Student>(`/classes/${id}/students`, data),
+  batchStudents: (id: number, rows: { student_no: string; name: string }[]) =>
+    request.post<{ created: number; skipped: number }>(`/classes/${id}/students/batch`, { rows }),
+}
+
+// ─── 批改作业/试卷 ─────────────────────────────────────────────────
+export const gradingApi = {
+  listAssignments: (params?: { grade_id?: number; subject_id?: number; class_name?: string }) =>
+    request.get<GradingAssignment[]>('/grading/assignments', { params }),
+  createAssignment: (data: {
+    paper_id: number; grade_id: number; subject_id: number
+    class_id?: number | null; class_name?: string | null; title?: string | null; assigned_at?: string | null
+  }) => request.post<GradingAssignment>('/grading/assignments', data),
+  getAssignment: (id: number) => request.get<GradingAssignment>(`/grading/assignments/${id}`),
+  deleteAssignment: (id: number) => request.delete(`/grading/assignments/${id}`),
+  getSubmission: (assignmentId: number, studentId: number) =>
+    request.get<GradingSubmission>(`/grading/assignments/${assignmentId}/students/${studentId}`),
+  uploadPages: (submissionId: number, formData: FormData) =>
+    request.post<GradingSubmission>(`/grading/submissions/${submissionId}/pages`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 10 * 60 * 1000,
+    }),
+  deletePage: (submissionId: number, pageId: number) =>
+    request.delete<GradingSubmission>(`/grading/submissions/${submissionId}/pages/${pageId}`),
+  gradeAnswers: (submissionId: number, items: object[]) =>
+    request.put<GradingSubmission>(`/grading/submissions/${submissionId}/answers`, { items }),
+  wrongQuestions: (params?: {
+    scope?: 'student' | 'assignment' | 'bank'
+    assignment_id?: number; student_id?: number
+    grade_id?: number; subject_id?: number
+  }) => request.get<WrongQuestionItem[]>('/grading/wrong-questions', { params }),
+}
+
 // ─── 学生成绩 ──────────────────────────────────────────────────────
 export const studentApi = {
   list: (params?: object) => request.get<Student[]>('/students', { params }),
   create: (data: object) => request.post<Student>('/students', data),
+  update: (id: number, data: object) => request.patch<Student>(`/students/${id}`, data),
+  delete: (id: number) => request.delete(`/students/${id}`),
   batchImport: (formData: FormData) => request.post('/students/batch-import', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   }),

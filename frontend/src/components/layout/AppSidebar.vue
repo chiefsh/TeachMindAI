@@ -1,12 +1,10 @@
 <template>
   <div class="h-full flex flex-col" style="background: var(--sidebar-bg); color: var(--sidebar-text)">
-    <div class="h-[60px] flex items-center px-5 gap-2.5 flex-shrink-0">
-      <div class="brand-mark w-8 h-8">
-        <el-icon class="text-sm"><Reading /></el-icon>
-      </div>
-      <div class="leading-tight">
-        <p class="font-semibold text-[15px] tracking-wide" style="color: var(--sidebar-text-active)">智课星</p>
-        <p class="text-[10px] tracking-wider uppercase" style="color: var(--ink-muted)">TeachMind</p>
+    <div class="h-[60px] flex items-center px-4 gap-2.5 flex-shrink-0">
+      <img src="@/assets/logo-mark.png" alt="" class="w-8 h-8 flex-shrink-0 object-contain" />
+      <div class="min-w-0">
+        <p class="font-semibold text-[15px] tracking-wide leading-none" style="color: var(--sidebar-text-active)">知序台</p>
+        <p class="text-[10px] truncate mt-1.5 leading-none" style="color: var(--ink-muted)">让知识与教学变得有序</p>
       </div>
     </div>
 

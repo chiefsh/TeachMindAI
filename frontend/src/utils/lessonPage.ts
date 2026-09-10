@@ -178,7 +178,7 @@ ${overview}
 ${sections}
   </main>
 </div>
-<footer>本网页课件由智课星生成，可离线保存与分享</footer>
+<footer>本网页课件由知序台生成，可离线保存与分享</footer>
 <div class="toolbar">
   <button id="toggle-notes" type="button">显示教师讲稿</button>
 </div>

@@ -1,55 +1,45 @@
 <template>
   <div class="min-h-screen grid lg:grid-cols-2" style="background: var(--canvas)">
     <!-- 品牌侧：桌面端 -->
-    <aside class="relative hidden lg:flex flex-col justify-between overflow-hidden px-14 py-12 text-white login-brand">
+    <aside class="relative hidden lg:flex flex-col justify-center overflow-hidden px-14 py-12 login-brand">
       <div class="login-orb login-orb-a" />
       <div class="login-orb login-orb-b" />
       <div class="login-grid" />
 
-      <div class="relative z-10">
-        <div class="flex items-center gap-3">
-          <div class="brand-mark w-11 h-11">
-            <el-icon class="text-xl"><Reading /></el-icon>
-          </div>
+      <div class="relative z-10 max-w-md">
+        <div class="login-lockup">
+          <img src="@/assets/logo-mark.png" alt="" class="login-mark" />
           <div>
-            <p class="text-lg font-semibold tracking-wide">智课星</p>
-            <p class="text-[11px] tracking-[0.18em] uppercase text-white/50">TeachMind</p>
+            <p class="login-name">知序台</p>
+            <p class="login-tagline">让知识与教学变得有序</p>
           </div>
         </div>
-      </div>
-
-      <div class="relative z-10 max-w-md">
-        <h1 class="text-4xl font-semibold leading-tight tracking-tight">
-          智能辅助，<br />让教学更高效
-        </h1>
-        <p class="mt-4 text-white/65 text-[15px] leading-relaxed">
+        <p class="mt-10 text-[15px] leading-relaxed" style="color: var(--ink-secondary)">
           备课、出题、阅卷分析与知识图谱，集中在一个安静好用的工作台。
         </p>
-        <ul class="mt-10 space-y-4">
-          <li v-for="item in highlights" :key="item.title" class="flex gap-3">
-            <span class="mt-0.5 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-white/10 text-sm font-medium">
-              {{ item.n }}
-            </span>
+        <ul class="mt-8 space-y-3.5">
+          <li v-for="item in highlights" :key="item.title" class="flex items-start gap-3">
+            <span class="login-dot" />
             <div>
-              <p class="font-medium">{{ item.title }}</p>
-              <p class="text-sm text-white/55 mt-0.5">{{ item.desc }}</p>
+              <p class="text-sm font-medium" style="color: var(--ink)">{{ item.title }}</p>
+              <p class="text-[13px] mt-0.5" style="color: var(--ink-muted)">{{ item.desc }}</p>
             </div>
           </li>
         </ul>
       </div>
-
-      <p class="relative z-10 text-xs text-white/35">面向教师的备课与学情工作台</p>
     </aside>
 
     <!-- 表单侧 -->
     <div class="flex items-center justify-center p-5 sm:p-8">
       <div class="w-full max-w-[400px]">
         <div class="lg:hidden text-center mb-8">
-          <div class="brand-mark w-14 h-14 mx-auto mb-4">
-            <el-icon class="text-white text-2xl"><Reading /></el-icon>
+          <div class="login-lockup login-lockup-center">
+            <img src="@/assets/logo-mark.png" alt="" class="login-mark-mobile" />
+            <div>
+              <p class="login-name">知序台</p>
+              <p class="login-tagline">让知识与教学变得有序</p>
+            </div>
           </div>
-          <h1 class="text-2xl font-semibold tracking-tight" style="color: var(--ink)">智课星</h1>
-          <p class="mt-1.5 text-sm" style="color: var(--ink-muted)">智能辅助，让教学更高效</p>
         </div>
 
         <div class="hidden lg:block mb-8">
@@ -139,9 +129,9 @@ const auth = useAuthStore()
 const edu = useEducationStore()
 
 const highlights = [
-  { n: '01', title: '备课出课件', desc: '按课本与知识点生成可演示的课堂内容' },
-  { n: '02', title: '作业与阅卷', desc: '组卷、布置、原卷批改和错题沉淀' },
-  { n: '03', title: '学情看得见', desc: '成绩、试题分析与知识图谱连成一条线' },
+  { title: '备课出课件', desc: '按课本与知识点生成可演示的课堂内容' },
+  { title: '作业与阅卷', desc: '组卷、布置、原卷批改和错题沉淀' },
+  { title: '学情看得见', desc: '成绩、试题分析与知识图谱连成一条线' },
 ]
 
 const formRef = ref()
@@ -202,12 +192,56 @@ onMounted(async () => {
 
 <style scoped>
 .login-brand {
-  background: linear-gradient(165deg, #161821 0%, #25204a 52%, #3730a3 100%);
+  background: var(--canvas);
+  border-right: 1px solid var(--border-subtle);
+  color: var(--ink);
+}
+.login-lockup {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.login-lockup-center {
+  justify-content: center;
+}
+.login-mark {
+  width: 52px;
+  height: 52px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+.login-mark-mobile {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+.login-name {
+  font-size: 26px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  line-height: 1.15;
+  color: var(--ink);
+}
+.login-tagline {
+  margin-top: 14px;
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  color: var(--ink-muted);
+}
+.login-dot {
+  width: 6px;
+  height: 6px;
+  margin-top: 7px;
+  border-radius: 9999px;
+  flex-shrink: 0;
+  background: var(--el-color-primary);
+  opacity: 0.55;
 }
 .login-orb {
   position: absolute;
   border-radius: 9999px;
-  filter: blur(40px);
+  filter: blur(48px);
   pointer-events: none;
 }
 .login-orb-a {
@@ -215,21 +249,21 @@ onMounted(async () => {
   height: 280px;
   right: -60px;
   top: -40px;
-  background: rgba(99, 102, 241, 0.45);
+  background: rgba(79, 70, 229, 0.07);
 }
 .login-orb-b {
   width: 360px;
   height: 360px;
   left: -80px;
   bottom: -80px;
-  background: rgba(245, 158, 11, 0.12);
+  background: rgba(217, 119, 6, 0.05);
 }
 .login-grid {
   position: absolute;
   inset: 0;
   background-image:
-    linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px);
+    linear-gradient(rgba(28, 25, 23, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(28, 25, 23, 0.035) 1px, transparent 1px);
   background-size: 48px 48px;
   mask-image: radial-gradient(ellipse at 30% 40%, black 20%, transparent 70%);
   pointer-events: none;

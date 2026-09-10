@@ -35,13 +35,23 @@
       <el-input v-model="keyword" placeholder="搜索知识点定位" size="small" clearable style="width:180px"
         @keyup.enter="locateByKeyword" />
       <el-button size="small" @click="locateByKeyword">定位</el-button>
+      <el-radio-group v-model="viewMode" size="small" :disabled="!!focusedId">
+        <el-radio-button value="core">只看核心</el-radio-button>
+        <el-radio-button value="all">显示全部</el-radio-button>
+      </el-radio-group>
+      <el-button v-if="focusedId" size="small" @click="exitFocus">退出聚焦</el-button>
+      <span class="text-xs text-slate-400">
+        展示 {{ visibleGraph.nodes.length }} / {{ graph.nodes.length }}
+        <template v-if="focusedId"> · 邻域</template>
+      </span>
       <div class="flex-1" />
-      <div class="flex items-center gap-3 text-xs text-slate-500">
-        <span><i class="inline-block w-4 h-0.5 align-middle" style="background:#6366f1" /> 前置</span>
-        <span><i class="inline-block w-4 h-0.5 align-middle" style="background:#0ea5e9" /> 组成</span>
+      <div class="flex flex-wrap items-center gap-3 text-xs text-slate-500">
+        <span><i class="inline-block w-4 h-0.5 align-middle" style="background:#4f46e5" /> 前置</span>
+        <span><i class="inline-block w-4 h-1 align-middle rounded-sm" style="background:#0284c7" /> 组成</span>
         <span><i class="inline-block w-4 border-t border-dashed align-middle" style="border-color:#94a3b8" /> 相关</span>
-        <span><i class="inline-block w-4 h-0.5 align-middle" style="background:#f59e0b" /> 应用</span>
-        <span><i class="inline-block w-4 border-t border-dashed align-middle" style="border-color:#ec4899" /> 跨学科</span>
+        <span><i class="inline-block w-4 h-0.5 align-middle" style="background:#d97706" /> 应用</span>
+        <span><i class="inline-block w-4 border-t border-dashed align-middle" style="border-color:#be185d" /> 跨学科</span>
+        <span class="text-slate-400">点越大 = 关联越多</span>
       </div>
     </div>
 
@@ -52,8 +62,14 @@
         <el-icon class="text-4xl"><Share /></el-icon>
         <p>暂无知识点。生成课件或点击「从课本抽取」即可自动构建图谱。</p>
       </div>
-      <VChart v-else ref="chartRef" :option="chartOption" autoresize
-        v-loading="loading" @click="onChartClick" style="height:100%" />
+      <div v-else class="relative h-full">
+        <p class="absolute top-2.5 left-3 z-10 text-[11px] text-slate-400 pointer-events-none">
+          {{ chartHint }}
+        </p>
+        <VChart ref="chartRef" :option="chartOption" :update-options="{ notMerge: true }"
+          autoresize v-loading="loading" style="height:100%"
+          @click="onChartClick" @finished="onChartFinished" @graphRoam="onGraphRoam" />
+      </div>
     </div>
 
     <!-- 知识点详情抽屉 -->
@@ -174,21 +190,32 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, nextTick, onMounted } from 'vue'
 import { watchDebounced } from '@vueuse/core'
 import { knowledgeApi, textbookApi } from '@/api/modules'
 import { useEducationStore } from '@/stores/education'
 import { ElMessage } from 'element-plus'
 import { Plus, MagicStick, Connection, Share, Delete, ArrowDown, Right } from '@element-plus/icons-vue'
-import type { KgGraph, KgNode, KgNeighbor, Textbook } from '@/types'
+import type { KgGraph, KgNode, KgEdge, KgNeighbor, Textbook } from '@/types'
 
 import { use } from 'echarts/core'
 import { GraphChart } from 'echarts/charts'
-import { TooltipComponent, LegendComponent } from 'echarts/components'
+import { TooltipComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 import VChart from 'vue-echarts'
 
-use([GraphChart, TooltipComponent, LegendComponent, CanvasRenderer])
+use([GraphChart, TooltipComponent, CanvasRenderer])
+
+const CORE_MAX = 96
+const CORE_EXPAND_CAP = 120
+const LABEL_CORE_COUNT = 28
+const FOCUS_HOPS = 2
+
+const CLUSTER_COLORS = [
+  '#4f46e5', '#0284c7', '#059669', '#d97706',
+  '#7c3aed', '#be185d', '#0f766e', '#b45309',
+]
+const SUBJECT_COLORS = ['#4f46e5', '#0284c7', '#059669', '#d97706', '#7c3aed', '#be185d', '#0f766e', '#b45309']
 
 const edu = useEducationStore()
 const loading = ref(false)
@@ -196,68 +223,261 @@ const submitting = ref(false)
 const graph = ref<KgGraph>({ nodes: [], edges: [] })
 const stats = ref({ point_count: 0, relation_count: 0 })
 const textbooks = ref<Textbook[]>([])
-const chartRef = ref()
+const chartRef = ref<InstanceType<typeof VChart> | null>(null)
 
 const filter = reactive({ subject_id: null as number | null })
 const keyword = ref('')
+const viewMode = ref<'core' | 'all'>('core')
+const focusedId = ref<string | null>(null)
+const pendingHighlight = ref<string | null>(null)
+let extraLabelsOn = false
 
-// 学科选项与年级联动（跟随全局年级）
 const subjectOptions = computed(() =>
   edu.selectedGradeId ? edu.subjectsOfGrade(edu.selectedGradeId) : edu.filteredSubjects)
 
-const REL_META: Record<string, { label: string; color: string; dashed: boolean; tag: any }> = {
-  prerequisite: { label: '前置', color: '#6366f1', dashed: false, tag: 'primary' },
-  part_of: { label: '组成', color: '#0ea5e9', dashed: false, tag: 'info' },
-  related: { label: '相关', color: '#94a3b8', dashed: true, tag: 'info' },
-  application: { label: '应用', color: '#f59e0b', dashed: false, tag: 'warning' },
-  contrast: { label: '对比', color: '#ef4444', dashed: true, tag: 'danger' },
+const REL_META: Record<string, { label: string; color: string; dashed: boolean; tag: any; width: number }> = {
+  prerequisite: { label: '前置', color: '#4f46e5', dashed: false, tag: 'primary', width: 2.4 },
+  part_of: { label: '组成', color: '#0284c7', dashed: false, tag: 'info', width: 2.1 },
+  related: { label: '相关', color: '#94a3b8', dashed: true, tag: 'info', width: 1 },
+  application: { label: '应用', color: '#d97706', dashed: false, tag: 'warning', width: 2.2 },
+  contrast: { label: '对比', color: '#dc2626', dashed: true, tag: 'danger', width: 1.6 },
 }
 const relLabel = (t: string) => REL_META[t]?.label || t
 const relTagType = (t: string) => REL_META[t]?.tag || 'info'
 
-const SUBJECT_COLORS = ['#6366f1', '#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6']
+function shortName(name: string, max = 8) {
+  const s = (name || '').replace(/\s+/g, '')
+  return s.length > max ? `${s.slice(0, max)}…` : s
+}
+
+function buildAdj(nodes: KgNode[], edges: KgEdge[]) {
+  const ids = new Set(nodes.map(n => n.id))
+  const degree = new Map<string, number>()
+  const adj = new Map<string, Set<string>>()
+  for (const n of nodes) {
+    degree.set(n.id, 0)
+    adj.set(n.id, new Set())
+  }
+  for (const e of edges) {
+    if (!ids.has(e.source) || !ids.has(e.target) || e.source === e.target) continue
+    degree.set(e.source, (degree.get(e.source) || 0) + 1)
+    degree.set(e.target, (degree.get(e.target) || 0) + 1)
+    adj.get(e.source)!.add(e.target)
+    adj.get(e.target)!.add(e.source)
+  }
+  return { degree, adj }
+}
+
+function communities(nodeIds: string[], adj: Map<string, Set<string>>) {
+  const parent = new Map<string, string>()
+  const find = (x: string): string => {
+    const p = parent.get(x) ?? x
+    if (p !== x) parent.set(x, find(p))
+    return parent.get(x) ?? x
+  }
+  for (const id of nodeIds) parent.set(id, id)
+  for (const [u, vs] of adj) {
+    for (const v of vs) {
+      const a = find(u), b = find(v)
+      if (a !== b) parent.set(a, b)
+    }
+  }
+  const buckets = new Map<string, string[]>()
+  for (const id of nodeIds) {
+    const r = find(id)
+    const list = buckets.get(r)
+    if (list) list.push(id)
+    else buckets.set(r, [id])
+  }
+  const ranked = [...buckets.values()].sort((a, b) => b.length - a.length)
+  const out = new Map<string, number>()
+  ranked.forEach((members, i) => { for (const id of members) out.set(id, i) })
+  return out
+}
+
+function neighborhood(start: string, adj: Map<string, Set<string>>, hops: number) {
+  const seen = new Set<string>([start])
+  let frontier = [start]
+  for (let h = 0; h < hops; h++) {
+    const next: string[] = []
+    for (const u of frontier) {
+      for (const v of adj.get(u) || []) {
+        if (!seen.has(v)) { seen.add(v); next.push(v) }
+      }
+    }
+    frontier = next
+  }
+  return seen
+}
+
+function pickCore(nodes: KgNode[], degree: Map<string, number>, adj: Map<string, Set<string>>) {
+  if (nodes.length <= CORE_MAX) return nodes
+  const ranked = [...nodes].sort((a, b) => (degree.get(b.id) || 0) - (degree.get(a.id) || 0))
+  const picked = new Set<string>()
+  for (const n of ranked) {
+    if ((degree.get(n.id) || 0) < 1) continue
+    picked.add(n.id)
+    if (picked.size >= CORE_MAX) break
+  }
+  const hubs = ranked.filter(n => picked.has(n.id)).slice(0, 8)
+  for (const h of hubs) {
+    for (const v of adj.get(h.id) || []) {
+      if (picked.size >= CORE_EXPAND_CAP) break
+      picked.add(v)
+    }
+  }
+  if (picked.size < 20) {
+    for (const n of nodes) {
+      picked.add(n.id)
+      if (picked.size >= 80) break
+    }
+  }
+  return nodes.filter(n => picked.has(n.id))
+}
+
+const graphIndex = computed(() => {
+  const { degree, adj } = buildAdj(graph.value.nodes, graph.value.edges)
+  const community = communities(graph.value.nodes.map(n => n.id), adj)
+  const subjects = Array.from(new Set(graph.value.nodes.map(n => n.subject_name || '未分类')))
+  return { degree, adj, community, subjects }
+})
+
+const visibleGraph = computed(() => {
+  const { degree, adj } = graphIndex.value
+  let nodes = graph.value.nodes
+  if (focusedId.value && adj.has(focusedId.value)) {
+    const keep = neighborhood(focusedId.value, adj, FOCUS_HOPS)
+    nodes = nodes.filter(n => keep.has(n.id))
+  } else if (viewMode.value === 'core') {
+    nodes = pickCore(nodes, degree, adj)
+  }
+  const ids = new Set(nodes.map(n => n.id))
+  const edges = graph.value.edges.filter(e => ids.has(e.source) && ids.has(e.target))
+  return { nodes, edges }
+})
+
+const chartHint = computed(() => {
+  if (focusedId.value) return '已聚焦 2 跳邻域 · 点击其他点可继续游走'
+  if (viewMode.value === 'all') return '全图概览 · 滚轮放大后显示更多名称 · 悬停查看邻接'
+  return '核心主干 · 点击节点展开邻域'
+})
+
+function nodeColor(n: KgNode, communityId: number, subjects: string[]) {
+  const multiSubject = subjects.length > 1
+  const subIdx = Math.max(0, subjects.indexOf(n.subject_name || '未分类'))
+  const base = multiSubject
+    ? SUBJECT_COLORS[subIdx % SUBJECT_COLORS.length]
+    : CLUSTER_COLORS[communityId % CLUSTER_COLORS.length]
+  return base
+}
 
 const chartOption = computed(() => {
-  const subjects = Array.from(new Set(graph.value.nodes.map(n => n.subject_name || '未分类')))
-  const categories = subjects.map(s => ({ name: s }))
-  const catIndex = (s?: string) => Math.max(0, subjects.indexOf(s || '未分类'))
-  const nodes = graph.value.nodes.map(n => ({
-    id: n.id,
-    name: n.name,
-    category: catIndex(n.subject_name),
-    symbolSize: 22 + (n.difficulty || 3) * 4,
-    value: n.subject_name || '',
-    itemStyle: { color: SUBJECT_COLORS[catIndex(n.subject_name) % SUBJECT_COLORS.length] },
-  }))
-  const links = graph.value.edges.map(e => {
-    const meta = REL_META[e.type] || REL_META.related
-    const color = e.cross_subject ? '#ec4899' : meta.color
-    const pending = e.status === 'pending'
+  const { degree, community, subjects } = graphIndex.value
+  const rankedVisible = [...visibleGraph.value.nodes]
+    .sort((a, b) => (degree.get(b.id) || 0) - (degree.get(a.id) || 0))
+  const labelIds = new Set(rankedVisible.slice(0, LABEL_CORE_COUNT).map(n => n.id))
+  const focusing = !!focusedId.value
+  const overview = viewMode.value === 'all' && !focusing
+
+  const nodes = visibleGraph.value.nodes.map(n => {
+    const d = degree.get(n.id) || 0
+    const comm = community.get(n.id) || 0
+    const isFocus = n.id === focusedId.value
+    const color = nodeColor(n, comm, subjects)
+    const sizeBase = overview ? 7 : focusing ? 16 : 12
+    const symbolSize = sizeBase + Math.min(d, 12) * (overview ? 1.8 : 2.6) + (isFocus ? 8 : 0)
+    const showLabel = focusing || (!overview && (labelIds.has(n.id) || d >= 3))
     return {
-      source: e.source, target: e.target,
-      lineStyle: {
-        color, width: 1 + (e.weight || 0.5) * 2,
-        type: (e.cross_subject || meta.dashed) ? 'dashed' : 'solid',
-        opacity: pending ? 0.45 : 0.8, curveness: 0.08,
+      id: n.id,
+      name: n.name,
+      shortName: shortName(n.name),
+      degree: d,
+      category: comm,
+      symbolSize,
+      value: n.subject_name || '',
+      z: d + (isFocus ? 50 : 0),
+      itemStyle: {
+        color,
+        opacity: overview ? (d >= 2 ? 0.85 : 0.35) : (d >= 2 || isFocus ? 0.95 : 0.62),
+        borderColor: isFocus ? '#312e81' : '#fff',
+        borderWidth: isFocus ? 3 : 1,
+      },
+      label: {
+        show: showLabel,
+        position: 'right',
+        fontSize: isFocus ? 12 : 10,
+        color: '#44403c',
+        formatter: shortName(n.name, focusing ? 12 : 8),
       },
     }
   })
+
+  const links = visibleGraph.value.edges.map(e => {
+    const meta = REL_META[e.type] || REL_META.related
+    const color = e.cross_subject ? '#be185d' : meta.color
+    const pending = e.status === 'pending'
+    const hub = Math.min(degree.get(e.source) || 0, degree.get(e.target) || 0)
+    const width = (e.cross_subject ? 2.6 : meta.width) + (e.weight || 0.5) * 0.6
+    return {
+      source: e.source, target: e.target,
+      value: 40 + hub * 12,
+      lineStyle: {
+        color,
+        width: overview ? Math.max(0.6, width * 0.55) : width,
+        type: (e.cross_subject || meta.dashed) ? 'dashed' : 'solid',
+        opacity: pending ? 0.35 : (overview ? 0.22 : 0.72),
+        curveness: 0.12,
+      },
+    }
+  })
+
+  const force = focusing
+    ? { repulsion: 520, edgeLength: [90, 170], gravity: 0.06, friction: 0.55 }
+    : overview
+      ? { repulsion: 160, edgeLength: [36, 90], gravity: 0.16, friction: 0.72 }
+      : { repulsion: 430, edgeLength: [70, 190], gravity: 0.1, friction: 0.58 }
+
   return {
-    tooltip: { formatter: (p: any) => (p.dataType === 'node' ? `${p.data.name}<br/>${p.data.value}` : '') },
-    legend: [{ data: subjects, top: 8, textStyle: { fontSize: 11 } }],
+    tooltip: {
+      confine: true,
+      formatter: (p: any) => {
+        if (p.dataType !== 'node') return ''
+        const d = p.data
+        return `${d.name}<br/>${d.value || '未分类'} · 关联 ${d.degree || 0} 个`
+      },
+    },
     series: [{
-      type: 'graph', layout: 'force', roam: true, draggable: true,
-      categories, data: nodes, links,
-      label: { show: true, position: 'right', fontSize: 11, formatter: '{b}' },
-      edgeSymbol: ['none', 'arrow'], edgeSymbolSize: 7,
-      force: { repulsion: 260, edgeLength: 120, gravity: 0.08 },
-      emphasis: { focus: 'adjacency', lineStyle: { width: 4 } },
+      type: 'graph',
+      layout: 'force',
+      roam: true,
+      draggable: true,
+      data: nodes,
+      links,
+      scaleLimit: { min: 0.35, max: 4 },
+      edgeSymbol: ['none', 'arrow'],
+      edgeSymbolSize: overview ? 5 : 8,
+      force,
+      emphasis: {
+        focus: 'adjacency',
+        scale: true,
+        label: { show: true, fontSize: 12, formatter: (p: any) => p.data?.name || p.name },
+        itemStyle: { borderColor: '#312e81', borderWidth: 2 },
+        lineStyle: { width: 3.2, opacity: 1 },
+      },
+      blur: {
+        itemStyle: { opacity: 0.12 },
+        lineStyle: { opacity: 0.08 },
+        label: { opacity: 0.15 },
+      },
     }],
   }
 })
 
 async function load() {
   loading.value = true
+  focusedId.value = null
+  pendingHighlight.value = null
+  extraLabelsOn = false
   try {
     const [g, s] = await Promise.all([
       knowledgeApi.getGraph({
@@ -290,9 +510,62 @@ watchDebounced(() => [edu.selectedGradeId, edu.selectedSubjectId], () => {
   load(); loadTextbooks()
 }, { debounce: 250 })
 
-// ── 详情抽屉 ──
 const drawerVisible = ref(false)
 const current = ref<KgNode | null>(null)
+
+function chartInst() {
+  return chartRef.value as any
+}
+
+function highlightNode(id: string) {
+  const chart = chartInst()
+  if (!chart?.dispatchAction) return
+  const idx = visibleGraph.value.nodes.findIndex(n => n.id === id)
+  if (idx < 0) return
+  chart.dispatchAction({ type: 'downplay', seriesIndex: 0 })
+  chart.dispatchAction({ type: 'highlight', seriesIndex: 0, dataIndex: idx })
+  chart.dispatchAction({ type: 'focusNodeAdjacency', seriesIndex: 0, dataIndex: idx })
+}
+
+function onChartFinished() {
+  if (pendingHighlight.value) {
+    highlightNode(pendingHighlight.value)
+    pendingHighlight.value = null
+  }
+}
+
+function onGraphRoam(ev: any) {
+  if (viewMode.value !== 'all' || focusedId.value) return
+  const zoom = Number(ev?.zoom ?? 1)
+  const want = zoom >= 1.55
+  if (want === extraLabelsOn) return
+  extraLabelsOn = want
+  const chart = chartInst()
+  if (!chart?.getOption) return
+  const series = chart.getOption()?.series?.[0]
+  if (!series?.data) return
+  const data = series.data.map((d: any) => ({
+    ...d,
+    label: { ...(typeof d.label === 'object' ? d.label : {}), show: want && (d.degree || 0) >= 2 },
+  }))
+  chart.setOption({ series: [{ layout: 'none', data }] })
+}
+
+function enterFocus(id: string) {
+  extraLabelsOn = false
+  const same = focusedId.value === id
+  focusedId.value = id
+  pendingHighlight.value = id
+  if (same) highlightNode(id)
+}
+
+function exitFocus() {
+  extraLabelsOn = false
+  focusedId.value = null
+  pendingHighlight.value = null
+  const chart = chartInst()
+  chart?.dispatchAction?.({ type: 'downplay', seriesIndex: 0 })
+}
 
 async function openNode(id: string) {
   try {
@@ -302,12 +575,18 @@ async function openNode(id: string) {
     ElMessage.error('知识点不存在')
   }
 }
-function onChartClick(p: any) {
-  if (p.dataType === 'node') openNode(p.data.id)
-}
-function focusNode(id: string) { openNode(id) }
 
-// ── 抽取 / 发现 ──
+function onChartClick(p: any) {
+  if (p.dataType !== 'node' || !p.data?.id) return
+  enterFocus(p.data.id)
+  openNode(p.data.id)
+}
+
+function focusNode(id: string) {
+  if (graph.value.nodes.some(n => n.id === id)) enterFocus(id)
+  openNode(id)
+}
+
 async function extractTextbook(textbookId: number) {
   await knowledgeApi.extractTextbook(textbookId)
   ElMessage.success('已提交抽取任务，知识点将陆续入图')
@@ -323,11 +602,18 @@ async function locateByKeyword() {
   const rs = await knowledgeApi.searchPoints({
     keyword: keyword.value, subject_id: filter.subject_id || undefined, limit: 1,
   }) as any
-  if (rs.length) openNode(rs[0].id)
-  else ElMessage.info('未找到匹配的知识点')
+  if (!rs.length) { ElMessage.info('未找到匹配的知识点'); return }
+  const id = rs[0].id as string
+  if (!graph.value.nodes.some(n => n.id === id)) {
+    ElMessage.info('已打开详情，但该点不在当前筛选图中')
+    await openNode(id)
+    return
+  }
+  enterFocus(id)
+  await openNode(id)
+  await nextTick()
 }
 
-// ── 新建知识点 ──
 const createVisible = ref(false)
 const createForm = reactive({
   name: '', subject_id: null as number | null, difficulty: 3, description: '',
@@ -354,7 +640,6 @@ async function submitCreate() {
   } finally { submitting.value = false }
 }
 
-// ── 关系 ──
 const relVisible = ref(false)
 const relForm = reactive({ rel_type: 'related', to_id: '' })
 const targetOptions = ref<KgNode[]>([])

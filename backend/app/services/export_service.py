@@ -210,7 +210,7 @@ def _build_pptx_shapes(content: dict, title: str, images: dict[int, bytes], them
                 sub.text = line
                 sub.font.size = Pt(16)
                 sub.font.color.rgb = c_white
-            _textbox(slide, Inches(6.2), Inches(3.0), Inches(6.4), Inches(1.2), "智课星教学课件", 18, c_muted)
+            _textbox(slide, Inches(6.2), Inches(3.0), Inches(6.4), Inches(1.2), "知序台教学课件", 18, c_muted)
         elif cover_style == "ribbon":
             _bg(slide, c_bg)
             _deco(slide)
@@ -338,7 +338,7 @@ def _build_pptx_shapes(content: dict, title: str, images: dict[int, bytes], them
 
     add_cover_slide(
         meta.get("title") or title,
-        [meta.get("duration", ""), "智课星教学课件"],
+        [meta.get("duration", ""), "知序台教学课件"],
     )
     for h, items in _meta_blocks(meta):
         add_text_slide(h, [f"• {x}" for x in items], kind="objectives")

@@ -298,7 +298,7 @@ function coverInner(slide: any, theme: CoursewareTheme, ctx: SlideCtx): string {
   const chap = ctx.chapter ? `<span class="cw-kicker">${esc(ctx.chapter)}</span>` : kicker('课程封面')
   if (style === 'split') {
     return `<div class="cw-cover-panel"><div>${chap}</div><h1>${title}</h1>${sub}</div>
-      <div class="cw-cover-side">${badge}<p style="color:var(--c-muted);font-size:.95em">智课星教学课件</p></div>`
+      <div class="cw-cover-side">${badge}<p style="color:var(--c-muted);font-size:.95em">知序台教学课件</p></div>`
   }
   if (style === 'ribbon') {
     return `${badge}<div class="cw-ribbon"><div>${chap}</div><h1>${title}</h1>${sub}</div>`

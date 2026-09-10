@@ -83,12 +83,6 @@ html, body, #app {
   min-width: 560px;
 }
 
-.brand-mark {
-  @apply relative flex items-center justify-center rounded-xl text-white;
-  background: linear-gradient(145deg, #6366f1 0%, #4338ca 100%);
-  box-shadow: 0 6px 16px rgba(79, 70, 229, 0.28);
-}
-
 @media (max-width: 767px) {
   .el-dialog {
     --el-dialog-width: 92vw !important;

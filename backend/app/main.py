@@ -286,8 +286,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="智课星",
-    description="智课星 · AI 辅助教师日常教学工作平台",
+    title="知序台",
+    description="知序台 · 让知识与教学变得有序",
     version="1.0.0",
     lifespan=lifespan,
 )
@@ -324,4 +324,4 @@ app.include_router(ws.router, prefix="/api/v1")
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "service": "智课星"}
+    return {"status": "ok", "service": "知序台"}

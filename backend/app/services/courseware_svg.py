@@ -524,7 +524,7 @@ def _paint_cover(p: Page, slide: dict, subject: str, chapter: str) -> None:
             sw = min(400, _measure(sl, SZ_CAPTION) + 40)
             right.append(p.rect(620, 300, sw, 44, th["surface"], rx=22))
             right.append(p.text(638, 328, sl, SZ_CAPTION, th["text"], "600"))
-        right.append(p.text(620, 390, "智课星教学课件", SZ_BODY, th["muted"]))
+        right.append(p.text(620, 390, "知序台教学课件", SZ_BODY, th["muted"]))
         p.group("cover-right", 600, 280, 620, 180, "".join(right))
         return
 

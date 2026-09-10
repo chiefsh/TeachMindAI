@@ -13,7 +13,8 @@ alwaysApply: false
 | `edu-solid-geometry` | 数学 | runner: `skill_runners/solid_geometry_runner.py`；内核 `lib/geometry_kernel.py` |
 | `edu-analytic-geometry` | 数学 | CLI `scripts/generate.py`；内核 `lib/analytic_kernel.py` |
 | `edu-chem-reaction` | 化学/生物 | CLI `scripts/generate.py`；内核 `lib/reaction_kernel.py` |
+| `edu-chem-lab` | 化学/科学 | CLI `scripts/generate.py`；宏观实验台 `template/lab.html` |
 
-能力表与路由：`skill_service.SKILL_CAPABILITIES`、`route_math_point` / `route_chem_point`。任何失败返回 `""`，由 `ai_service` 回退。
+能力表与路由：`skill_service.SKILL_CAPABILITIES`、`LAB_CATALOG`、`route_math_point` / `route_chem_point` / `route_chem_lab_point`。任何失败返回 `""`，由 `ai_service` 回退。
 
-题型 schema 在各 skill 的 `references/`。接入清单：`docs/skill-integration-plan.md`。前端零改动（仍是整页 HTML iframe）。
+题型 schema 在各 skill 的 `references/`。接入清单：`docs/skill-integration-plan.md`。宏观实验目录走 `GET /coursewares/lab-experiments`，前端不要写死 key。

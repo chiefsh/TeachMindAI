@@ -631,13 +631,21 @@ async def _extract_knowledge_points(
             "教师对难度、节奏、练习的要求写进 activity_goal。"
         )
         focus_field = ',\n      "teacher_focus": "本点如何落实教师想法（一两句）"'
+    lab_rule = ""
+    if getattr(cw, "want_virtual_lab", False):
+        lab_rule = (
+            "\n7. 教师要求本课必须有可操作的化学实验：优先抽取与实验装置、药品、现象、"
+            "安全操作相关的知识点（如制取氧气/氢气/二氧化碳、电解水、酸碱中和、金属与酸、"
+            "碳酸氢铵分解、铁丝在氧气中燃烧、过滤、蒸发结晶、配制溶液），"
+            "activity_goal 写成学生能动手完成的实验目标。"
+        )
     system_prompt = f"""你是资深教研专家。请先分析课本内容，抽取可直接用于上课的知识点，输出 JSON。{subject_hint}
 
 要求：
 1. 只保留最关键、最适合课堂互动的知识点，3~4个。
 2. 解释要生动、有趣、直白，便于学生快速理解；每个知识点必须给生活化例子。
 3. 每个知识点都给一个可操作的互动目标（activity_goal），用于后续生成互动课件。
-4. 只输出 JSON，不要解释，不要 markdown 代码块。{web_rule}{intent_rule}
+4. 只输出 JSON，不要解释，不要 markdown 代码块。{web_rule}{intent_rule}{lab_rule}
 
 JSON 格式：
 {{
@@ -1142,7 +1150,12 @@ async def _rewrite_one_slide(
         html = ""
         routed = None
         try:
-            html, routed = await skill_service.maybe_generate_skill(cfg, point, subject_name)
+            prev = slide.get("skill") if isinstance(slide.get("skill"), dict) else {}
+            lab_key = prev.get("problem_type") if prev.get("skill") == "edu-chem-lab" else None
+            prefer_lab = bool(lab_key) or ("实验" in (instruction or slide.get("title") or ""))
+            html, routed = await skill_service.maybe_generate_skill(
+                cfg, point, subject_name, lab_key=lab_key, prefer_lab=prefer_lab,
+            )
         except Exception as e:
             logger.warning("单页优化 skill 失败，回退 LLM：%s", e)
         if not html:
@@ -1380,6 +1393,17 @@ async def _generate_lesson_content(
             interactive_jobs.append((len(slides) - 1, point_i, p))
         idx += 1
 
+    lab_point_i = None
+    lab_type = None
+    want_lab = bool(getattr(cw, "want_virtual_lab", False)) and bool(cw.is_interactive)
+    if want_lab:
+        from app.services import skill_service as _skill
+        explicit = getattr(cw, "virtual_lab_key", None)
+        if _skill._is_lab_subject(subject_name) or explicit:
+            picked = _skill.pick_chem_lab(points, cw.title, explicit)
+            if picked:
+                lab_point_i, lab_type = picked[0] + 1, picked[1]  # point_i 从 1 计
+
     if interactive_jobs:
         import asyncio
         from app.services import skill_service
@@ -1389,8 +1413,13 @@ async def _generate_lesson_content(
             async with sem:
                 html = ""
                 routed = None
+                use_lab = bool(lab_type) and point_i == lab_point_i
                 try:
-                    html, routed = await skill_service.maybe_generate_skill(cfg, p, subject_name)
+                    html, routed = await skill_service.maybe_generate_skill(
+                        cfg, p, subject_name,
+                        lab_key=lab_type if use_lab else None,
+                        prefer_lab=use_lab,
+                    )
                 except Exception as e:
                     logger.warning("课件 %s 知识点 %s skill 生成失败，回退 LLM：%s", cw.id, p.get("name"), e)
                 if not html:
@@ -1410,6 +1439,30 @@ async def _generate_lesson_content(
                 slides[slide_i]["html"] = html
             if routed:
                 slides[slide_i]["skill"] = routed
+                if routed.get("skill") == "edu-chem-lab":
+                    slides[slide_i]["title"] = "虚拟实验台"
+                    slides[slide_i]["subtitle"] = "选仪器 · 加药品 · 观察现象 · 安全操作"
+                    slides[slide_i]["notes"] = "让学生按步骤操作，错了先讲安全再重做。"
+
+        if want_lab and lab_type and not any(
+            isinstance(slides[i].get("skill"), dict)
+            and slides[i]["skill"].get("skill") == "edu-chem-lab"
+            for i, _, _ in interactive_jobs
+        ):
+            try:
+                routed = {
+                    "skill": "edu-chem-lab", "problem_type": lab_type, "spec": {},
+                }
+                html = await skill_service.render_chem_lab_html(routed)
+                if html:
+                    slide_i = interactive_jobs[0][0]
+                    slides[slide_i]["html"] = html
+                    slides[slide_i]["skill"] = routed
+                    slides[slide_i]["title"] = "虚拟实验台"
+                    slides[slide_i]["subtitle"] = "选仪器 · 加药品 · 观察现象 · 安全操作"
+                    slides[slide_i]["notes"] = "让学生按步骤操作，错了先讲安全再重做。"
+            except Exception as e:
+                logger.warning("课件 %s 强制生成虚拟实验失败：%s", cw.id, e)
 
     mistakes = [m for p in points for m in (p.get("common_mistakes") or [])][:4]
     if mistakes:

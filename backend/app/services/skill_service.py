@@ -63,6 +63,10 @@ SKILL_CAPABILITIES: dict[str, dict] = {
             "glucose_combustion": "葡萄糖有氧氧化（细胞呼吸）",
         },
     },
+    "edu-chem-lab": {
+        "subjects": ["化学", "科学"],
+        "problem_types": {},  # 由 LAB_CATALOG 填入
+    },
 }
 
 
@@ -73,6 +77,93 @@ def _is_math(subject: str) -> bool:
 def _is_chem(subject: str) -> bool:
     s = subject or ""
     return ("化学" in s) or ("生物" in s)
+
+
+def _is_lab_subject(subject: str) -> bool:
+    s = subject or ""
+    return ("化学" in s) or ("科学" in s)
+
+
+# 宏观实验目录：匹配、课件下拉、PPT 题名共用。新增实验先改 generate.py REGISTRY，再在此补一行。
+LAB_CATALOG: list[dict] = [
+    {"key": "prep_oxygen_kmno4", "title": "高锰酸钾制取氧气", "group": "制取气体",
+     "keywords": ("氧气", "制氧", "制取氧气", "高锰酸钾", "氯酸钾", "过氧化氢", "带火星", "复燃")},
+    {"key": "prep_hydrogen", "title": "锌和稀盐酸制取氢气", "group": "制取气体",
+     "keywords": ("氢气", "制氢", "锌粒", "爆鸣", "验纯", "向下排空气")},
+    {"key": "prep_co2", "title": "大理石和稀盐酸制取二氧化碳", "group": "制取气体",
+     "keywords": ("二氧化碳", "大理石", "石灰石", "变浑浊", "向上排空气")},
+    {"key": "electrolysis", "title": "电解水", "group": "反应与性质",
+     "keywords": ("电解水", "正氧负氢", "霍夫曼", "通电分解")},
+    {"key": "neutralization", "title": "酸碱中和（酚酞指示剂）", "group": "反应与性质",
+     "keywords": ("中和", "酚酞", "滴定", "指示剂", "恰好完全")},
+    {"key": "metal_acid", "title": "金属与稀盐酸反应", "group": "反应与性质",
+     "keywords": ("金属活动性", "置换氢", "锌和稀盐酸", "铁和稀盐酸", "铜不反应")},
+    {"key": "nh4hco3_decomp", "title": "碳酸氢铵受热分解", "group": "反应与性质",
+     "keywords": ("碳酸氢铵", "铵盐分解", "湿润红色石蕊", "扇闻")},
+    {"key": "iron_in_oxygen", "title": "铁丝在氧气中燃烧", "group": "反应与性质",
+     "keywords": ("铁丝", "铁丝燃烧", "火星四射", "氧气中燃烧", "四氧化三铁", "瓶底留水")},
+    {"key": "filtration", "title": "过滤", "group": "基本操作",
+     "keywords": ("过滤", "滤纸", "一贴二低三靠", "残渣")},
+    {"key": "evaporation", "title": "蒸发结晶", "group": "基本操作",
+     "keywords": ("蒸发", "结晶", "蒸发皿", "余热蒸干", "飞溅")},
+    {"key": "solution_prep", "title": "配制一定溶质质量分数的溶液", "group": "基本操作",
+     "keywords": ("溶质质量分数", "配制溶液", "称量", "量筒", "托盘天平")},
+]
+LAB_KEYWORDS: dict[str, tuple[str, ...]] = {e["key"]: e["keywords"] for e in LAB_CATALOG}
+SKILL_CAPABILITIES["edu-chem-lab"]["problem_types"] = {
+    e["key"]: f"{e['title']}（宏观实验台）" for e in LAB_CATALOG
+}
+
+
+def known_lab_keys() -> set[str]:
+    return {e["key"] for e in LAB_CATALOG}
+
+
+def lab_experiment_catalog() -> dict:
+    """给前端下拉用：按 group 原序返回。"""
+    return {
+        "items": [{"key": e["key"], "title": e["title"], "group": e["group"]} for e in LAB_CATALOG],
+    }
+
+
+def match_lab_key(text: str, explicit: str | None = None) -> str | None:
+    """从指定 key 或关键词中解析宏观实验题型。"""
+    caps = SKILL_CAPABILITIES["edu-chem-lab"]["problem_types"]
+    key = (explicit or "").strip()
+    if key in caps:
+        return key
+    blob = text or ""
+    best_key, best_n = None, 0
+    for k, words in LAB_KEYWORDS.items():
+        n = sum(1 for w in words if w in blob)
+        if n > best_n:
+            best_key, best_n = k, n
+    return best_key
+
+
+def pick_chem_lab(
+    points: list[dict],
+    title: str = "",
+    lab_key: str | None = None,
+    default: str | None = "prep_oxygen_kmno4",
+) -> tuple[int, str] | None:
+    """给整课指定 1 个宏观实验：返回 (知识点下标, problem_type)。"""
+    caps = SKILL_CAPABILITIES["edu-chem-lab"]["problem_types"]
+    blob = title or ""
+    for p in points or []:
+        blob += " " + str(p.get("name") or "") + " " + str(p.get("plain_explanation") or "")
+        blob += " " + str(p.get("activity_goal") or "")
+    key = match_lab_key(blob, lab_key) or (default if default in caps else None)
+    if not key:
+        return None
+    words = LAB_KEYWORDS.get(key, ())
+    best_i, best_n = 0, -1
+    for i, p in enumerate(points or []):
+        text = " ".join(str(p.get(k) or "") for k in ("name", "plain_explanation", "activity_goal"))
+        n = sum(1 for w in words if w in text)
+        if n > best_n:
+            best_i, best_n = i, n
+    return best_i, key
 
 
 # ---------------------------------------------------------------------------
@@ -156,6 +247,24 @@ async def route_math_point(cfg, point: dict, subject_name: str) -> dict | None:
 # ---------------------------------------------------------------------------
 # 路由：化学 / 生物（化学反应）
 # ---------------------------------------------------------------------------
+async def route_chem_lab_point(
+    point: dict,
+    subject_name: str,
+    lab_key: str | None = None,
+    force: bool = False,
+) -> dict | None:
+    """宏观实验台路由：指定 key 或关键词命中；force 时用默认制氧实验。"""
+    if not force and not lab_key and not _is_lab_subject(subject_name):
+        return None
+    text = " ".join(str(point.get(k) or "") for k in ("name", "plain_explanation", "activity_goal"))
+    key = match_lab_key(text, lab_key)
+    if not key and force:
+        key = "prep_oxygen_kmno4"
+    if not key:
+        return None
+    return {"skill": "edu-chem-lab", "problem_type": key, "spec": {}}
+
+
 async def route_chem_point(cfg, point: dict, subject_name: str) -> dict | None:
     """判断化学/生物知识点能否用化学反应 skill 演示。命中返回 routed，否则 None。"""
     if not _is_chem(subject_name):
@@ -301,24 +410,37 @@ async def render_chem_reaction_html(routed: dict, timeout: float = 45.0) -> str:
     return await _render_via_cli("edu-chem-reaction", routed["problem_type"], timeout)
 
 
+async def render_chem_lab_html(routed: dict, timeout: float = 20.0) -> str:
+    return await _render_via_cli("edu-chem-lab", routed["problem_type"], timeout)
+
+
 _RENDERERS = {
     "edu-solid-geometry": render_solid_geometry_html,
     "edu-analytic-geometry": render_analytic_geometry_html,
     "edu-chem-reaction": render_chem_reaction_html,
+    "edu-chem-lab": render_chem_lab_html,
 }
 
 
 # ---------------------------------------------------------------------------
 # 统一入口：供 ai_service 调用。命中并成功则返回整页 HTML，否则返回 ''。
 # ---------------------------------------------------------------------------
-async def maybe_generate_skill(cfg, point: dict, subject_name: str) -> tuple[str, dict | None]:
+async def maybe_generate_skill(
+    cfg, point: dict, subject_name: str,
+    *, lab_key: str | None = None, prefer_lab: bool = False,
+) -> tuple[str, dict | None]:
     """尝试用 skill 生成互动 HTML，并带回可导出的 routed 规格。失败返回 ('', None)。"""
     routed = None
     try:
-        if _is_math(subject_name):
-            routed = await route_math_point(cfg, point, subject_name)
-        elif _is_chem(subject_name):
-            routed = await route_chem_point(cfg, point, subject_name)
+        if prefer_lab or lab_key:
+            routed = await route_chem_lab_point(
+                point, subject_name, lab_key=lab_key, force=prefer_lab,
+            )
+        if not routed:
+            if _is_math(subject_name):
+                routed = await route_math_point(cfg, point, subject_name)
+            elif _is_chem(subject_name):
+                routed = await route_chem_point(cfg, point, subject_name)
     except Exception as e:
         logger.warning("skill 路由异常：%s", e)
         return "", None

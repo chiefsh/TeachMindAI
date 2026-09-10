@@ -103,7 +103,10 @@ export type RenderStyle = 'ppt' | 'html'
 export interface Courseware {
   id: number; title: string; courseware_type: string; gen_status: ParseStatus
   render_style?: RenderStyle; theme?: string
-  is_interactive: boolean; textbook_id?: number; grade_id?: number; subject_id?: number
+  is_interactive: boolean
+  want_virtual_lab?: boolean
+  virtual_lab_key?: string | null
+  textbook_id?: number; grade_id?: number; subject_id?: number
   task_id?: string; created_at: string
   content?: Record<string, unknown>; custom_prompt?: string
   chapter_range?: { chapter_ids?: number[] } | Record<string, number>
@@ -112,6 +115,12 @@ export interface Courseware {
   is_owner?: boolean
   can_edit?: boolean
   can_manage_collab?: boolean
+}
+
+export interface LabExperiment {
+  key: string
+  title: string
+  group: string
 }
 
 export interface CoursewareVersion {

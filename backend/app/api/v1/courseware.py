@@ -67,6 +67,15 @@ async def list_coursewares(
     return {"total": total, "page": page, "page_size": page_size, "items": items}
 
 
+@router.get("/lab-experiments")
+async def list_lab_experiments(
+    teacher: Teacher = Depends(get_current_teacher),
+):
+    """宏观虚拟实验目录（创建课件下拉的单一数据源）。"""
+    from app.services.skill_service import lab_experiment_catalog
+    return lab_experiment_catalog()
+
+
 @router.post("", response_model=CoursewareOut, status_code=201)
 async def create_courseware(
     data: CoursewareCreate,
@@ -84,6 +93,8 @@ async def create_courseware(
         theme=data.theme,
         custom_prompt=data.custom_prompt,
         is_interactive=data.is_interactive,
+        want_virtual_lab=bool(data.want_virtual_lab) and bool(data.is_interactive),
+        virtual_lab_key=data.virtual_lab_key if data.is_interactive else None,
         gen_status=ParseStatus.pending,
     )
     db.add(cw)
@@ -260,6 +271,8 @@ async def regenerate_courseware(
     cw.theme = data.theme
     cw.custom_prompt = data.custom_prompt
     cw.is_interactive = data.is_interactive
+    cw.want_virtual_lab = bool(data.want_virtual_lab) and bool(data.is_interactive)
+    cw.virtual_lab_key = data.virtual_lab_key if data.is_interactive else None
     flag_modified(cw, "chapter_range")
     flag_modified(cw, "page_range")
     cw.content = None
@@ -365,6 +378,8 @@ async def copy_courseware(
         content=content,
         gen_status=gen_status,
         is_interactive=src.is_interactive,
+        want_virtual_lab=bool(src.want_virtual_lab),
+        virtual_lab_key=src.virtual_lab_key,
         task_id=None,
     )
     db.add(clone)

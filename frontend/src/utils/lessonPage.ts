@@ -1,7 +1,7 @@
 // 网页样式课件：把课件内容渲染成一份自包含、可独立打开的单页教学网页。
 // 与 revealDeck.ts 对称——一个产出演示文稿（reveal.js），一个产出滚动阅读的网页；
 // 互动片段同样复用 wrapInteractiveHtml，保证两种样式下的互动表现一致。
-import { wrapInteractiveHtml } from './coursewareFrame'
+import { wrapInteractiveHtml, IFRAME_AUTO_HEIGHT } from './coursewareFrame'
 import { getTheme, type CoursewareTheme } from './coursewareTheme'
 import {
   buildSlideInner, decoSvg, esc, mediaFromSlide, pageCss, pageTypeLabel,
@@ -97,6 +97,7 @@ const PAGE_SCRIPT = `
   window.addEventListener('load', renderMath);
 })();
 `
+ + IFRAME_AUTO_HEIGHT
 
 interface PageImageMap { [id: string]: string }
 

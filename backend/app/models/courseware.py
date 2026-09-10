@@ -37,6 +37,8 @@ class Courseware(Base, TimestampMixin):
     # 视觉主题 key，见 services/courseware_theme.py；旧值 indigo 等会映射到现行主题
     theme: Mapped[str] = mapped_column(String(24), default="indigo", server_default="indigo")
     custom_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)   # 教师自定义提示词
+    want_virtual_lab: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    virtual_lab_key: Mapped[str | None] = mapped_column(String(64), nullable=True)  # 指定实验；空则自动匹配
     content: Mapped[dict | None] = mapped_column(JSON, nullable=True)        # 幻灯片结构 JSON
     gen_status: Mapped[ParseStatus] = mapped_column(
         SAEnum(ParseStatus), default=ParseStatus.pending

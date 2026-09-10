@@ -4,7 +4,7 @@ import type {
   Student, SchoolClass, ExamResult, ExamSummary, GradeReport, LLMConfig, EmbeddingConfig, TeacherSubject,
   SchoolLevel, Grade, Subject, SubjectPrompt,
   CoursewareSession, SessionBoard, PublicSession, CoursewareVersion,
-  AnalysisSet, Paginated, KgNode, KgEdge, KgGraph,
+  AnalysisSet, Paginated, KgNode, KgEdge, KgGraph, LabExperiment,
   ShareLink, ShareMeta, SharePayload, ShareResourceType,
   GradingAssignment, GradingSubmission, WrongQuestionItem,
   CollectMeta,
@@ -87,6 +87,8 @@ export const coursewareApi = {
   list: (params?: { grade_id?: number; subject_id?: number; page?: number; page_size?: number }) =>
     request.get<Paginated<Courseware>>('/coursewares', { params }),
   create: (data: object) => request.post<Courseware>('/coursewares', data),
+  listLabExperiments: () =>
+    request.get<{ items: LabExperiment[] }>('/coursewares/lab-experiments'),
   get: (id: number) => request.get<Courseware>(`/coursewares/${id}`),
   getStatus: (id: number) => request.get(`/coursewares/${id}/status`),
   regenerate: (id: number, data: object) => request.post<Courseware>(`/coursewares/${id}/regenerate`, data),

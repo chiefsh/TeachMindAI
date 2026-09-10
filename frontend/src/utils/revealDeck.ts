@@ -1,6 +1,6 @@
 // 用 reveal.js 把课件内容渲染成专业演示文稿（转场动画 / 演讲者视图 / 键盘翻页）。
 // 互动页以内嵌 iframe 形式渲染，复用 wrapInteractiveHtml 保证隔离与统一样式。
-import { wrapInteractiveHtml } from './coursewareFrame'
+import { wrapInteractiveHtml, IFRAME_AUTO_HEIGHT } from './coursewareFrame'
 import { getTheme, type CoursewareTheme } from './coursewareTheme'
 import {
   buildSlideInner, decoSvg, esc, mediaFromSlide, pageCss,
@@ -142,6 +142,7 @@ ${sections.join('\n')}
     }
   });
 </script>
+<script>${IFRAME_AUTO_HEIGHT}</script>
 </body>
 </html>`
 }

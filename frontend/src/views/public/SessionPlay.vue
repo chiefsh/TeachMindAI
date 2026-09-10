@@ -40,7 +40,7 @@
               :srcdoc="wrapInteractiveHtml(activeSlide.html, session?.theme || undefined)"
               sandbox="allow-scripts"
               class="w-full bg-white"
-              style="height:72vh;border:0"
+              :style="{ height: frameHeight, border: 0 }"
             ></iframe>
           </div>
 
@@ -82,7 +82,7 @@ import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft, ArrowRight, Loading, CircleClose } from '@element-plus/icons-vue'
 import { publicApi } from '@/api/modules'
-import { wrapInteractiveHtml } from '@/utils/coursewareFrame'
+import { wrapInteractiveHtml, isAppInteractiveHtml } from '@/utils/coursewareFrame'
 import type { PublicSession } from '@/types'
 
 const route = useRoute()
@@ -98,6 +98,7 @@ const nameInput = ref('')
 const studentName = ref('')
 const lastSavedAt = ref(0)
 const slideStart = ref(Date.now())
+const frameHeight = ref('72vh')
 
 const interactiveSlides = computed<any[]>(() => {
   // 后端已仅下发含互动的页，并用 pos 标注其在原课件中的页序
@@ -105,7 +106,14 @@ const interactiveSlides = computed<any[]>(() => {
 })
 const activeSlide = computed(() => interactiveSlides.value[current.value] || null)
 
-watch(current, () => { slideStart.value = Date.now() })
+watch(current, () => {
+  slideStart.value = Date.now()
+  frameHeight.value = isAppInteractiveHtml(activeSlide.value?.html) ? '78vh' : '72vh'
+})
+
+watch(activeSlide, (s) => {
+  frameHeight.value = isAppInteractiveHtml(s?.html) ? '78vh' : '72vh'
+}, { immediate: true })
 
 function confirmName() {
   const n = nameInput.value.trim()
@@ -118,7 +126,13 @@ function confirmName() {
 
 async function onMessage(e: MessageEvent) {
   const d: any = e.data
-  if (!d || d.__cw !== true || d.type !== 'interaction') return
+  if (!d || d.__cw !== true) return
+  if (d.type === 'resize') {
+    const h = Number(d.height)
+    if (h > 200) frameHeight.value = `${Math.min(Math.max(Math.ceil(h), 360), 900)}px`
+    return
+  }
+  if (d.type !== 'interaction') return
   if (!studentName.value || !activeSlide.value) return
   const p = d.payload || {}
   try {

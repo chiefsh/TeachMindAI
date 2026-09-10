@@ -37,6 +37,7 @@
                 {{ cw.render_style === 'html' ? '网页样式' : 'PPT 样式' }}
               </el-tag>
               <el-tag v-if="cw.is_interactive" size="small" type="warning">互动</el-tag>
+              <el-tag v-if="cw.want_virtual_lab" size="small" type="success">实验</el-tag>
               <span class="text-xs text-slate-400">{{ formatDate(cw.created_at) }}</span>
               <span v-if="cw.creator_name" class="text-xs text-slate-400">{{ cw.creator_name }}</span>
             </div>
@@ -157,11 +158,25 @@
             <el-radio value="interactive">互动课件</el-radio>
           </el-radio-group>
         </el-form-item>
-        <el-form-item label="互动功能" v-if="form.courseware_type === 'interactive'">
-          <el-checkbox-group v-model="form.interactive_features">
-            <el-checkbox value="animation">教学动画</el-checkbox>
-            <el-checkbox value="ai_companion">AI 伴学</el-checkbox>
-          </el-checkbox-group>
+        <el-form-item v-if="form.courseware_type === 'interactive'" label="虚拟实验">
+          <el-checkbox v-model="form.want_virtual_lab">生成可操作的宏观实验台</el-checkbox>
+          <p class="text-xs text-slate-400 mt-1">化学/科学课：选仪器、加药品、点燃或滴加、观察现象、安全操作。未指定实验时按本章内容匹配。</p>
+          <el-select
+            v-if="form.want_virtual_lab"
+            v-model="form.virtual_lab_key"
+            class="mt-2 w-full"
+            placeholder="根据本章内容自动匹配"
+            clearable
+          >
+            <el-option-group v-for="g in labGroups" :key="g.label" :label="g.label">
+              <el-option
+                v-for="item in g.items"
+                :key="item.key"
+                :value="item.key"
+                :label="item.title"
+              />
+            </el-option-group>
+          </el-select>
         </el-form-item>
         <el-form-item label="教师想法">
           <el-input
@@ -222,7 +237,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { MagicStick, View, Delete, VideoPlay, RefreshRight, CopyDocument, EditPen, Share, MoreFilled, User } from '@element-plus/icons-vue'
 import ShareDialog from '@/components/ShareDialog.vue'
 import CollaboratorsDialog from '@/components/CollaboratorsDialog.vue'
-import type { Courseware, Textbook, Chapter, RenderStyle } from '@/types'
+import type { Courseware, Textbook, Chapter, RenderStyle, LabExperiment } from '@/types'
 import { THEMES, DEFAULT_THEME, getTheme } from '@/utils/coursewareTheme'
 import { isBusyStatus, useBusyPoll } from '@/utils/busyPoll'
 import dayjs from 'dayjs'
@@ -264,9 +279,20 @@ const form = reactive({
   gen_mode: 'chapter' as 'chapter' | 'page',
   chapter_ids: [] as number[],
   page_start: null as number | null, page_end: null as number | null,
-  custom_prompt: '', interactive_features: [] as string[], is_interactive: false,
+  custom_prompt: '', want_virtual_lab: false, virtual_lab_key: '' as string,
+  is_interactive: false,
 })
 const rules = { title: [{ required: true, message: '请填写课件标题' }] }
+const labExperiments = ref<LabExperiment[]>([])
+const labGroups = computed(() => {
+  const map = new Map<string, LabExperiment[]>()
+  for (const item of labExperiments.value) {
+    const list = map.get(item.group) || []
+    list.push(item)
+    map.set(item.group, list)
+  }
+  return [...map.entries()].map(([label, items]) => ({ label, items }))
+})
 
 // 章节树可能含子节点，扁平化为「层级缩进 + 页码」的下拉项
 function flattenChapters(list: Chapter[], depth = 0): { id: number; label: string }[] {
@@ -278,6 +304,15 @@ function flattenChapters(list: Chapter[], depth = 0): { id: number; label: strin
     if (c.children?.length) out.push(...flattenChapters(c.children, depth + 1))
   }
   return out
+}
+
+async function loadLabExperiments() {
+  try {
+    const data = await coursewareApi.listLabExperiments()
+    labExperiments.value = data.items || []
+  } catch {
+    labExperiments.value = []
+  }
 }
 
 async function loadChapters(textbookId: number) {
@@ -340,7 +375,8 @@ function resetForm() {
   form.page_start = null
   form.page_end = null
   form.custom_prompt = ''
-  form.interactive_features = []
+  form.want_virtual_lab = false
+  form.virtual_lab_key = ''
   form.is_interactive = false
   chapterOptions.value = []
 }
@@ -375,7 +411,8 @@ async function fillFormFromCw(cw: Courseware) {
   form.render_style = (cw.render_style || 'html') as RenderStyle
   form.theme = cw.theme || DEFAULT_THEME
   form.custom_prompt = cw.custom_prompt || ''
-  form.interactive_features = []
+  form.want_virtual_lab = !!cw.want_virtual_lab
+  form.virtual_lab_key = cw.virtual_lab_key || ''
   form.is_interactive = !!cw.is_interactive
   const chapterIds = extractChapterIds(cw.chapter_range)
   const pageStart = cw.page_range?.start ?? null
@@ -449,6 +486,10 @@ async function handleCreate() {
       theme: form.theme,
       custom_prompt: form.custom_prompt,
       is_interactive: form.courseware_type === 'interactive',
+      want_virtual_lab: form.courseware_type === 'interactive' && form.want_virtual_lab,
+      virtual_lab_key: form.courseware_type === 'interactive' && form.want_virtual_lab
+        ? (form.virtual_lab_key || null)
+        : null,
       chapter_range: null,
       page_range: null,
     }
@@ -576,6 +617,7 @@ function formatDate(d: string) { return dayjs(d).format('MM-DD HH:mm') }
 onMounted(async () => {
   await load()
   await loadTextbooks()
+  await loadLabExperiments()
   await maybeOpenRegenFromQuery()
 })
 </script>

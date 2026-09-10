@@ -75,6 +75,15 @@
 
 ---
 
+## 里程碑 M5 · 宏观化学实验台
+依赖：M0。与分子 3D（M4）并列，不改 `edu-chem-reaction` 模板。
+
+- [x] 课件 `want_virtual_lab` / `virtual_lab_key` 落库，创建弹窗可指定
+- [x] 新建 `edu-chem-lab`（通用实验台模板 + 11 个常见实验；`GET /coursewares/lab-experiments` 为目录数据源）
+- [x] `route_chem_lab_point` + `render_chem_lab_html`；教师勾选时至少一页实验台
+
+---
+
 ## 依赖顺序
 ```
 M0（必须最先）

@@ -15,11 +15,24 @@ class CoursewareCreate(BaseModel):
     theme: str = DEFAULT_THEME                    # 视觉主题 key
     custom_prompt: str | None = None
     is_interactive: bool = False
+    want_virtual_lab: bool = False
+    virtual_lab_key: str | None = None  # 实验 key；空则按章节匹配
 
     @field_validator("theme")
     @classmethod
     def _known_theme(cls, v: str) -> str:
         return resolve_theme_key(v)
+
+    @field_validator("virtual_lab_key")
+    @classmethod
+    def _lab_key(cls, v: str | None) -> str | None:
+        key = (v or "").strip() or None
+        if key is None:
+            return None
+        from app.services.skill_service import known_lab_keys
+        if key not in known_lab_keys():
+            raise ValueError("未知的虚拟实验")
+        return key
 
 
 class CoursewareUpdate(BaseModel):
@@ -54,6 +67,8 @@ class CoursewareOut(BaseModel):
     theme: str
     gen_status: ParseStatus
     is_interactive: bool
+    want_virtual_lab: bool = False
+    virtual_lab_key: str | None = None
     textbook_id: int | None
     grade_id: int | None = None
     subject_id: int | None = None

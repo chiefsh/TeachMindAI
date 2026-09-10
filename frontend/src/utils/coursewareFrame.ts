@@ -104,6 +104,68 @@ window.addEventListener('load', function(){
 </script>
 `
 
+/** skill 产出的整页应用（如宏观实验台），需要比普通互动片段更高的 iframe。 */
+export function isAppInteractiveHtml(html?: string | null): boolean {
+  const s = html || ''
+  return /<html[\s>]/i.test(s) || /id=["']lab-data["']/.test(s)
+}
+
+/** 父页监听后按内容撑开 `.cw-iframe`。 */
+export const IFRAME_AUTO_HEIGHT = `
+(function(){
+  window.addEventListener('message', function(e){
+    var d = e.data;
+    if (!d || d.__cw !== true || d.type !== 'resize') return;
+    var h = Number(d.height);
+    if (!h || h < 200) return;
+    var frames = document.querySelectorAll('iframe.cw-iframe');
+    for (var i = 0; i < frames.length; i++) {
+      if (frames[i].contentWindow === e.source) {
+        var cap = frames[i].classList.contains('cw-iframe--app') ? 920 : 720;
+        frames[i].style.height = Math.min(Math.max(Math.ceil(h), 360), cap) + 'px';
+        break;
+      }
+    }
+  });
+})();
+`
+
+const IFRAME_REPORT_HEIGHT = `
+<script>
+(function(){
+  function sendH(){
+    var el = document.documentElement;
+    var h = Math.max(el ? el.scrollHeight : 0, document.body ? document.body.scrollHeight : 0);
+    try { parent.postMessage({ __cw: true, type: 'resize', height: h }, '*'); } catch(e){}
+  }
+  window.addEventListener('load', sendH);
+  window.addEventListener('resize', sendH);
+  setTimeout(sendH, 80);
+  setTimeout(sendH, 400);
+})();
+</script>
+`
+
+const APP_EMBED_CSS = `
+<style id="cw-embed-fix">
+html,body{height:auto!important;min-height:100%!important}
+.wrap{grid-template-columns:168px minmax(0,1fr) 220px!important;min-height:520px;min-width:0}
+.stage{min-height:280px!important;min-width:0}
+.stage svg{height:auto!important;max-height:360px;min-height:220px}
+@media (max-width:640px){
+  .wrap{grid-template-columns:1fr!important;min-height:0!important}
+  .cabinet{max-height:160px}
+}
+</style>
+`
+
+function injectHostScripts(html: string): string {
+  const labFix = /id=["']lab-data["']/.test(html) ? APP_EMBED_CSS : ''
+  const extra = `${labFix}${CW_BRIDGE}${IFRAME_REPORT_HEIGHT}`
+  if (/<\/body>/i.test(html)) return html.replace(/<\/body>/i, extra + '</body>')
+  return html + extra
+}
+
 /** 把模型生成的 html 片段包装成可在 iframe 中渲染的完整文档字符串。
  *
  *  注意：调用方应通过 createIframeBlob() 生成 Blob URL 后赋给 iframe.src，
@@ -113,7 +175,7 @@ window.addEventListener('load', function(){
  */
 export function wrapInteractiveHtml(fragment: string, theme?: CoursewareTheme | string): string {
   const body = (fragment || '').trim()
-  if (/<html[\s>]/i.test(body)) return body
+  if (/<html[\s>]/i.test(body)) return injectHostScripts(body)
   const t = typeof theme === 'string' || !theme ? getTheme(theme as string) : theme
   // 按内容按需注入 CDN，避免每个 iframe 都拉 KaTeX + Chart.js
   const libs = [
@@ -133,6 +195,7 @@ ${libs}
 <body>
 ${body}
 ${boot}
+${IFRAME_REPORT_HEIGHT}
 </body>
 </html>`
 }

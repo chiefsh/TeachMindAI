@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>化学虚拟实验台</title>
+  <style>
+    :root {
+      --wood: #c4a574; --wood-dark: #8b6914; --bench: #efe2c9;
+      --ink: #1e293b; --muted: #64748b; --line: #e2e8f0;
+      --ok: #16a34a; --bad: #dc2626; --accent: #0f766e; --pink: #ec4899;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; height: auto; }
+    body {
+      font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+      color: var(--ink); background: #eef2f7; display: flex; flex-direction: column;
+      min-height: 100%;
+    }
+    header {
+      padding: 10px 14px; background: #fff; border-bottom: 1px solid var(--line);
+      display: flex; align-items: center; gap: 10px; flex-wrap: wrap; flex-shrink: 0;
+    }
+    header h1 { font-size: 17px; margin: 0; }
+    header p { margin: 2px 0 0; font-size: 12px; color: var(--accent); }
+    .badge {
+      font-size: 11px; font-weight: 600; color: var(--accent);
+      background: #ccfbf1; border-radius: 999px; padding: 2px 10px;
+    }
+    .eq {
+      margin-left: auto; font-size: 13px; background: #f8fafc; border: 1px solid var(--line);
+      border-radius: 10px; padding: 6px 10px; font-family: ui-serif, serif;
+    }
+    .wrap {
+      flex: 1; display: grid; grid-template-columns: 168px minmax(0, 1fr) 220px;
+      min-height: 520px; min-width: 0;
+    }
+    @media (max-width: 640px) {
+      .wrap { grid-template-columns: 1fr; min-height: 0; }
+      .cabinet { border-right: 0; border-bottom: 1px solid var(--line); max-height: 160px; }
+      .log-col { border-left: 0; border-top: 1px solid var(--line); min-height: 180px; }
+      .stage { min-height: 280px; }
+    }
+    .cabinet, .log-col { background: #fff; overflow: auto; min-width: 0; }
+    .cabinet { border-right: 1px solid var(--line); padding: 12px; }
+    .log-col { border-left: 1px solid var(--line); padding: 12px; }
+    .sec-title { font-size: 11px; font-weight: 700; letter-spacing: .08em; color: var(--muted); margin: 8px 0 8px; }
+    .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+    .chip {
+      border: 1px solid var(--line); background: #fff; border-radius: 10px;
+      padding: 7px 10px; font-size: 13px; cursor: pointer; user-select: none;
+    }
+    .chip:hover { border-color: var(--accent); }
+    .chip.on { border-color: var(--accent); background: #f0fdfa; color: var(--accent); font-weight: 600; }
+    .chip.wrong { border-color: var(--bad); background: #fef2f2; color: var(--bad); }
+    .chip .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+    .stage {
+      background: linear-gradient(#dbeafe 0 42%, #94a3b8 42% 46%, var(--wood) 46%);
+      position: relative; min-height: 280px; min-width: 0; display: flex; flex-direction: column;
+    }
+    .stage svg { flex: 1; width: 100%; height: auto; min-height: 220px; max-height: 360px; }
+    .hidden { display: none !important; }
+    .hint-bar {
+      background: rgba(255,255,255,.92); margin: 10px; border-radius: 12px; padding: 10px 12px;
+      font-size: 13px; border: 1px solid var(--line);
+    }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 10px 12px; }
+    .btn {
+      appearance: none; border: 0; border-radius: 10px; padding: 9px 14px; font-size: 14px;
+      font-weight: 600; cursor: pointer; background: var(--accent); color: #fff;
+    }
+    .btn:disabled { opacity: .45; cursor: not-allowed; }
+    .btn.ghost { background: #fff; color: var(--ink); border: 1px solid var(--line); }
+    .choice {
+      display: block; width: 100%; text-align: left; margin-bottom: 8px;
+      border: 1px solid var(--line); background: #fff; border-radius: 12px; padding: 10px 12px;
+      font-size: 13px; cursor: pointer;
+    }
+    .choice:hover { border-color: var(--accent); }
+    .toast {
+      position: absolute; left: 50%; bottom: 64px; transform: translateX(-50%);
+      max-width: 90%; background: #111827; color: #fff; border-radius: 12px;
+      padding: 10px 14px; font-size: 13px; display: none; z-index: 5;
+    }
+    .toast.bad { background: #991b1b; }
+    .toast.ok { background: #166534; }
+    .step { font-size: 13px; padding: 8px 0; border-bottom: 1px dashed var(--line); color: var(--muted); }
+    .step.now { color: var(--ink); font-weight: 700; }
+    .step.done { color: var(--ok); }
+    .obs { font-size: 13px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 10px; padding: 8px 10px; margin-top: 8px; }
+    .hazard { background: #fef2f2; border-color: #fecaca; color: #991b1b; }
+    #liquid.pink { fill: #f9a8d4; }
+    #liquid.pale { fill: #fce7f3; }
+    #liquid.clear { fill: #bae6fd; }
+    #lime-liquid.milky { fill: #f8fafc; }
+    .flame { animation: flicker .2s infinite alternate; }
+    @keyframes flicker { from { opacity: .75; } to { opacity: 1; } }
+    .bubble { animation: up 1.2s ease-in infinite; }
+    @keyframes up { from { transform: translateY(0); opacity: .8; } to { transform: translateY(-18px); opacity: 0; } }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <div class="badge" id="badge">虚拟实验台</div>
+      <h1 id="title">化学虚拟实验台</h1>
+      <p id="subtitle"></p>
+    </div>
+    <div class="eq" id="equation"></div>
+  </header>
+  <div class="wrap">
+    <aside class="cabinet">
+      <div class="sec-title">器材柜 · 点击选取</div>
+      <div class="chips" id="apparatus"></div>
+      <div class="sec-title">药品柜 · 点击选取</div>
+      <div class="chips" id="reagents"></div>
+      <p class="hint-bar" id="goal" style="margin:14px 0 0"></p>
+    </aside>
+    <section class="stage">
+      <div class="hint-bar" id="step-hint"></div>
+      <svg id="svg-oxygen" viewBox="0 0 640 360" class="hidden" aria-hidden="true">
+        <rect x="0" y="250" width="640" height="110" fill="#c4a574"/>
+        <rect x="0" y="250" width="640" height="10" fill="#8b6914"/>
+        <g id="stand">
+          <rect x="118" y="80" width="10" height="170" fill="#475569"/>
+          <rect x="90" y="248" width="66" height="8" fill="#334155"/>
+          <rect x="118" y="120" width="46" height="8" fill="#64748b"/>
+        </g>
+        <g id="tube" transform="translate(150,70) rotate(-18)">
+          <rect x="0" y="0" width="28" height="110" rx="10" fill="#e0f2fe" stroke="#0284c7" stroke-width="3"/>
+          <rect id="powder" class="hidden" x="4" y="78" width="20" height="24" rx="4" fill="#6b21a8"/>
+          <g id="zinc" class="hidden">
+            <rect x="5" y="82" width="8" height="6" rx="1" fill="#94a3b8"/>
+            <rect x="14" y="86" width="9" height="7" rx="1" fill="#64748b"/>
+          </g>
+          <g id="marble" class="hidden">
+            <circle cx="10" cy="88" r="5" fill="#f8fafc" stroke="#cbd5e1"/>
+            <circle cx="18" cy="92" r="4" fill="#e2e8f0"/>
+          </g>
+          <rect id="acid-fill" class="hidden" x="4" y="48" width="20" height="54" rx="4" fill="#7dd3fc" opacity=".7"/>
+        </g>
+        <g id="lamp" transform="translate(148,210)">
+          <ellipse cx="24" cy="28" rx="22" ry="10" fill="#fef3c7" stroke="#b45309" stroke-width="2"/>
+          <rect x="10" y="8" width="28" height="22" rx="4" fill="#fde68a" stroke="#b45309"/>
+          <path id="flame" class="hidden flame" d="M24 8 C20 -6 32 -6 24 8 C28 -2 20 -2 24 8" fill="#f97316"/>
+        </g>
+        <path id="delivery" d="M176 92 C 260 92, 280 180, 360 210" fill="none" stroke="#64748b" stroke-width="4"/>
+        <g id="trough" transform="translate(330,200)">
+          <rect x="0" y="20" width="160" height="50" rx="6" fill="#7dd3fc" stroke="#0284c7"/>
+          <rect x="0" y="0" width="160" height="24" fill="none" stroke="#0369a1" stroke-width="3"/>
+        </g>
+        <g id="bottle" transform="translate(372,168)">
+          <rect x="0" y="0" width="44" height="58" rx="6" fill="#e0f2fe" stroke="#0284c7" stroke-width="2"/>
+          <rect id="gas" class="hidden" x="4" y="6" width="36" height="28" fill="#f8fafc" opacity=".85"/>
+        </g>
+        <g id="bottle-up" class="hidden" transform="translate(400,175)">
+          <rect x="0" y="10" width="48" height="70" rx="6" fill="#e0f2fe" stroke="#0284c7" stroke-width="2"/>
+          <rect x="14" y="0" width="20" height="14" fill="#bae6fd" stroke="#0284c7"/>
+        </g>
+        <g id="lime" class="hidden" transform="translate(470,190)">
+          <path d="M8 10 L12 58 Q28 66 44 58 L48 10 Z" fill="#e2e8f0" stroke="#475569" stroke-width="3"/>
+          <ellipse id="lime-liquid" cx="28" cy="48" rx="16" ry="8" fill="#e0f2fe"/>
+        </g>
+        <g id="bubbles" class="hidden">
+          <circle class="bubble" cx="392" cy="230" r="4" fill="#fff"/>
+          <circle class="bubble" cx="404" cy="222" r="3" fill="#fff" style="animation-delay:.3s"/>
+          <circle class="bubble" cx="386" cy="218" r="2.5" fill="#fff" style="animation-delay:.6s"/>
+        </g>
+        <g id="splint" class="hidden" transform="translate(430,140)">
+          <rect x="0" y="20" width="8" height="70" fill="#b45309" rx="2"/>
+          <circle cx="4" cy="16" r="10" fill="#fbbf24"/>
+        </g>
+        <g id="pop" class="hidden" transform="translate(430,120)">
+          <text x="0" y="24" font-size="22" fill="#dc2626" font-weight="700">爆！</text>
+        </g>
+        <path id="jet-flame" class="hidden flame" d="M250 130 C246 112 258 112 250 130" fill="#38bdf8" stroke="#f97316"/>
+        <g id="sparks" class="hidden" transform="translate(408,155)">
+          <circle cx="8" cy="8" r="3" fill="#f97316"/>
+          <circle cx="18" cy="0" r="2" fill="#fbbf24"/>
+          <circle cx="0" cy="16" r="2.5" fill="#fb7185"/>
+          <circle cx="22" cy="18" r="2" fill="#f97316"/>
+        </g>
+        <rect id="bottle-water" class="hidden" x="404" y="228" width="40" height="14" fill="#38bdf8" opacity=".7"/>
+        <g id="wet-paper" class="hidden" transform="translate(200,40)">
+          <rect x="0" y="0" width="36" height="14" rx="2" fill="#fecaca"/>
+          <text x="4" y="11" font-size="9" fill="#991b1b">湿润试纸</text>
+        </g>
+      </svg>
+      <svg id="svg-neutralization" viewBox="0 0 640 360" class="hidden" aria-hidden="true">
+        <rect x="0" y="250" width="640" height="110" fill="#c4a574"/>
+        <rect x="0" y="250" width="640" height="10" fill="#8b6914"/>
+        <g id="goggles" class="hidden" transform="translate(40,40)">
+          <rect x="0" y="10" width="70" height="28" rx="12" fill="#e0f2fe" stroke="#0f766e" stroke-width="3"/>
+          <circle cx="22" cy="24" r="10" fill="#fff"/>
+          <circle cx="48" cy="24" r="10" fill="#fff"/>
+        </g>
+        <g transform="translate(240,110)">
+          <path d="M20 20 L30 160 Q80 180 130 160 L140 20 Z" fill="#e2e8f0" stroke="#475569" stroke-width="4"/>
+          <ellipse id="liquid" cx="80" cy="130" rx="48" ry="18" fill="#bae6fd" class="clear"/>
+          <g id="metal-bit" class="hidden">
+            <rect x="62" y="118" width="22" height="10" rx="2" fill="#94a3b8"/>
+          </g>
+          <g id="beaker-bubbles" class="hidden">
+            <circle class="bubble" cx="70" cy="118" r="3" fill="#fff"/>
+            <circle class="bubble" cx="88" cy="110" r="2.5" fill="#fff" style="animation-delay:.4s"/>
+          </g>
+        </g>
+        <g id="dropper" class="hidden" transform="translate(300,40)">
+          <rect x="18" y="0" width="16" height="28" rx="8" fill="#f87171"/>
+          <rect x="22" y="24" width="8" height="50" fill="#e0f2fe" stroke="#0284c7"/>
+          <circle id="drip" class="hidden" cx="26" cy="80" r="4" fill="#38bdf8"/>
+        </g>
+        <g id="rod" transform="translate(390,90)">
+          <rect x="0" y="0" width="8" height="140" rx="3" fill="#cbd5e1" transform="rotate(18)"/>
+        </g>
+      </svg>
+      <svg id="svg-electrolysis" viewBox="0 0 640 360" class="hidden" aria-hidden="true">
+        <rect x="0" y="250" width="640" height="110" fill="#c4a574"/>
+        <rect x="0" y="250" width="640" height="10" fill="#8b6914"/>
+        <rect x="160" y="150" width="320" height="110" rx="8" fill="#7dd3fc" stroke="#0369a1" stroke-width="3"/>
+        <g id="el-power">
+          <rect x="268" y="40" width="104" height="44" rx="8" fill="#111827"/>
+          <text x="320" y="68" text-anchor="middle" fill="#fbbf24" font-size="16" font-weight="700">电源</text>
+        </g>
+        <line x1="292" y1="84" x2="220" y2="150" stroke="#334155" stroke-width="3"/>
+        <line x1="348" y1="84" x2="420" y2="150" stroke="#334155" stroke-width="3"/>
+        <rect x="212" y="150" width="16" height="90" fill="#64748b"/>
+        <rect x="412" y="150" width="16" height="90" fill="#64748b"/>
+        <rect x="190" y="100" width="40" height="70" rx="4" fill="#e0f2fe" stroke="#0284c7"/>
+        <rect x="410" y="100" width="40" height="70" rx="4" fill="#e0f2fe" stroke="#0284c7"/>
+        <g id="el-h2" class="hidden">
+          <text x="210" y="92" font-size="13" fill="#0f766e" font-weight="700">H₂</text>
+          <circle class="bubble" cx="210" cy="150" r="3" fill="#fff"/>
+          <circle class="bubble" cx="218" cy="140" r="2.5" fill="#fff" style="animation-delay:.3s"/>
+        </g>
+        <g id="el-o2" class="hidden">
+          <text x="430" y="92" font-size="13" fill="#b45309" font-weight="700">O₂</text>
+          <circle class="bubble" cx="430" cy="155" r="3" fill="#fff"/>
+        </g>
+        <text id="el-ratio" class="hidden" x="320" y="300" text-anchor="middle" font-size="14" fill="#0f766e">体积比约 2 : 1</text>
+      </svg>
+      <svg id="svg-filtration" viewBox="0 0 640 360" class="hidden" aria-hidden="true">
+        <rect x="0" y="250" width="640" height="110" fill="#c4a574"/>
+        <rect x="0" y="250" width="640" height="10" fill="#8b6914"/>
+        <g id="funnel" transform="translate(250,50)">
+          <path d="M20 10 L120 10 L80 90 L60 90 Z" fill="#e0f2fe" stroke="#0284c7" stroke-width="3"/>
+          <rect x="66" y="90" width="8" height="50" fill="#bae6fd" stroke="#0284c7"/>
+          <path id="filter-paper" class="hidden" d="M28 18 L112 18 L80 82 L60 82 Z" fill="#f8fafc" stroke="#94a3b8"/>
+          <ellipse id="residue" class="hidden" cx="70" cy="40" rx="22" ry="8" fill="#a8a29e"/>
+        </g>
+        <g id="filtrate-beaker" transform="translate(280,175)">
+          <path d="M10 10 L16 80 Q40 92 64 80 L70 10 Z" fill="#e2e8f0" stroke="#475569" stroke-width="3"/>
+          <ellipse id="filtrate" class="hidden" cx="40" cy="68" rx="22" ry="8" fill="#bae6fd"/>
+        </g>
+        <g id="filter-rod" class="hidden" transform="translate(210,30)">
+          <rect x="0" y="0" width="7" height="120" rx="3" fill="#cbd5e1" transform="rotate(25)"/>
+        </g>
+      </svg>
+      <svg id="svg-evaporation" viewBox="0 0 640 360" class="hidden" aria-hidden="true">
+        <rect x="0" y="250" width="640" height="110" fill="#c4a574"/>
+        <rect x="0" y="250" width="640" height="10" fill="#8b6914"/>
+        <polygon points="220,248 420,248 380,180 260,180" fill="#64748b"/>
+        <ellipse cx="320" cy="178" rx="70" ry="14" fill="#94a3b8"/>
+        <ellipse id="dish-liquid" cx="320" cy="168" rx="58" ry="12" fill="#7dd3fc"/>
+        <g id="evap-lamp" transform="translate(296,200)">
+          <ellipse cx="24" cy="28" rx="22" ry="10" fill="#fef3c7" stroke="#b45309" stroke-width="2"/>
+          <rect x="10" y="8" width="28" height="22" rx="4" fill="#fde68a" stroke="#b45309"/>
+          <path id="evap-flame" class="hidden flame" d="M24 8 C20 -6 32 -6 24 8 C28 -2 20 -2 24 8" fill="#f97316"/>
+        </g>
+        <g id="steam" class="hidden">
+          <path d="M280 150 Q286 130 280 118" fill="none" stroke="#94a3b8" stroke-width="3"/>
+          <path d="M320 148 Q328 126 320 110" fill="none" stroke="#94a3b8" stroke-width="3"/>
+          <path d="M358 150 Q352 132 360 118" fill="none" stroke="#94a3b8" stroke-width="3"/>
+        </g>
+        <g id="crystals" class="hidden">
+          <polygon points="300,166 308,158 316,166" fill="#e0f2fe" stroke="#0284c7"/>
+          <polygon points="324,168 332,158 340,168" fill="#bae6fd" stroke="#0284c7"/>
+        </g>
+        <g id="evap-rod" class="hidden" transform="translate(380,90)">
+          <rect x="0" y="0" width="7" height="110" rx="3" fill="#cbd5e1" transform="rotate(28)"/>
+        </g>
+      </svg>
+      <div class="actions" id="actions"></div>
+      <div class="toast" id="toast"></div>
+    </section>
+    <aside class="log-col">
+      <div class="sec-title">实验步骤</div>
+      <div id="steps"></div>
+      <div class="sec-title">观察与安全</div>
+      <div id="log"></div>
+    </aside>
+  </div>
+  <script type="application/json" id="lab-data">__LAB_DATA__</script>
+  <script>
+  (function () {
+    var DATA = JSON.parse(document.getElementById('lab-data').textContent);
+    var selectedA = {};
+    var selectedR = {};
+    var stepIndex = 0;
+    var lockedSelect = false;
+    var hazard = 0;
+    var okCount = 0;
+    var scene = {};
+
+    function $(id) { return document.getElementById(id); }
+    function report(q, a, correct) {
+      try {
+        if (window.CW && typeof window.CW.report === 'function') {
+          window.CW.report({ component: 'chem_lab', question: q, answer: a, correct: correct });
+        }
+        if (correct === true && window.CW && window.CW.correct) window.CW.correct(q, a);
+        if (correct === false && window.CW && window.CW.wrong) window.CW.wrong(q, a);
+      } catch (e) {}
+    }
+    function toast(msg, kind) {
+      var el = $('toast');
+      el.textContent = msg;
+      el.className = 'toast ' + (kind || '');
+      el.style.display = 'block';
+      setTimeout(function () { el.style.display = 'none'; }, 2200);
+    }
+    function addLog(text, bad) {
+      var d = document.createElement('div');
+      d.className = 'obs' + (bad ? ' hazard' : '');
+      d.textContent = text;
+      $('log').prepend(d);
+    }
+    function current() { return DATA.steps[stepIndex]; }
+
+    function renderHeader() {
+      $('badge').textContent = DATA.badge || '虚拟实验台';
+      $('title').textContent = DATA.title;
+      $('subtitle').textContent = DATA.subtitle || '';
+      $('equation').textContent = DATA.equation || '';
+      $('goal').textContent = '目标：' + (DATA.goal || '');
+      $('svg-oxygen').classList.toggle('hidden', DATA.scene !== 'oxygen');
+      $('svg-neutralization').classList.toggle('hidden', DATA.scene !== 'neutralization');
+      var elSvg = $('svg-electrolysis'); if (elSvg) elSvg.classList.toggle('hidden', DATA.scene !== 'electrolysis');
+      var fSvg = $('svg-filtration'); if (fSvg) fSvg.classList.toggle('hidden', DATA.scene !== 'filtration');
+      var eSvg = $('svg-evaporation'); if (eSvg) eSvg.classList.toggle('hidden', DATA.scene !== 'evaporation');
+    }
+    function renderCabinet() {
+      var aBox = $('apparatus'); var rBox = $('reagents');
+      aBox.innerHTML = ''; rBox.innerHTML = '';
+      (DATA.inventory.apparatus || []).forEach(function (item) {
+        var b = document.createElement('button');
+        b.type = 'button'; b.className = 'chip' + (selectedA[item.id] ? ' on' : '');
+        b.textContent = item.name;
+        b.onclick = function () {
+          if (lockedSelect || current().need !== 'select') return;
+          selectedA[item.id] = !selectedA[item.id];
+          renderCabinet();
+        };
+        aBox.appendChild(b);
+      });
+      (DATA.inventory.reagents || []).forEach(function (item) {
+        var b = document.createElement('button');
+        b.type = 'button'; b.className = 'chip' + (selectedR[item.id] ? ' on' : '');
+        b.innerHTML = '<span class="dot" style="background:' + (item.color || '#94a3b8') + '"></span>' + item.name;
+        b.onclick = function () {
+          if (lockedSelect || current().need !== 'select') return;
+          selectedR[item.id] = !selectedR[item.id];
+          renderCabinet();
+        };
+        rBox.appendChild(b);
+      });
+    }
+    function renderSteps() {
+      var box = $('steps'); box.innerHTML = '';
+      DATA.steps.forEach(function (s, i) {
+        var d = document.createElement('div');
+        d.className = 'step' + (i < stepIndex ? ' done' : i === stepIndex ? ' now' : '');
+        d.textContent = (i + 1) + '. ' + s.title;
+        box.appendChild(d);
+      });
+    }
+    function applyScene(extra) {
+      extra = extra || {};
+      if (!scene._boot && DATA.scene_init) {
+        Object.keys(DATA.scene_init).forEach(function (k) { scene[k] = DATA.scene_init[k]; });
+        scene._boot = true;
+      }
+      Object.keys(extra).forEach(function (k) { scene[k] = extra[k]; });
+      function on(id, yes) { var el = $(id); if (el) el.classList.toggle('hidden', !yes); }
+      if (DATA.scene === 'oxygen') {
+        on('powder', !!scene.powder);
+        on('zinc', !!scene.zinc);
+        on('marble', !!scene.marble);
+        on('acid-fill', !!scene.acid);
+        on('flame', !!scene.flame);
+        on('lamp', !scene.no_lamp);
+        on('bubbles', !!scene.bubbles);
+        on('gas', !!scene.collected && !scene.air_collect);
+        on('trough', !scene.air_collect);
+        on('bottle', !scene.air_collect);
+        on('bottle-up', !!scene.air_collect);
+        on('lime', !!scene.lime);
+        on('splint', !!scene.splint_on);
+        on('pop', !!scene.pop);
+        on('jet-flame', !!scene.jet_flame);
+        on('sparks', !!scene.sparks);
+        on('bottle-water', !!scene.bottle_water);
+        on('wet-paper', !!scene.wet_paper);
+        var limeLiq = $('lime-liquid');
+        if (limeLiq) limeLiq.classList.toggle('milky', !!scene.lime_milky);
+        var tube = $('tube');
+        if (tube) {
+          var rot = scene.upright ? 0 : (scene.tilt_up ? 18 : -18);
+          tube.setAttribute('transform', 'translate(150,70) rotate(' + rot + ')');
+        }
+      }
+      if (DATA.scene === 'neutralization') {
+        on('goggles', !!scene.goggles);
+        on('dropper', !!scene.dripping || !!scene.done);
+        on('drip', !!scene.dripping);
+        on('metal-bit', !!scene.metal);
+        on('beaker-bubbles', !!scene.acid_bubbles);
+        var liq = $('liquid');
+        if (liq) {
+          liq.classList.remove('pink', 'pale', 'clear');
+          liq.classList.add(scene.liquid || 'clear');
+        }
+      }
+      if (DATA.scene === 'electrolysis') {
+        on('el-h2', !!scene.gases);
+        on('el-o2', !!scene.gases);
+        on('el-ratio', !!scene.ratio);
+      }
+      if (DATA.scene === 'filtration') {
+        on('filter-paper', !!scene.paper);
+        on('filter-rod', !!scene.drain);
+        on('residue', !!scene.residue);
+        on('filtrate', !!scene.filtrate);
+      }
+      if (DATA.scene === 'evaporation') {
+        on('evap-flame', !!scene.heat);
+        on('steam', !!scene.heat);
+        on('evap-rod', !!scene.stir);
+        on('crystals', !!scene.crystals);
+        var dish = $('dish-liquid');
+        if (dish) dish.style.opacity = scene.crystals ? '0.35' : '1';
+      }
+    }
+    function missingRequired() {
+      var miss = [];
+      (DATA.required_apparatus || []).forEach(function (id) { if (!selectedA[id]) miss.push(id); });
+      (DATA.required_reagents || []).forEach(function (id) { if (!selectedR[id]) miss.push(id); });
+      return miss;
+    }
+    function extraPickWrong() {
+      var wrong = [];
+      Object.keys(selectedA).forEach(function (id) {
+        if (selectedA[id] && (DATA.required_apparatus || []).indexOf(id) < 0) wrong.push(id);
+      });
+      Object.keys(selectedR).forEach(function (id) {
+        if (selectedR[id] && (DATA.required_reagents || []).indexOf(id) < 0) wrong.push(id);
+      });
+      return wrong;
+    }
+    function next(sceneExtra) {
+      stepIndex += 1;
+      if (stepIndex >= DATA.steps.length) {
+        finish();
+        return;
+      }
+      renderSteps();
+      renderActions();
+      applyScene(sceneExtra || {});
+    }
+    function finish() {
+      lockedSelect = true;
+      $('step-hint').textContent = DATA.complete.title + ' · ' + DATA.complete.summary;
+      $('actions').innerHTML = '';
+      addLog(DATA.complete.summary, false);
+      addLog('正确操作 ' + okCount + ' 步' + (hazard ? '，安全失误 ' + hazard + ' 次，请对照步骤再练。' : '，没有安全失误。'), hazard > 0);
+      report(DATA.title, '完成实验', true);
+      toast('实验完成', 'ok');
+      renderSteps();
+    }
+    function renderActions() {
+      var s = current();
+      if (!s) return;
+      $('step-hint').textContent = s.title + '：' + (s.hint || '');
+      var box = $('actions'); box.innerHTML = '';
+      if (s.need === 'select') {
+        var btn = document.createElement('button');
+        btn.className = 'btn'; btn.textContent = '确认选取';
+        btn.onclick = function () {
+          var miss = missingRequired();
+          if (miss.length) {
+            toast('还少仪器或药品，对照提示再选', 'bad');
+            report(s.title, '缺项', false);
+            hazard += 1;
+            return;
+          }
+          var extra = extraPickWrong();
+          if (extra.length) {
+            extra.forEach(function (id) {
+              var chips = document.querySelectorAll('.chip');
+              chips.forEach(function (c) { if (c.textContent.indexOf(nameOf(id)) >= 0) c.classList.add('wrong'); });
+            });
+            toast('有多余或不需要的物品，已标红，请取消后再确认', 'bad');
+            report(s.title, '多选', false);
+            return;
+          }
+          lockedSelect = true;
+          okCount += 1;
+          addLog('已备齐本实验所需仪器与药品。', false);
+          report(s.title, '选对器材药品', true);
+          next();
+        };
+        box.appendChild(btn);
+      } else if (s.need === 'action') {
+        var b = document.createElement('button');
+        b.className = 'btn'; b.textContent = s.action_label || '执行操作';
+        b.onclick = function () {
+          okCount += 1;
+          if (s.phenomenon) addLog(s.phenomenon, false);
+          report(s.title, s.action_label || '操作', true);
+          toast(s.phenomenon || '操作完成', 'ok');
+          next(s.scene || {});
+        };
+        box.appendChild(b);
+      } else if (s.need === 'choice') {
+        (s.choices || []).forEach(function (c) {
+          var b = document.createElement('button');
+          b.type = 'button'; b.className = 'choice'; b.textContent = c.label;
+          b.onclick = function () {
+            if (c.correct) {
+              okCount += 1;
+              addLog(c.ok || '操作正确。', false);
+              report(s.title, c.label, true);
+              toast(c.ok || '正确', 'ok');
+              var sc = Object.assign({}, s.scene || {}, c.scene || {});
+              if (c.id === 'tilt_down') sc.tilt_down = true;
+              if (c.id === 'tilt_up') sc.tilt_up = true;
+              next(sc);
+            } else {
+              hazard += 1;
+              addLog(c.hazard || '这样不安全。', true);
+              report(s.title, c.label, false);
+              toast(c.hazard || '请重新选择', 'bad');
+            }
+          };
+          box.appendChild(b);
+        });
+      }
+    }
+    function nameOf(id) {
+      var list = [].concat(DATA.inventory.apparatus || [], DATA.inventory.reagents || []);
+      for (var i = 0; i < list.length; i++) if (list[i].id === id) return list[i].name;
+      return id;
+    }
+    renderHeader();
+    renderCabinet();
+    renderSteps();
+    renderActions();
+    applyScene({});
+  })();
+  </script>
+</body>
+</html>

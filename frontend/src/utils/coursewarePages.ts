@@ -2,6 +2,7 @@
 // revealDeck.ts 与 lessonPage.ts 共用这里的 CSS、装饰与 inner HTML，保证演示稿与网页课件同一套视觉语言。
 import { renderMarkdown } from './markdown'
 import { coverGradient, themeCssVars, type CoursewareTheme } from './coursewareTheme'
+import { isAppInteractiveHtml } from './coursewareFrame'
 
 export type PageKind =
   | 'cover' | 'objectives' | 'knowledge' | 'example' | 'interactive'
@@ -201,6 +202,7 @@ export function pageCss(theme: CoursewareTheme, mode: 'deck' | 'page'): string {
 .cw-imgs{display:flex;gap:12px;flex-wrap:wrap;margin-top:.6em}
 .cw-imgs img{max-height:${compact ? '32vh' : '320px'};border-radius:12px;background:var(--c-surface);object-fit:contain;box-shadow:var(--shadow-soft)}
 .cw-iframe{width:100%;border:0;display:block;background:var(--c-card);height:${compact ? '52vh' : '520px'}}
+.cw-iframe--app{height:${compact ? '72vh' : '680px'};min-height:560px}
 .cw-notes{margin-top:12px}
 .body h3,.body h4,.body h5{color:var(--c-primary);margin:.7em 0 .25em}
 .body p{margin:.4em 0}
@@ -422,7 +424,8 @@ export function mediaFromSlide(
     : ''
   let iframeHtml = ''
   if (slide.html && opts.wrapHtml) {
-    iframeHtml = `<iframe class="cw-iframe" sandbox="allow-scripts allow-popups" srcdoc="${escAttr(opts.wrapHtml(slide.html))}"></iframe>`
+    const app = isAppInteractiveHtml(slide.html)
+    iframeHtml = `<iframe class="cw-iframe${app ? ' cw-iframe--app' : ''}" sandbox="allow-scripts allow-popups" srcdoc="${escAttr(opts.wrapHtml(slide.html))}"></iframe>`
   }
   let notesHtml = ''
   if (slide.notes && opts.notesMode === 'aside') {

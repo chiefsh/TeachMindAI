@@ -47,6 +47,14 @@ _COLUMN_SQL = [
         "ALTER TABLE coursewares ADD COLUMN theme VARCHAR(24) NOT NULL DEFAULT 'indigo'",
     ),
     (
+        "coursewares", "want_virtual_lab",
+        "ALTER TABLE coursewares ADD COLUMN want_virtual_lab TINYINT(1) NOT NULL DEFAULT 0",
+    ),
+    (
+        "coursewares", "virtual_lab_key",
+        "ALTER TABLE coursewares ADD COLUMN virtual_lab_key VARCHAR(64) NULL",
+    ),
+    (
         "questions", "images",
         "ALTER TABLE questions ADD COLUMN images JSON NULL",
     ),

@@ -29,6 +29,7 @@
             {{ isWebStyle ? '网页样式' : 'PPT 样式' }}
           </el-tag>
           <el-tag v-if="cw?.is_interactive" size="small" type="warning">互动课件</el-tag>
+          <el-tag v-if="cw?.want_virtual_lab" size="small" type="success">虚拟实验</el-tag>
           <span class="inline-flex items-center gap-1.5 text-xs text-slate-500">
             <span class="w-3 h-3 rounded-full" :style="{ background: themeGradient }" />
             {{ theme.label }}
@@ -230,7 +231,8 @@
                   ref="previewFrame"
                   :src="currentBlobUrl"
                   sandbox="allow-scripts allow-same-origin"
-                  class="w-full h-[460px] rounded-lg border border-slate-200 bg-white"
+                  class="w-full rounded-lg border border-slate-200 bg-white"
+                  :class="isAppInteractiveHtml(currentSlide.html) ? 'h-[680px]' : 'h-[460px]'"
                 ></iframe>
               </div>
               <div v-if="currentSlide.notes" class="mt-6 p-3 bg-amber-50 border border-amber-200 rounded-lg">
@@ -525,7 +527,7 @@ import {
   Monitor, Link, MagicStick, Share, RefreshRight, Clock,
 } from '@element-plus/icons-vue'
 import QRCode from 'qrcode'
-import { createIframeBlob } from '@/utils/coursewareFrame'
+import { createIframeBlob, isAppInteractiveHtml } from '@/utils/coursewareFrame'
 import { armIframeLoad, captureIframe, createCaptureBlob, waitMs, waitScene } from '@/utils/interactiveShot'
 import { buildRevealDeck } from '@/utils/revealDeck'
 import { buildLessonPage } from '@/utils/lessonPage'

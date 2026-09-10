@@ -16,6 +16,20 @@ CHEM = {
     "glucose_combustion": ("葡萄糖氧化", "C_6H_{12}O_6 + 6O_2", "6CO_2 + 6H_2O"),
 }
 
+LAB = {
+    "prep_oxygen_kmno4": ("制取氧气", "2KMnO_4", "K_2MnO_4+MnO_2+O_2"),
+    "prep_hydrogen": ("制取氢气", "Zn + 2HCl", "ZnCl_2 + H_2"),
+    "prep_co2": ("制取二氧化碳", "CaCO_3 + 2HCl", "CaCl_2+H_2O+CO_2"),
+    "electrolysis": ("电解水", "2H_2O", "2H_2 + O_2"),
+    "neutralization": ("酸碱中和", "HCl + NaOH", "NaCl + H_2O"),
+    "metal_acid": ("金属与酸", "Zn + 2HCl", "ZnCl_2 + H_2"),
+    "nh4hco3_decomp": ("碳酸氢铵分解", "NH_4HCO_3", "NH_3+CO_2+H_2O"),
+    "iron_in_oxygen": ("铁丝在氧气中燃烧", "3Fe + 2O_2", "Fe_3O_4"),
+    "filtration": ("过滤", "浊液", "滤液+残渣"),
+    "evaporation": ("蒸发结晶", "溶液", "晶体+水蒸气"),
+    "solution_prep": ("配制溶液", "溶质+水", "溶液"),
+}
+
 CURVE_TYPES = {
     "ellipse_dot_range": "ellipse",
     "ellipse_chord_range": "ellipse",
@@ -37,6 +51,13 @@ def skill_steps(payload: dict) -> list[tuple[str, str]]:
     skill = payload.get("skill") or ""
     ptype = payload.get("problem_type") or ""
     spec = payload.get("spec") or {}
+    if skill == "edu-chem-lab" or ptype in LAB:
+        name, left, right = LAB.get(ptype, ("虚拟实验", "反应物", "生成物"))
+        return [
+            ("选取器材", "仪器与药品"),
+            ("操作过程", name),
+            ("现象与方程", f"${left} \\rightarrow {right}$"),
+        ]
     if skill == "edu-chem-reaction" or ptype in CHEM:
         name, left, right = CHEM.get(ptype, ("化学反应", "反应物", "生成物"))
         return [
@@ -70,6 +91,9 @@ def paint_skill_stage(p: Page, payload: dict, x: float, y: float, w: float, h: f
     skill = payload.get("skill") or ""
     ptype = payload.get("problem_type") or ""
     spec = payload.get("spec") if isinstance(payload.get("spec"), dict) else {}
+    if skill == "edu-chem-lab" or ptype in LAB:
+        _paint_lab(p, ptype, x, y, w, h)
+        return
     if skill == "edu-chem-reaction" or ptype in CHEM:
         _paint_chem(p, ptype, x, y, w, h)
         return
@@ -289,6 +313,26 @@ def _poly_open(p: Page, pts: list[tuple[float, float]], color: str) -> str:
         f'<path id="{p.nid("p")}" d="{d}" fill="none" stroke="{color}"'
         f' stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>'
     )
+
+
+def _paint_lab(p: Page, ptype: str, x: float, y: float, w: float, h: float) -> None:
+    th = p.th
+    name, left, right = LAB.get(ptype, ("虚拟实验", "反应物", "生成物"))
+    bits = [p.rect(x, y, w, h, th["card"], rx=16)]
+    bits.append(p.text(x + w / 2, y + 36, "虚拟实验台 · " + name, 20, th["primary"], "700", anchor="middle"))
+    bx, by, bw = x + w * 0.18, y + h * 0.58, w * 0.64
+    bits.append(p.rect(bx, by, bw, h * 0.18, th["surface"], rx=8))
+    cx, cy = x + w / 2, y + h * 0.42
+    bits.append(
+        f'<ellipse cx="{cx}" cy="{cy + 28}" rx="36" ry="14" fill="{th["accent"]}" fill-opacity="0.25"/>'
+    )
+    bits.append(
+        f'<rect x="{cx - 14}" y="{cy - 40}" width="28" height="56" rx="10" '
+        f'fill="{th["surface"]}" stroke="{th["primary"]}" stroke-width="2"/>'
+    )
+    preview = f"{left} → {right}".replace("_", "").replace("{", "").replace("}", "")
+    bits.append(p.text(x + w / 2, y + h - 28, preview[:28], 16, th["text"], "600", anchor="middle"))
+    p.group("ia-viz", x, y, w, h, "".join(bits))
 
 
 def _paint_chem(p: Page, ptype: str, x: float, y: float, w: float, h: float) -> None:

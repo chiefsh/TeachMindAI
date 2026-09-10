@@ -11,7 +11,7 @@ alwaysApply: false
 
 历史版本：`GET/DELETE /coursewares/{id}/versions`、`GET /coursewares/{id}/versions/{vid}`、`POST /coursewares/{id}/versions/{vid}/apply`（覆盖当前前先快照）。详情页可查看、分享（`resource_type=courseware_version`）、应用为当前版本、删除。公开页按该版 content/render_style/theme 渲染。
 
-互动页：`_generate_lesson_content` 先 `skill_service.maybe_generate_skill_html`；命中则 sympy+模板出整页 HTML，失败必须回退 LLM。科目提示词来自 `SubjectPrompt`。
+互动页：`_generate_lesson_content` 先 `skill_service.maybe_generate_skill`；命中则模板出整页 HTML，失败必须回退 LLM。科目提示词来自 `SubjectPrompt`。化学勾选「虚拟实验」时至少一页走 `edu-chem-lab` 宏观实验台。
 
 skill 题型分两类，都登记在 `SKILL_CAPABILITIES`：解题型（固定题面）与通用兜底型 `solid_explore` / `curve_explore`（概念课用的 3D 教具与曲线画板，spec 带几何体/曲线与尺寸，经 `_normalize_spec` 收敛到合法取值）。数学两个 skill 统一走 `skill_runners/{solid,analytic}_geometry_runner.py` 子进程，化学仍走 skill 自带 CLI。新增可视化题型时只在 runner 里构造数据，不要改 skill 的 `template/*.html`。
 

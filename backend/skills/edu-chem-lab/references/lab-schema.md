@@ -6,9 +6,11 @@
 
 可选 `scene_init`：进入实验台时的场景开关。
 
+`inventory.*.slot` 由 `generate.py` 的 `with_slots` 自动填写：所需器材的工位名等于器材 `id`，所需药品工位为 `reagent`，干扰项 `slot` 为空（拖上台面会失败）。
+
 `steps[].need`：
 
-- `select`：点选器材与药品，必须覆盖 required 列表
+- `select`：把器材拖到台面虚线工位、药品拖到容器工位；全部放对后自动进入下一步
 - `choice`：二选一/三选一，`choices[].correct` 为真才进入下一步；错选记安全事故
 - `action`：点一次操作按钮，写入 `phenomenon`，可带 `scene` 开关
 

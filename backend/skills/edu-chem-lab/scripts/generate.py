@@ -17,11 +17,28 @@ TEMPLATE = SKILL_DIR / "template" / "lab.html"
 PLACEHOLDER = "__LAB_DATA__"
 
 
+def with_slots(data: dict) -> dict:
+    """给器材/药品打上拖放工位：所需器材 slot=自身 id，所需药品 slot=reagent，干扰项无工位。"""
+    req_a = set(data.get("required_apparatus") or [])
+    req_r = set(data.get("required_reagents") or [])
+    for item in (data.get("inventory") or {}).get("apparatus") or []:
+        item["slot"] = item["id"] if item.get("id") in req_a else ""
+    for item in (data.get("inventory") or {}).get("reagents") or []:
+        item["slot"] = "reagent" if item.get("id") in req_r else ""
+    for step in data.get("steps") or []:
+        if step.get("need") == "select":
+            step["hint"] = (
+                "把左侧器材拖到台面上对应的虚线工位；药品拖到「药品」工位。"
+                "放对会卡住，放错会弹回。不需要的仪器没有工位。"
+            )
+    return data
+
+
 def render_html(data: dict, out_path: Path) -> Path:
     template = TEMPLATE.read_text(encoding="utf-8")
     if PLACEHOLDER not in template:
         raise RuntimeError(f"模板中未找到占位符 {PLACEHOLDER}")
-    payload = json.dumps(data, ensure_ascii=False)
+    payload = json.dumps(with_slots(data), ensure_ascii=False)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(template.replace(PLACEHOLDER, payload), encoding="utf-8")
     return out_path

@@ -158,15 +158,21 @@
             <el-radio value="interactive">互动课件</el-radio>
           </el-radio-group>
         </el-form-item>
-        <el-form-item v-if="form.courseware_type === 'interactive'" label="虚拟实验">
-          <el-checkbox v-model="form.want_virtual_lab">生成可操作的宏观实验台</el-checkbox>
-          <p class="text-xs text-slate-400 mt-1">化学/科学课：选仪器、加药品、点燃或滴加、观察现象、安全操作。未指定实验时按本章内容匹配。</p>
+        <el-form-item v-if="form.courseware_type === 'interactive'" label="互动动画">
+          <el-checkbox v-model="form.want_virtual_lab">引入动画库中的实验/动画</el-checkbox>
+          <p class="text-xs text-slate-400 mt-1">
+            从「互动动画」库引用，不重复生成。不选具体条目时按本章知识点自动匹配。
+          </p>
           <el-select
             v-if="form.want_virtual_lab"
-            v-model="form.virtual_lab_key"
+            v-model="form.animation_keys"
             class="mt-2 w-full"
-            placeholder="根据本章内容自动匹配"
+            multiple
+            collapse-tags
+            collapse-tags-tooltip
+            placeholder="留空则自动匹配；也可多选指定"
             clearable
+            filterable
           >
             <el-option-group v-for="g in labGroups" :key="g.label" :label="g.label">
               <el-option
@@ -230,7 +236,7 @@
 import { ref, reactive, onMounted, nextTick, watch, computed } from 'vue'
 import { watchDebounced } from '@vueuse/core'
 import { useRouter, useRoute } from 'vue-router'
-import { coursewareApi, textbookApi } from '@/api/modules'
+import { coursewareApi, textbookApi, animationApi } from '@/api/modules'
 import { useEducationStore } from '@/stores/education'
 import { useAuthStore } from '@/stores/auth'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -280,6 +286,7 @@ const form = reactive({
   chapter_ids: [] as number[],
   page_start: null as number | null, page_end: null as number | null,
   custom_prompt: '', want_virtual_lab: false, virtual_lab_key: '' as string,
+  animation_keys: [] as string[],
   is_interactive: false,
 })
 const rules = { title: [{ required: true, message: '请填写课件标题' }] }
@@ -308,10 +315,17 @@ function flattenChapters(list: Chapter[], depth = 0): { id: number; label: strin
 
 async function loadLabExperiments() {
   try {
-    const data = await coursewareApi.listLabExperiments()
-    labExperiments.value = data.items || []
+    const data = await animationApi.list()
+    labExperiments.value = (data.items || []).map((a) => ({
+      key: a.key, title: a.title, group: a.origin === 'system' ? a.group : `我的 · ${a.group || a.subject}`,
+    }))
   } catch {
-    labExperiments.value = []
+    try {
+      const data = await coursewareApi.listLabExperiments()
+      labExperiments.value = data.items || []
+    } catch {
+      labExperiments.value = []
+    }
   }
 }
 
@@ -377,6 +391,7 @@ function resetForm() {
   form.custom_prompt = ''
   form.want_virtual_lab = false
   form.virtual_lab_key = ''
+  form.animation_keys = []
   form.is_interactive = false
   chapterOptions.value = []
 }
@@ -413,6 +428,7 @@ async function fillFormFromCw(cw: Courseware) {
   form.custom_prompt = cw.custom_prompt || ''
   form.want_virtual_lab = !!cw.want_virtual_lab
   form.virtual_lab_key = cw.virtual_lab_key || ''
+  form.animation_keys = [...(cw.animation_keys || (cw.virtual_lab_key ? [cw.virtual_lab_key] : []))]
   form.is_interactive = !!cw.is_interactive
   const chapterIds = extractChapterIds(cw.chapter_range)
   const pageStart = cw.page_range?.start ?? null
@@ -488,7 +504,10 @@ async function handleCreate() {
       is_interactive: form.courseware_type === 'interactive',
       want_virtual_lab: form.courseware_type === 'interactive' && form.want_virtual_lab,
       virtual_lab_key: form.courseware_type === 'interactive' && form.want_virtual_lab
-        ? (form.virtual_lab_key || null)
+        ? (form.animation_keys[0] || form.virtual_lab_key || null)
+        : null,
+      animation_keys: form.courseware_type === 'interactive' && form.want_virtual_lab
+        ? (form.animation_keys.length ? form.animation_keys : null)
         : null,
       chapter_range: null,
       page_range: null,

@@ -81,6 +81,7 @@
 - [x] 课件 `want_virtual_lab` / `virtual_lab_key` 落库，创建弹窗可指定
 - [x] 新建 `edu-chem-lab`（写实器材实验台 + 11 个常见实验；`GET /coursewares/lab-experiments` 为目录数据源）
 - [x] `route_chem_lab_point` + `render_chem_lab_html`；教师勾选时至少一页实验台
+- [x] 互动动画库 `interactive_assets`：侧栏 `/animations`，系统灌 11 个实验；出课 `animation_keys` 引用缓存 HTML，不每次重跑 CLI
 
 ---
 

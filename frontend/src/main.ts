@@ -8,7 +8,7 @@ import './assets/main.css'
 
 // 仅注册实际用到的图标，避免全量 @element-plus/icons-vue 拖慢首屏
 import {
-  HomeFilled, Collection, EditPen, VideoPlay, Tickets,
+  HomeFilled, Collection, EditPen, VideoPlay, Tickets, Monitor,
   DataAnalysis, TrendCharts, Setting, SwitchButton,
   Connection, CopyDocument, Printer, Finished, Flag, User,
   Cpu, ChatDotRound, Avatar, Key,
@@ -21,7 +21,7 @@ const app = createApp(App)
 
 // 侧栏等通过字符串名引用的图标必须全局注册；页面内显式 import 的图标无需再挂全局
 const icons = {
-  HomeFilled, Collection, EditPen, VideoPlay, Tickets,
+  HomeFilled, Collection, EditPen, VideoPlay, Tickets, Monitor,
   DataAnalysis, TrendCharts, Setting, SwitchButton,
   Connection, CopyDocument, Printer, Finished, Flag, User,
   Cpu, ChatDotRound, Avatar, Key,

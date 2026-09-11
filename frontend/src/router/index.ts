@@ -21,6 +21,7 @@ const router = createRouter({
         { path: 'question-bank',name: 'QuestionBank',component: () => import('@/views/question-bank/QuestionBankView.vue'), meta: { perm: 'question.view' } },
         { path: 'courseware',   name: 'Courseware',  component: () => import('@/views/courseware/CoursewareView.vue'), meta: { perm: 'courseware.view' } },
         { path: 'courseware/:id', name: 'CoursewareDetail', component: () => import('@/views/courseware/CoursewareDetail.vue'), meta: { perm: 'courseware.view' } },
+        { path: 'animations',   name: 'Animations',  component: () => import('@/views/animation/AnimationsView.vue'), meta: { perm: 'animation.view' } },
         { path: 'homework',     name: 'Homework',    component: () => import('@/views/homework/HomeworkView.vue'), meta: { perm: 'homework.view' } },
         { path: 'grading',      name: 'Grading',     component: () => import('@/views/grading/GradingView.vue'), meta: { perm: 'grading.view' } },
         { path: 'grading/:id',  name: 'GradingDetail', component: () => import('@/views/grading/GradingDetail.vue'), meta: { perm: 'grading.view' } },

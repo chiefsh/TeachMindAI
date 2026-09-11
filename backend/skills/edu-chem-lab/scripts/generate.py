@@ -29,8 +29,8 @@ def with_slots(data: dict) -> dict:
     for step in data.get("steps") or []:
         if step.get("need") == "select":
             step["hint"] = (
-                "从左上角把器材拖到形状相同的虚线工位；药品拖到「药品」虚线。"
-                "放对会卡住，放错会弹回。不需要的仪器没有工位。"
+                "从左侧把器材拖到画布上形状相同的虚线工位；药品拖到「药品」虚线。"
+                "工位按真实装置摆放（酒精灯在试管下方、漏斗对准烧杯）。放对卡住，放错弹回。"
             )
     return data
 
@@ -269,7 +269,7 @@ def build_neutralization() -> dict:
 def build_prep_hydrogen() -> dict:
     return {
         "id": "prep_hydrogen",
-        "scene": "oxygen",
+        "scene": "gas_wet",
         "scene_init": {"no_lamp": True, "upright": True},
         "title": "锌和稀盐酸制取氢气",
         "subtitle": "固液不加热 · 排水集气 · 验纯后点燃",
@@ -377,7 +377,7 @@ def build_prep_hydrogen() -> dict:
 def build_prep_co2() -> dict:
     return {
         "id": "prep_co2",
-        "scene": "oxygen",
+        "scene": "gas_air",
         "scene_init": {"no_lamp": True, "upright": True, "air_collect": True},
         "title": "大理石和稀盐酸制取二氧化碳",
         "subtitle": "固液不加热 · 向上排空气 · 石灰水检验",
@@ -869,7 +869,7 @@ def build_nh4hco3_decomp() -> dict:
 def build_iron_in_oxygen() -> dict:
     return {
         "id": "iron_in_oxygen",
-        "scene": "oxygen",
+        "scene": "burn",
         "scene_init": {"air_collect": True},
         "title": "铁丝在氧气中燃烧",
         "subtitle": "集气瓶底留水 · 预热铁丝 · 火星四射",

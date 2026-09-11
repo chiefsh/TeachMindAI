@@ -10,11 +10,10 @@
       --ok: #16a34a; --bad: #dc2626; --accent: #0f766e;
     }
     * { box-sizing: border-box; }
-    html, body { margin: 0; min-height: 100%; height: auto; }
+    html, body { margin: 0; height: 100%; min-height: 640px; overflow: hidden; }
     body {
       font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
       color: var(--ink); background: #f1f5f9; display: flex; flex-direction: column;
-      min-height: 100%;
     }
     header {
       padding: 10px 14px; background: #fff; border-bottom: 1px solid var(--line);
@@ -31,32 +30,41 @@
       border-radius: 10px; padding: 6px 10px; font-family: ui-serif, serif;
     }
     .wrap {
-      flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) 220px;
-      min-height: 540px; min-width: 0;
+      flex: 1; display: grid; grid-template-columns: 196px minmax(0, 1fr) 200px;
+      min-height: 0; min-width: 0; overflow: hidden;
     }
-    @media (max-width: 640px) {
+    @media (max-width: 720px) {
+      html, body { height: auto; overflow: auto; }
       .wrap { grid-template-columns: 1fr; min-height: 0; }
-      .log-col { border-left: 0; border-top: 1px solid var(--line); min-height: 180px; }
+      .log-col { border-left: 0; border-top: 1px solid var(--line); max-height: 220px; }
+      .palette { border-right: 0; border-bottom: 1px solid var(--line); max-height: 220px; }
     }
-    .log-col { background: #fff; overflow: auto; min-width: 0; border-left: 1px solid var(--line); padding: 12px; }
-    .sec-title { font-size: 11px; font-weight: 700; letter-spacing: .08em; color: var(--muted); margin: 8px 0; }
-    .stage { position: relative; min-height: 420px; min-width: 0; display: flex; flex-direction: column; background: #eef3f8; }
-    #view { flex: 1; width: 100%; min-height: 400px; }
-    #bench { width: 100%; height: 100%; min-height: 400px; display: block; }
+    .log-col {
+      background: #fff; min-width: 0; min-height: 0; border-left: 1px solid var(--line);
+      padding: 12px; display: flex; flex-direction: column; overflow: hidden;
+    }
+    .sec-title { font-size: 11px; font-weight: 700; letter-spacing: .06em; color: var(--muted); margin: 8px 0; flex-shrink: 0; }
+    #steps { flex-shrink: 0; }
+    #log { flex: 1; min-height: 0; overflow-y: auto; }
+    .stage { position: relative; min-height: 0; min-width: 0; display: flex; flex-direction: column; background: #eef3f8; overflow: hidden; }
+    .stage-hint {
+      flex-shrink: 0; margin: 0; padding: 8px 12px; font-size: 13px; line-height: 1.45;
+      background: #fff; border-bottom: 1px solid var(--line); color: var(--ink);
+    }
+    #view { flex: 1; width: 100%; min-height: 0; }
+    #bench { width: 100%; height: 100%; display: block; }
     .slot { pointer-events: none; }
-    .slot-dash { stroke: #94a3b8; stroke-width: 1.4; stroke-dasharray: 4 8; opacity: .55; }
-    .slot.hot .slot-dash { stroke: #0f766e; stroke-width: 2; opacity: .95; }
-    .slot-label { font-size: 11px; fill: #94a3b8; font-weight: 600; }
+    .slot-dash { stroke: #64748b; stroke-width: 1.6; stroke-dasharray: 5 7; opacity: .7; }
+    .slot.hot .slot-dash { stroke: #0f766e; stroke-width: 2.2; opacity: .95; }
+    .slot-label { font-size: 12px; fill: #475569; font-weight: 700; }
     .palette {
-      position: absolute; left: 10px; top: 10px; z-index: 4;
-      max-width: 268px; background: rgba(255,255,255,.94);
-      border: 1px solid var(--line); border-radius: 12px; padding: 8px;
-      box-shadow: 0 8px 20px rgba(15,23,42,.08);
+      position: relative; z-index: 1; overflow: auto; min-height: 0;
+      background: #fff; border-right: 1px solid var(--line); padding: 10px 8px;
     }
     .palette .sec-title { margin: 4px 0 6px; }
     .tiles { display: flex; flex-wrap: wrap; gap: 6px; }
     .tile {
-      width: 60px; border: 1px solid var(--line); background: #fff; border-radius: 10px;
+      width: 84px; border: 1px solid var(--line); background: #fff; border-radius: 10px;
       padding: 4px 2px 6px; cursor: grab; user-select: none; text-align: center;
       box-shadow: 0 2px 6px rgba(15,23,42,.05); touch-action: none;
     }
@@ -65,13 +73,9 @@
     .tile.wrong { border-color: var(--bad); background: #fef2f2; }
     .tile .ico { height: 48px; display: flex; align-items: center; justify-content: center; }
     .tile .ico svg { max-width: 42px; max-height: 46px; }
-    .tile span { display: block; font-size: 10px; line-height: 1.2; }
+    .tile span { display: block; font-size: 11px; line-height: 1.25; }
     .hidden { display: none !important; }
-    .hint-bar {
-      position: absolute; right: 12px; top: 10px; z-index: 3; max-width: 340px; margin: 0;
-      background: rgba(255,255,255,.94); border-radius: 12px;
-      padding: 8px 12px; font-size: 13px; border: 1px solid var(--line);
-    }
+    .hint-bar { margin: 0; }
     .actions .hint-bar { position: static; max-width: none; }
     .actions { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 10px 12px; }
     .btn {
@@ -95,10 +99,10 @@
       filter: drop-shadow(0 10px 16px rgba(15,23,42,.25));
     }
     .ghost svg { width: 72px; height: auto; }
-    .step { font-size: 13px; padding: 8px 0; border-bottom: 1px dashed var(--line); color: var(--muted); }
+    .step { font-size: 13px; padding: 6px 0; border-bottom: 1px dashed var(--line); color: var(--muted); }
     .step.now { color: var(--ink); font-weight: 700; }
     .step.done { color: var(--ok); }
-    .obs { font-size: 13px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 10px; padding: 8px 10px; margin-top: 8px; }
+    .obs { font-size: 12px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 10px; padding: 6px 8px; margin-top: 6px; line-height: 1.4; }
     .hazard { background: #fef2f2; border-color: #fecaca; color: #991b1b; }
   </style>
 </head>
@@ -112,14 +116,14 @@
     <div class="eq" id="equation"></div>
   </header>
   <div class="wrap">
+    <aside class="palette">
+      <div class="sec-title">器材 · 拖到同形虚线</div>
+      <div class="tiles" id="apparatus"></div>
+      <div class="sec-title">药品 · 拖到药品虚线</div>
+      <div class="tiles" id="reagents"></div>
+    </aside>
     <section class="stage">
-      <div class="palette">
-        <div class="sec-title">器材 · 拖到同形虚线</div>
-        <div class="tiles" id="apparatus"></div>
-        <div class="sec-title">药品 · 拖到药品虚线</div>
-        <div class="tiles" id="reagents"></div>
-      </div>
-      <div class="hint-bar" id="step-hint"></div>
+      <p class="stage-hint" id="step-hint"></p>
       <div id="view"></div>
       <div class="actions" id="actions"></div>
       <div class="toast" id="toast"></div>
@@ -165,7 +169,9 @@
       var d = document.createElement("div");
       d.className = "obs" + (bad ? " hazard" : "");
       d.textContent = text;
-      $("log").prepend(d);
+      var box = $("log");
+      box.prepend(d);
+      while (box.children.length > 6) box.removeChild(box.lastChild);
     }
     function current() { return DATA.steps[stepIndex]; }
     function allItems() { return [].concat(DATA.inventory.apparatus || [], DATA.inventory.reagents || []); }
@@ -333,7 +339,7 @@
         var tip = document.createElement("p");
         tip.className = "hint-bar";
         tip.style.margin = "0";
-        tip.textContent = "从左上角把器材拖到形状相同的虚线工位，药品拖到「药品」虚线。放对卡住，放错弹回。";
+        tip.textContent = "从左侧把器材拖到画布上形状相同的虚线工位，药品拖到「药品」虚线。工位按真实装置摆放。";
         box.appendChild(tip);
       } else if (s.need === "action") {
         var b = document.createElement("button");

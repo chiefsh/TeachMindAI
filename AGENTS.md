@@ -99,6 +99,12 @@ tasks/<队列>.py      → Celery 包装（薄，真正逻辑在 service）
 - 视觉主题 `theme`：调色板在 `services/courseware_theme.py` 与 `utils/coursewareTheme.ts`，两份必须同步；在线预览与导出的 PPT/Word/PDF 共用
 - 理科确定性互动页：见下方「Skills」，失败回退 LLM HTML
 
+### 互动动画库
+
+- 后端：`api/v1/animation.py`、`schemas/animation.py`、`models/animation.py`、`services/animation_service.py`
+- 前端：`views/animation/AnimationsView.vue`；侧栏「AI 生成 → 互动动画」
+- 系统预置来自 `LAB_CATALOG`（启动 `ensure_system_labs` 只补缺失行）；教师可从模板另存。出课勾选后写 `animation_keys`，生成时引用库 HTML，不要每次重跑实验 CLI。
+
 ### 作业 / 试卷
 
 - 后端：`api/v1/homework.py`、`schemas/homework.py`、`models/homework.py`、`services/homework_service.py`、`export_service.build_homework_*`；`POST /homework/{id}/regenerate` 可改配置后重出卷；导出/打印默认不含参考答案，`include_answers` 可附上
@@ -164,6 +170,7 @@ tasks/<队列>.py      → Celery 包装（薄，真正逻辑在 service）
 | `/question-bank` | `question-bank/QuestionBankView.vue` |
 | `/students` | `students/StudentsView.vue` |
 | `/courseware`、`/courseware/:id` | `courseware/*` |
+| `/animations` | `animation/AnimationsView.vue`（互动动画库） |
 | `/homework` | `homework/HomeworkView.vue` |
 | `/grading`、`/grading/:id`、`/grading/:id/student/:studentId` | `grading/*` |
 | `/c/:token` | `public/CollectPages.vue`（免登录，手机录入原卷） |

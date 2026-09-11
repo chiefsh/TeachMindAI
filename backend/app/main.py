@@ -9,7 +9,7 @@ from app.core.database import engine, Base
 from app.core.redis_client import close_redis
 from app.core.minio_client import init_buckets
 from app.core.seed import seed_education_data, seed_subject_prompts, seed_rbac_data
-from app.api.v1 import auth, education, textbook, question, courseware, homework, student, settings, ws, dashboard, interaction, question_analysis, knowledge, share, grading, classroom, rbac
+from app.api.v1 import auth, education, textbook, question, courseware, homework, student, settings, ws, dashboard, interaction, question_analysis, knowledge, share, grading, classroom, rbac, animation
 
 
 # create_all 不会给已有表补索引，启动时幂等补齐热查询字段
@@ -54,6 +54,10 @@ _COLUMN_SQL = [
     (
         "coursewares", "virtual_lab_key",
         "ALTER TABLE coursewares ADD COLUMN virtual_lab_key VARCHAR(64) NULL",
+    ),
+    (
+        "coursewares", "animation_keys",
+        "ALTER TABLE coursewares ADD COLUMN animation_keys JSON NULL",
     ),
     (
         "questions", "images",
@@ -269,6 +273,13 @@ async def lifespan(app: FastAPI):
     except Exception:
         pass
     try:
+        from app.core.database import AsyncSessionLocal
+        from app.services.animation_service import ensure_system_labs
+        async with AsyncSessionLocal() as _adb:
+            await ensure_system_labs(_adb)
+    except Exception:
+        pass
+    try:
         await _migrate_llm_configs_to_system()
     except Exception:
         pass
@@ -316,6 +327,7 @@ app.include_router(education.router, prefix="/api/v1")
 app.include_router(textbook.router, prefix="/api/v1")
 app.include_router(question.router, prefix="/api/v1")
 app.include_router(courseware.router, prefix="/api/v1")
+app.include_router(animation.router, prefix="/api/v1")
 app.include_router(homework.router, prefix="/api/v1")
 app.include_router(grading.router, prefix="/api/v1")
 app.include_router(grading.public_router, prefix="/api/v1")

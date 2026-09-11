@@ -39,6 +39,7 @@ class Courseware(Base, TimestampMixin):
     custom_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)   # 教师自定义提示词
     want_virtual_lab: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     virtual_lab_key: Mapped[str | None] = mapped_column(String(64), nullable=True)  # 指定实验；空则自动匹配
+    animation_keys: Mapped[list | None] = mapped_column(JSON, nullable=True)  # 动画库 key 列表；空则自动匹配
     content: Mapped[dict | None] = mapped_column(JSON, nullable=True)        # 幻灯片结构 JSON
     gen_status: Mapped[ParseStatus] = mapped_column(
         SAEnum(ParseStatus), default=ParseStatus.pending

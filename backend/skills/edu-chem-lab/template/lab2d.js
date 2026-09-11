@@ -11,7 +11,9 @@
     return n;
   }
   function tf(s) {
-    return "translate(" + s.x + "," + s.y + ") rotate(" + (s.r || 0) + ") scale(" + (s.s || 1) + ")";
+    var r = s.r || 0;
+    var origin = (s.ox != null && s.oy != null) ? (" " + s.ox + " " + s.oy) : "";
+    return "translate(" + s.x + "," + s.y + ") rotate(" + r + origin + ") scale(" + (s.s || 1) + ")";
   }
 
   var ART = {
@@ -59,20 +61,28 @@
         '</g>'
     },
     delivery: {
-      w: 250, h: 96, label: "导管",
-      outline: "M6 12 h154 q28 0 28 26 v40 h8 v16 h-24 V42 q0 -10 -14 -10 H6z",
-      paint: '<path d="M10 20 h148 q22 0 22 20 v34" fill="none" stroke="#94a3b8" stroke-width="9" stroke-linecap="round"/>' +
-        '<path d="M10 20 h148 q22 0 22 20 v34" fill="none" stroke="#e0f2fe" stroke-width="5" stroke-linecap="round"/>' +
-        '<path d="M180 74 h28" fill="none" stroke="#475569" stroke-width="7" stroke-linecap="round"/>' +
-        '<circle cx="10" cy="20" r="5" fill="#cbd5e1"/>'
+      w: 250, h: 290, label: "导管",
+      outline: "M4 6 h210 v28 H46 v240 H18 V42 H4z",
+      paint: '<circle cx="14" cy="20" r="9" fill="#7c2d12"/><circle cx="14" cy="20" r="4" fill="#1e293b"/>' +
+        '<path d="M18 20 H 214 V 268" fill="none" stroke="#94a3b8" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>' +
+        '<path d="M18 20 H 214 V 268" fill="none" stroke="#e0f2fe" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>' +
+        '<path d="M206 268 h16" fill="none" stroke="#475569" stroke-width="6" stroke-linecap="round"/>'
+    },
+    delivery_down: {
+      w: 180, h: 340, label: "导管",
+      outline: "M4 6 h150 v28 H40 v290 H16 V42 H4z",
+      paint: '<circle cx="14" cy="20" r="9" fill="#7c2d12"/><circle cx="14" cy="20" r="4" fill="#1e293b"/>' +
+        '<path d="M18 20 H 148 V 320" fill="none" stroke="#94a3b8" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>' +
+        '<path d="M18 20 H 148 V 320" fill="none" stroke="#e0f2fe" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>' +
+        '<path d="M140 320 h16" fill="none" stroke="#475569" stroke-width="6" stroke-linecap="round"/>'
     },
     trough: {
-      w: 230, h: 96, label: "水槽",
-      outline: "M10 22 h210 v8 H26 v48 h178 v8 H10z",
-      paint: '<rect x="8" y="18" width="214" height="70" rx="6" fill="#e0f2fe" stroke="#0369a1" stroke-width="2.2"/>' +
-        '<rect x="14" y="36" width="202" height="46" rx="4" fill="#38bdf8" opacity=".42" class="fx-trough-water"/>' +
-        '<ellipse cx="115" cy="38" rx="100" ry="7" fill="#7dd3fc" opacity=".55"/>' +
-        '<path d="M16 28 v48" stroke="#fff" stroke-opacity=".4" stroke-width="5"/>'
+      w: 280, h: 130, label: "水槽",
+      outline: "M10 18 h260 v10 H28 v80 h224 v10 H10z",
+      paint: '<rect x="8" y="16" width="264" height="104" rx="6" fill="#e0f2fe" stroke="#0369a1" stroke-width="2.2"/>' +
+        '<rect x="16" y="40" width="248" height="72" rx="4" fill="#38bdf8" opacity=".42" class="fx-trough-water"/>' +
+        '<ellipse cx="140" cy="42" rx="122" ry="8" fill="#7dd3fc" opacity=".55"/>' +
+        '<path d="M18 28 v70" stroke="#fff" stroke-opacity=".4" stroke-width="5"/>'
     },
     bottle: {
       w: 100, h: 168, label: "集气瓶",
@@ -82,6 +92,15 @@
         '<path d="M36 36 v110" stroke="#fff" stroke-opacity=".5" stroke-width="5"/>' +
         '<g class="fx-gas" visibility="hidden"><rect x="34" y="70" width="32" height="70" fill="#f8fafc" opacity=".55"/></g>' +
         '<g class="fx-bottle-water" visibility="hidden"><rect x="32" y="130" width="36" height="18" fill="#38bdf8" opacity=".45"/></g>'
+    },
+    bottle_inv: {
+      w: 100, h: 168, label: "集气瓶",
+      outline: "M26 8 h48 v112 a28 18 0 0 1 -48 0z M38 140 h24 v18 H38z",
+      paint: '<path d="M26 8 h48 v112 a28 18 0 0 1 -48 0z" fill="url(#g-glass)" stroke="#64748b" stroke-width="1.5"/>' +
+        '<path d="M38 140 h24 v16 H62 v8 H38z" fill="url(#g-glass)" stroke="#64748b" stroke-width="1.4"/>' +
+        '<rect x="36" y="156" width="28" height="10" rx="2" fill="#e2e8f0" stroke="#94a3b8"/>' +
+        '<path d="M36 20 v110" stroke="#fff" stroke-opacity=".5" stroke-width="5"/>' +
+        '<g class="fx-gas" visibility="hidden"><rect x="34" y="20" width="32" height="70" fill="#f8fafc" opacity=".55"/></g>'
     },
     splint: {
       w: 32, h: 156, label: "木条",
@@ -223,53 +242,86 @@
     }
   };
 
+  /* 工位按课本装置连接：管口接导管、灯在受热部位下、瓶口在水面下、漏斗对准烧杯。 */
   var SCENES = {
     oxygen: [
-      { id: "stand", x: 300, y: 20, label: "铁架台" },
-      { id: "tube", x: 500, y: 20, label: "试管" },
-      { id: "delivery", x: 620, y: 20, label: "导管" },
-      { id: "splint", x: 900, y: 20, label: "木条" },
-      { id: "wire", x: 900, y: 200, label: "铁丝" },
-      { id: "paper", x: 900, y: 360, label: "试纸" },
-      { id: "lamp", x: 300, y: 300, label: "酒精灯" },
-      { id: "reagent", x: 500, y: 280, label: "药品" },
-      { id: "bottle", x: 620, y: 160, label: "集气瓶" },
-      { id: "cover", x: 760, y: 160, label: "玻璃片" },
-      { id: "trough", x: 620, y: 360, label: "水槽" },
-      { id: "lime_beaker", x: 760, y: 340, label: "石灰水" }
+      { id: "stand", x: 123, y: 166, label: "铁架台" },
+      { id: "tube", x: 186, y: 138, r: 84, ox: 32, oy: 100, label: "试管" },
+      { id: "lamp", x: 72, y: 241, label: "酒精灯" },
+      { id: "reagent", x: 16, y: 360, label: "药品" },
+      { id: "delivery", x: 296, y: 208, label: "导管" },
+      { id: "trough", x: 386, y: 440, label: "水槽" },
+      { id: "bottle", art: "bottle_inv", x: 460, y: 322, label: "集气瓶" },
+      { id: "splint", x: 700, y: 300, label: "木条" },
+      { id: "cover", x: 720, y: 460, label: "玻璃片" },
+      { id: "paper", x: 820, y: 80, label: "试纸" },
+      { id: "lime_beaker", x: 820, y: 360, label: "石灰水" },
+      { id: "wire", x: 900, y: 80, label: "铁丝" }
+    ],
+    gas_wet: [
+      { id: "stand", x: 40, y: 100, label: "铁架台" },
+      { id: "tube", x: 168, y: 88, label: "试管" },
+      { id: "reagent", x: 16, y: 300, label: "药品" },
+      { id: "delivery", art: "delivery_down", x: 186, y: 76, label: "导管" },
+      { id: "trough", x: 248, y: 360, label: "水槽" },
+      { id: "bottle", art: "bottle_inv", x: 286, y: 244, label: "集气瓶" },
+      { id: "splint", x: 560, y: 240, label: "木条" },
+      { id: "cover", x: 580, y: 400, label: "玻璃片" },
+      { id: "lime_beaker", x: 700, y: 320, label: "石灰水" },
+      { id: "lamp", x: 16, y: 440, label: "酒精灯" }
+    ],
+    gas_air: [
+      { id: "stand", x: 40, y: 70, label: "铁架台" },
+      { id: "tube", x: 168, y: 48, label: "试管" },
+      { id: "reagent", x: 16, y: 280, label: "药品" },
+      { id: "delivery", art: "delivery_down", x: 186, y: 36, s: 0.5, label: "导管" },
+      { id: "bottle", x: 210, y: 158, label: "集气瓶" },
+      { id: "cover", x: 222, y: 138, label: "玻璃片" },
+      { id: "lime_beaker", x: 360, y: 250, label: "石灰水" },
+      { id: "trough", x: 700, y: 430, label: "水槽" },
+      { id: "splint", x: 700, y: 80, label: "木条" },
+      { id: "lamp", x: 16, y: 430, label: "酒精灯" }
+    ],
+    burn: [
+      { id: "lamp", x: 120, y: 300, label: "酒精灯" },
+      { id: "wire", x: 248, y: 168, label: "铁丝" },
+      { id: "cover", x: 398, y: 148, label: "玻璃片" },
+      { id: "bottle", x: 386, y: 168, label: "集气瓶" },
+      { id: "reagent", x: 540, y: 280, label: "药品" },
+      { id: "trough", x: 700, y: 430, label: "水槽" }
     ],
     neutralization: [
-      { id: "goggles", x: 310, y: 24, label: "护目镜" },
-      { id: "paper", x: 310, y: 120, label: "称量纸" },
-      { id: "balance", x: 300, y: 320, label: "天平" },
-      { id: "dropper", x: 500, y: 16, label: "胶头滴管" },
-      { id: "beaker", x: 500, y: 180, label: "烧杯" },
-      { id: "reagent", x: 500, y: 360, label: "药品" },
-      { id: "rod", x: 700, y: 200, label: "玻璃棒" },
-      { id: "cylinder", x: 820, y: 140, label: "量筒" }
+      { id: "goggles", x: 36, y: 36, label: "护目镜" },
+      { id: "beaker", x: 360, y: 250, label: "烧杯" },
+      { id: "dropper", x: 402, y: 108, label: "胶头滴管" },
+      { id: "rod", x: 350, y: 236, r: -32, ox: 94, oy: 11, label: "玻璃棒" },
+      { id: "reagent", x: 540, y: 300, label: "药品" },
+      { id: "cylinder", x: 240, y: 220, label: "量筒" },
+      { id: "balance", x: 36, y: 380, label: "天平" },
+      { id: "paper", x: 86, y: 320, label: "称量纸" }
     ],
     electrolysis: [
-      { id: "power", x: 400, y: 20, label: "电源" },
-      { id: "tubes", x: 400, y: 120, label: "集气管" },
-      { id: "cell", x: 360, y: 340, label: "水槽" },
-      { id: "reagent", x: 700, y: 340, label: "水" },
-      { id: "splint", x: 860, y: 80, label: "木条" }
+      { id: "power", x: 372, y: 20, label: "电源" },
+      { id: "tubes", x: 378, y: 168, label: "集气管" },
+      { id: "cell", x: 322, y: 310, label: "水槽" },
+      { id: "reagent", x: 640, y: 320, label: "水" },
+      { id: "splint", x: 680, y: 80, label: "木条" }
     ],
     filtration: [
-      { id: "stand", x: 300, y: 40, label: "铁架台" },
-      { id: "funnel", x: 500, y: 30, label: "漏斗" },
-      { id: "paper", x: 660, y: 30, label: "滤纸" },
-      { id: "rod", x: 820, y: 40, label: "玻璃棒" },
-      { id: "beaker", x: 500, y: 280, label: "烧杯" },
-      { id: "reagent", x: 700, y: 280, label: "浊液" }
+      { id: "stand", x: 90, y: 70, label: "铁架台" },
+      { id: "funnel", x: 130, y: 68, label: "漏斗" },
+      { id: "paper", x: 280, y: 70, label: "滤纸" },
+      { id: "rod", x: 248, y: 90, r: -48, ox: 20, oy: 11, label: "玻璃棒" },
+      { id: "beaker", x: 123, y: 198, label: "烧杯" },
+      { id: "reagent", x: 320, y: 320, label: "浊液" }
     ],
     evaporation: [
-      { id: "lamp", x: 320, y: 300, label: "酒精灯" },
-      { id: "stand", art: "tripod", x: 480, y: 280, label: "三脚架" },
-      { id: "gauze", x: 480, y: 40, label: "陶土网" },
-      { id: "dish", x: 480, y: 120, label: "蒸发皿" },
-      { id: "rod", x: 720, y: 40, label: "玻璃棒" },
-      { id: "reagent", x: 720, y: 200, label: "溶液" }
+      { id: "lamp", x: 200, y: 398, label: "酒精灯" },
+      { id: "stand", art: "tripod", x: 168, y: 300, label: "三脚架" },
+      { id: "gauze", x: 190, y: 288, label: "陶土网" },
+      { id: "dish", x: 202, y: 246, label: "蒸发皿" },
+      { id: "rod", x: 360, y: 230, r: -16, ox: 20, oy: 11, label: "玻璃棒" },
+      { id: "reagent", x: 430, y: 360, label: "溶液" }
     ]
   };
 
@@ -319,7 +371,7 @@
       var a = ART[artId] || ART.beaker;
       var slot = el("g", { "class": "slot", "data-slot": spec.id, transform: tf(spec) });
       slot.innerHTML = '<path class="slot-dash" d="' + a.outline + '" fill="none" stroke-linejoin="round" stroke-linecap="round"/>' +
-        '<text class="slot-label" x="' + (a.w / 2) + '" y="' + (a.h + 16) + '" text-anchor="middle">' + (spec.label || a.label) + "</text>";
+        '<text class="slot-label" x="' + (a.w / 2) + '" y="' + (a.h + 18) + '" text-anchor="middle">' + (spec.label || a.label) + "</text>";
       slot.style.display = "none";
       slots[spec.id] = slot;
       svg.appendChild(slot);
@@ -348,10 +400,46 @@
 
   function init(host, sceneKey) {
     host.innerHTML = "";
-    svg = el("svg", { id: "bench", viewBox: "0 0 1000 520", preserveAspectRatio: "xMidYMid meet" });
+    svg = el("svg", { id: "bench", viewBox: "0 0 1100 600", preserveAspectRatio: "xMidYMid meet" });
     svg.innerHTML = defsHtml();
     host.appendChild(svg);
     layout(sceneKey || "oxygen");
+    refit();
+  }
+
+  function refit() {
+    if (!svg) return;
+    var ctm = svg.getScreenCTM();
+    if (!ctm) {
+      requestAnimationFrame(refit);
+      return;
+    }
+    var inv;
+    try { inv = ctm.inverse(); } catch (e) { return; }
+    var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    function acc(node) {
+      if (!node || node.style.display === "none") return;
+      var r = node.getBoundingClientRect();
+      if (!r.width || !r.height) return;
+      [[r.left, r.top], [r.right, r.top], [r.left, r.bottom], [r.right, r.bottom]].forEach(function (p) {
+        var pt = svg.createSVGPoint();
+        pt.x = p[0];
+        pt.y = p[1];
+        var u = pt.matrixTransform(inv);
+        minX = Math.min(minX, u.x);
+        minY = Math.min(minY, u.y);
+        maxX = Math.max(maxX, u.x);
+        maxY = Math.max(maxY, u.y);
+      });
+    }
+    Object.keys(slots).forEach(function (k) { acc(slots[k]); });
+    Object.keys(pieces).forEach(function (k) { acc(pieces[k].el); });
+    if (!isFinite(minX) || maxX <= minX || maxY <= minY) return;
+    var padX = Math.max(48, (maxX - minX) * 0.1);
+    var padY = Math.max(40, (maxY - minY) * 0.1);
+    svg.setAttribute("viewBox",
+      (minX - padX) + " " + (minY - padY) + " " +
+      (maxX - minX + padX * 2) + " " + (maxY - minY + padY * 2));
   }
 
   function setSelecting(on, needMap) {
@@ -361,6 +449,7 @@
       slots[k].style.display = selecting && needed[k] ? "" : "none";
       slots[k].classList.toggle("needed", !!(selecting && needed[k]));
     });
+    refit();
   }
   function hoverSlot(name) {
     Object.keys(slots).forEach(function (k) {
@@ -401,9 +490,18 @@
     if (pieces.tube) {
       var spec = Object.assign({}, pieces.tube.spec);
       if (st.upright) spec.r = 0;
-      else if (st.tilt_up) spec.r = 26;
-      else if (st.tilt_down) spec.r = -26;
+      else if (st.tilt_up) spec.r = 78;
+      else if (st.tilt_down) spec.r = 96;
       pieces.tube.el.setAttribute("transform", tf(spec));
+    }
+    if (pieces.bottle) {
+      var bs = Object.assign({}, pieces.bottle.spec);
+      if (st.air_collect) {
+        bs.r = 0;
+        delete bs.ox;
+        delete bs.oy;
+      }
+      pieces.bottle.el.setAttribute("transform", tf(bs));
     }
     (fx["fx-liquid"] || []).forEach(function (n) {
       var colors = { pink: "#f9a8d4", pale: "#fce7f3", clear: "#7dd3fc" };
@@ -421,6 +519,7 @@
     (fx["fx-dish-liquid"] || []).forEach(function (n) {
       n.setAttribute("opacity", st.crystals ? "0.25" : "0.5");
     });
+    refit();
   }
   function clientToSvg(clientX, clientY) {
     if (!svg) return { x: 0, y: 0 };
@@ -434,12 +533,14 @@
   }
   function specCenter(spec, art) {
     var s = spec.s || 1;
+    var ox = spec.ox != null ? spec.ox : 0;
+    var oy = spec.oy != null ? spec.oy : 0;
     var rad = (spec.r || 0) * Math.PI / 180;
-    var lx = art.w * s * 0.5;
-    var ly = art.h * s * 0.5;
+    var lx = art.w * s * 0.5 - ox;
+    var ly = art.h * s * 0.5 - oy;
     return {
-      x: spec.x + lx * Math.cos(rad) - ly * Math.sin(rad),
-      y: spec.y + lx * Math.sin(rad) + ly * Math.cos(rad)
+      x: spec.x + ox + lx * Math.cos(rad) - ly * Math.sin(rad),
+      y: spec.y + oy + lx * Math.sin(rad) + ly * Math.cos(rad)
     };
   }
   function snapR(spec, art) {

@@ -117,6 +117,7 @@ async def create_courseware(
         is_interactive=data.is_interactive,
         want_virtual_lab=bool(data.want_virtual_lab) and bool(data.is_interactive),
         virtual_lab_key=data.virtual_lab_key if data.is_interactive else None,
+        animation_keys=(data.animation_keys if data.is_interactive else None),
         gen_status=ParseStatus.pending,
     )
     db.add(cw)
@@ -295,6 +296,8 @@ async def regenerate_courseware(
     cw.is_interactive = data.is_interactive
     cw.want_virtual_lab = bool(data.want_virtual_lab) and bool(data.is_interactive)
     cw.virtual_lab_key = data.virtual_lab_key if data.is_interactive else None
+    cw.animation_keys = data.animation_keys if data.is_interactive else None
+    flag_modified(cw, "animation_keys")
     flag_modified(cw, "chapter_range")
     flag_modified(cw, "page_range")
     cw.content = None
@@ -402,6 +405,7 @@ async def copy_courseware(
         is_interactive=src.is_interactive,
         want_virtual_lab=bool(src.want_virtual_lab),
         virtual_lab_key=src.virtual_lab_key,
+        animation_keys=copy.deepcopy(src.animation_keys) if src.animation_keys else None,
         task_id=None,
     )
     db.add(clone)

@@ -21,6 +21,7 @@ alwaysApply: true
 | 班级/学生 | `api/v1/classroom.py`、`models/student.py`（`SchoolClass`）、`services/classroom_service.py`、`views/students/` |
 | 题库 | `api/v1/question.py`、`models/question.py`、`views/question-bank/` |
 | 课件/互动 | `api/v1/courseware.py`、`interaction.py`、`views/courseware/`、`skill_service.py` |
+| 互动动画 | `api/v1/animation.py`、`models/animation.py`、`services/animation_service.py`、`views/animation/` |
 | 理科 skill | `backend/skills/<name>/` + `services/skill_service.py`（不要扫其他 skill） |
 | 作业 | `api/v1/homework.py`、`services/homework_service.py`、`views/homework/` |
 | 批改 | `api/v1/grading.py`、`models/grading.py`、`services/grading_service.py`、`views/grading/`、`views/public/CollectPages.vue` |

@@ -4,7 +4,7 @@ import type {
   Student, SchoolClass, ExamResult, ExamSummary, GradeReport, LLMConfig, EmbeddingConfig, TeacherSubject,
   SchoolLevel, Grade, Subject, SubjectPrompt,
   CoursewareSession, SessionBoard, PublicSession, CoursewareVersion,
-  AnalysisSet, Paginated, KgNode, KgEdge, KgGraph, LabExperiment,
+  AnalysisSet, Paginated, KgNode, KgEdge, KgGraph, LabExperiment, InteractiveAsset,
   ShareLink, ShareMeta, SharePayload, ShareResourceType,
   GradingAssignment, GradingSubmission, WrongQuestionItem,
   CollectMeta,
@@ -139,6 +139,21 @@ export const coursewareApi = {
     request.delete(`/coursewares/${id}/versions/${vid}`),
   applyVersion: (id: number, vid: number) =>
     request.post<Courseware>(`/coursewares/${id}/versions/${vid}/apply`),
+}
+
+// ─── 互动动画库 ────────────────────────────────────────────────────
+export const animationApi = {
+  list: (params?: { subject?: string }) =>
+    request.get<{ items: InteractiveAsset[] }>('/animations', { params }),
+  get: (id: number) => request.get<InteractiveAsset>(`/animations/${id}`),
+  getHtml: (id: number) =>
+    request.get<string>(`/animations/${id}/html`, { responseType: 'text', timeout: 60000 }),
+  create: (data: { template_key: string; title: string; keywords?: string[]; knowledge_tags?: string[] }) =>
+    request.post<InteractiveAsset>('/animations', data),
+  update: (id: number, data: { title?: string; keywords?: string[]; knowledge_tags?: string[] }) =>
+    request.patch<InteractiveAsset>(`/animations/${id}`, data),
+  rerender: (id: number) => request.post<InteractiveAsset>(`/animations/${id}/render`),
+  delete: (id: number) => request.delete(`/animations/${id}`),
 }
 
 // ─── 课堂互动会话 ──────────────────────────────────────────────────

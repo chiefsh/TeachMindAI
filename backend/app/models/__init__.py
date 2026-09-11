@@ -8,6 +8,7 @@ from app.models.education import SchoolLevel, Grade, Subject, TeacherSubject
 from app.models.textbook import Textbook, TextbookChapter, TextbookImage
 from app.models.question import Question, QuestionImport
 from app.models.courseware import Courseware, CoursewareVersion
+from app.models.animation import InteractiveAsset
 from app.models.homework import HomeworkPaper, HomeworkQuestion
 from app.models.student import Student, ExamResult, GradeReport, SchoolClass
 from app.models.llm_config import LLMConfig
@@ -25,7 +26,7 @@ __all__ = [
     "SchoolLevel", "Grade", "Subject", "TeacherSubject",
     "Textbook", "TextbookChapter", "TextbookImage",
     "Question", "QuestionImport",
-    "Courseware", "CoursewareVersion",
+    "Courseware", "CoursewareVersion", "InteractiveAsset",
     "HomeworkPaper", "HomeworkQuestion",
     "Student", "ExamResult", "GradeReport", "SchoolClass",
     "LLMConfig",

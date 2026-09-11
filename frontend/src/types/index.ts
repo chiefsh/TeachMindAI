@@ -106,6 +106,7 @@ export interface Courseware {
   is_interactive: boolean
   want_virtual_lab?: boolean
   virtual_lab_key?: string | null
+  animation_keys?: string[] | null
   textbook_id?: number; grade_id?: number; subject_id?: number
   task_id?: string; created_at: string
   content?: Record<string, unknown>; custom_prompt?: string
@@ -121,6 +122,24 @@ export interface LabExperiment {
   key: string
   title: string
   group: string
+}
+
+export interface InteractiveAsset {
+  id: number
+  key: string
+  title: string
+  subject: string
+  group: string
+  kind: string
+  origin: 'system' | 'teacher' | string
+  teacher_id: number | null
+  keywords: string[]
+  knowledge_tags: string[]
+  skill: string
+  problem_type: string
+  spec: Record<string, unknown>
+  has_html: boolean
+  created_at: string
 }
 
 export interface CoursewareVersion {

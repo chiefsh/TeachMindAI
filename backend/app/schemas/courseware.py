@@ -17,6 +17,7 @@ class CoursewareCreate(BaseModel):
     is_interactive: bool = False
     want_virtual_lab: bool = False
     virtual_lab_key: str | None = None  # 实验 key；空则按章节匹配
+    animation_keys: list[str] | None = None  # 动画库 key；空且勾选实验则自动匹配
 
     @field_validator("theme")
     @classmethod
@@ -30,9 +31,25 @@ class CoursewareCreate(BaseModel):
         if key is None:
             return None
         from app.services.skill_service import known_lab_keys
-        if key not in known_lab_keys():
+        if key not in known_lab_keys() and not key.startswith("u"):
             raise ValueError("未知的虚拟实验")
         return key
+
+    @field_validator("animation_keys")
+    @classmethod
+    def _anim_keys(cls, v: list[str] | None) -> list[str] | None:
+        if not v:
+            return None
+        out, seen = [], set()
+        for raw in v:
+            key = (raw or "").strip()[:80]
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            out.append(key)
+            if len(out) >= 8:
+                break
+        return out or None
 
 
 class CoursewareUpdate(BaseModel):
@@ -69,6 +86,7 @@ class CoursewareOut(BaseModel):
     is_interactive: bool
     want_virtual_lab: bool = False
     virtual_lab_key: str | None = None
+    animation_keys: list[str] | None = None
     textbook_id: int | None
     grade_id: int | None = None
     subject_id: int | None = None

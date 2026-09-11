@@ -17,4 +17,4 @@ alwaysApply: false
 
 能力表与路由：`skill_service.SKILL_CAPABILITIES`、`LAB_CATALOG`、`route_math_point` / `route_chem_point` / `route_chem_lab_point`。任何失败返回 `""`，由 `ai_service` 回退。
 
-题型 schema 在各 skill 的 `references/`。接入清单：`docs/skill-integration-plan.md`。宏观实验目录走 `GET /coursewares/lab-experiments`，前端不要写死 key。
+题型 schema 在各 skill 的 `references/`。接入清单：`docs/skill-integration-plan.md`。宏观实验目录走动画库 `GET /animations`（系统种子来自 `LAB_CATALOG`），前端不要写死 key。出课引用库 HTML，不要每次重跑 CLI。

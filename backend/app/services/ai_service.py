@@ -1151,11 +1151,17 @@ async def _rewrite_one_slide(
         routed = None
         try:
             prev = slide.get("skill") if isinstance(slide.get("skill"), dict) else {}
-            lab_key = prev.get("problem_type") if prev.get("skill") == "edu-chem-lab" else None
-            prefer_lab = bool(lab_key) or ("实验" in (instruction or slide.get("title") or ""))
-            html, routed = await skill_service.maybe_generate_skill(
-                cfg, point, subject_name, lab_key=lab_key, prefer_lab=prefer_lab,
+            lab_key = prev.get("asset_key") or (
+                prev.get("problem_type") if prev.get("skill") == "edu-chem-lab" else None
             )
+            if lab_key:
+                from app.services.animation_service import payload_for_key
+                html, routed = await payload_for_key(lab_key)
+            if not html:
+                prefer_lab = bool(lab_key) or ("实验" in (instruction or slide.get("title") or ""))
+                html, routed = await skill_service.maybe_generate_skill(
+                    cfg, point, subject_name, lab_key=lab_key, prefer_lab=prefer_lab,
+                )
         except Exception as e:
             logger.warning("单页优化 skill 失败，回退 LLM：%s", e)
         if not html:
@@ -1393,16 +1399,8 @@ async def _generate_lesson_content(
             interactive_jobs.append((len(slides) - 1, point_i, p))
         idx += 1
 
-    lab_point_i = None
-    lab_type = None
-    want_lab = bool(getattr(cw, "want_virtual_lab", False)) and bool(cw.is_interactive)
-    if want_lab:
-        from app.services import skill_service as _skill
-        explicit = getattr(cw, "virtual_lab_key", None)
-        if _skill._is_lab_subject(subject_name) or explicit:
-            picked = _skill.pick_chem_lab(points, cw.title, explicit)
-            if picked:
-                lab_point_i, lab_type = picked[0] + 1, picked[1]  # point_i 从 1 计
+    from app.services.animation_service import resolve_keys as _resolve_anim_keys
+    anim_keys = _resolve_anim_keys(cw, points, cw.title, subject_name) if cw.is_interactive else []
 
     if interactive_jobs:
         import asyncio
@@ -1413,13 +1411,8 @@ async def _generate_lesson_content(
             async with sem:
                 html = ""
                 routed = None
-                use_lab = bool(lab_type) and point_i == lab_point_i
                 try:
-                    html, routed = await skill_service.maybe_generate_skill(
-                        cfg, p, subject_name,
-                        lab_key=lab_type if use_lab else None,
-                        prefer_lab=use_lab,
-                    )
+                    html, routed = await skill_service.maybe_generate_skill(cfg, p, subject_name)
                 except Exception as e:
                     logger.warning("课件 %s 知识点 %s skill 生成失败，回退 LLM：%s", cw.id, p.get("name"), e)
                 if not html:
@@ -1439,30 +1432,29 @@ async def _generate_lesson_content(
                 slides[slide_i]["html"] = html
             if routed:
                 slides[slide_i]["skill"] = routed
-                if routed.get("skill") == "edu-chem-lab":
-                    slides[slide_i]["title"] = "虚拟实验台"
-                    slides[slide_i]["subtitle"] = "选仪器 · 加药品 · 观察现象 · 安全操作"
-                    slides[slide_i]["notes"] = "让学生按步骤操作，错了先讲安全再重做。"
 
-        if want_lab and lab_type and not any(
-            isinstance(slides[i].get("skill"), dict)
-            and slides[i]["skill"].get("skill") == "edu-chem-lab"
-            for i, _, _ in interactive_jobs
-        ):
+    if anim_keys:
+        from app.services.animation_service import payload_for_key
+        for key in anim_keys:
             try:
-                routed = {
-                    "skill": "edu-chem-lab", "problem_type": lab_type, "spec": {},
-                }
-                html = await skill_service.render_chem_lab_html(routed)
-                if html:
-                    slide_i = interactive_jobs[0][0]
-                    slides[slide_i]["html"] = html
-                    slides[slide_i]["skill"] = routed
-                    slides[slide_i]["title"] = "虚拟实验台"
-                    slides[slide_i]["subtitle"] = "选仪器 · 加药品 · 观察现象 · 安全操作"
-                    slides[slide_i]["notes"] = "让学生按步骤操作，错了先讲安全再重做。"
+                html, routed = await payload_for_key(key)
             except Exception as e:
-                logger.warning("课件 %s 强制生成虚拟实验失败：%s", cw.id, e)
+                logger.warning("课件 %s 引用动画 %s 失败：%s", cw.id, key, e)
+                continue
+            if not html or not routed:
+                continue
+            slides.append({
+                "index": idx,
+                "type": "interactive",
+                "title": routed.get("title") or "虚拟实验台",
+                "subtitle": "动画库 · 选仪器 · 加药品 · 观察现象",
+                "bullets": ["从互动动画库引入，不重复生成"],
+                "content": "",
+                "notes": "让学生按步骤操作，错了先讲安全再重做。",
+                "html": html,
+                "skill": routed,
+            })
+            idx += 1
 
     mistakes = [m for p in points for m in (p.get("common_mistakes") or [])][:4]
     if mistakes:

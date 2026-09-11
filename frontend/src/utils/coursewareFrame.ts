@@ -148,12 +148,16 @@ const IFRAME_REPORT_HEIGHT = `
 
 const APP_EMBED_CSS = `
 <style id="cw-embed-fix">
-html,body{height:auto!important;min-height:100%!important}
-.wrap{grid-template-columns:minmax(0,1fr) 220px!important;min-height:540px;min-width:0}
-.stage{min-height:420px!important;min-width:0}
-#view,#bench{min-height:380px!important;width:100%!important}
-.palette{max-width:260px}
-@media (max-width:640px){
+html,body{height:100%!important;overflow:hidden!important;min-height:640px!important}
+.wrap{grid-template-columns:196px minmax(0,1fr) 200px!important;flex:1;min-height:0!important;overflow:hidden}
+.stage{min-height:0!important;overflow:hidden}
+#view,#bench{min-height:0!important;width:100%!important;height:100%}
+.palette{position:relative!important;left:auto!important;top:auto!important;max-width:none!important;z-index:1;overflow:auto}
+.log-col{min-height:0!important;overflow:hidden!important;display:flex;flex-direction:column}
+#log{flex:1;min-height:0;overflow-y:auto}
+.hint-bar,.stage-hint{position:static!important;max-width:none!important}
+@media (max-width:720px){
+  html,body{height:auto!important;overflow:auto!important}
   .wrap{grid-template-columns:1fr!important;min-height:0!important}
 }
 </style>

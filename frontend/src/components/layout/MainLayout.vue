@@ -140,6 +140,7 @@ const allNav: NavItem[] = [
     icon: 'VideoPlay',
     children: [
       { path: '/courseware', label: '课件生成', icon: 'VideoPlay', perm: 'courseware.view' },
+      { path: '/animations', label: '互动动画', icon: 'Monitor', perm: 'animation.view' },
       { path: '/homework', label: '作业/考试', icon: 'Tickets', perm: 'homework.view' },
       { path: '/question-analysis', label: '试题分析', icon: 'DataAnalysis', perm: 'analysis.view' },
     ],

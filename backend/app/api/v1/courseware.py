@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, delete, update
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import defer, selectinload
 from sqlalchemy.orm.attributes import flag_modified
 from typing import Optional
 from urllib.parse import quote, urlparse
@@ -40,21 +40,43 @@ async def list_coursewares(
     teacher: Teacher = Depends(get_current_teacher),
     db: AsyncSession = Depends(get_db),
 ):
-    q = select(Courseware).options(
-        selectinload(Courseware.textbook)
-    )
-    q = await apply_private_scope(q, Courseware, db, teacher, "courseware")
+    # 先只排 id，避免把整份 content JSON 带进 filesort（会撑爆 MySQL sort buffer）
+    id_q = select(Courseware.id)
+    id_q = await apply_private_scope(id_q, Courseware, db, teacher, "courseware")
     # 课件本身不直接挂年级/科目，按其引用的课本进行过滤
     if grade_id or subject_id:
-        q = q.join(Textbook, Textbook.id == Courseware.textbook_id)
+        id_q = id_q.join(Textbook, Textbook.id == Courseware.textbook_id)
         if grade_id:
-            q = q.where(Textbook.grade_id == grade_id)
+            id_q = id_q.where(Textbook.grade_id == grade_id)
         if subject_id:
-            q = q.where(Textbook.subject_id == subject_id)
+            id_q = id_q.where(Textbook.subject_id == subject_id)
 
-    total = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar() or 0
-    q = q.order_by(Courseware.created_at.desc()).offset((page - 1) * page_size).limit(page_size)
-    rows = (await db.execute(q)).scalars().all()
+    total = (await db.execute(select(func.count()).select_from(id_q.subquery()))).scalar() or 0
+    ids = (
+        await db.execute(
+            id_q.order_by(Courseware.created_at.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        )
+    ).scalars().all()
+    if not ids:
+        return {"total": total, "page": page, "page_size": page_size, "items": []}
+
+    rows = (
+        await db.execute(
+            select(Courseware)
+            .where(Courseware.id.in_(ids))
+            .options(
+                selectinload(Courseware.textbook),
+                defer(Courseware.content),
+                defer(Courseware.custom_prompt),
+                defer(Courseware.chapter_range),
+                defer(Courseware.page_range),
+            )
+        )
+    ).scalars().all()
+    by_id = {cw.id: cw for cw in rows}
+    rows = [by_id[i] for i in ids if i in by_id]
     await stamp_access_many(db, teacher, rows, "courseware")
 
     items = []

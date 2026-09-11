@@ -410,7 +410,7 @@ async def render_chem_reaction_html(routed: dict, timeout: float = 45.0) -> str:
     return await _render_via_cli("edu-chem-reaction", routed["problem_type"], timeout)
 
 
-async def render_chem_lab_html(routed: dict, timeout: float = 20.0) -> str:
+async def render_chem_lab_html(routed: dict, timeout: float = 45.0) -> str:
     return await _render_via_cli("edu-chem-lab", routed["problem_type"], timeout)
 
 

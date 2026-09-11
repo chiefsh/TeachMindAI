@@ -1,0 +1,856 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>化学虚拟实验台</title>
+  <style>
+    :root {
+      --ink: #1e293b; --muted: #64748b; --line: #e2e8f0;
+      --ok: #16a34a; --bad: #dc2626; --accent: #0f766e;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; height: auto; }
+    body {
+      font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+      color: var(--ink); background: #f1f5f9; display: flex; flex-direction: column;
+      min-height: 100%;
+    }
+    header {
+      padding: 10px 14px; background: #fff; border-bottom: 1px solid var(--line);
+      display: flex; align-items: center; gap: 10px; flex-wrap: wrap; flex-shrink: 0;
+    }
+    header h1 { font-size: 17px; margin: 0; }
+    header p { margin: 2px 0 0; font-size: 12px; color: var(--accent); }
+    .badge {
+      font-size: 11px; font-weight: 600; color: var(--accent);
+      background: #ccfbf1; border-radius: 999px; padding: 2px 10px;
+    }
+    .eq {
+      margin-left: auto; font-size: 13px; background: #f8fafc; border: 1px solid var(--line);
+      border-radius: 10px; padding: 6px 10px; font-family: ui-serif, serif;
+    }
+    .wrap {
+      flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) 220px;
+      min-height: 540px; min-width: 0;
+    }
+    @media (max-width: 640px) {
+      .wrap { grid-template-columns: 1fr; min-height: 0; }
+      .log-col { border-left: 0; border-top: 1px solid var(--line); min-height: 180px; }
+    }
+    .log-col { background: #fff; overflow: auto; min-width: 0; border-left: 1px solid var(--line); padding: 12px; }
+    .sec-title { font-size: 11px; font-weight: 700; letter-spacing: .08em; color: var(--muted); margin: 8px 0; }
+    .stage { position: relative; min-height: 420px; min-width: 0; display: flex; flex-direction: column; background: #eef3f8; }
+    #view { flex: 1; width: 100%; min-height: 400px; }
+    #bench { width: 100%; height: 100%; min-height: 400px; display: block; }
+    .slot { pointer-events: none; }
+    .slot-dash { stroke: #94a3b8; stroke-width: 1.4; stroke-dasharray: 4 8; opacity: .55; }
+    .slot.hot .slot-dash { stroke: #0f766e; stroke-width: 2; opacity: .95; }
+    .slot-label { font-size: 11px; fill: #94a3b8; font-weight: 600; }
+    .palette {
+      position: absolute; left: 10px; top: 10px; z-index: 4;
+      max-width: 268px; background: rgba(255,255,255,.94);
+      border: 1px solid var(--line); border-radius: 12px; padding: 8px;
+      box-shadow: 0 8px 20px rgba(15,23,42,.08);
+    }
+    .palette .sec-title { margin: 4px 0 6px; }
+    .tiles { display: flex; flex-wrap: wrap; gap: 6px; }
+    .tile {
+      width: 60px; border: 1px solid var(--line); background: #fff; border-radius: 10px;
+      padding: 4px 2px 6px; cursor: grab; user-select: none; text-align: center;
+      box-shadow: 0 2px 6px rgba(15,23,42,.05); touch-action: none;
+    }
+    .tile:active { cursor: grabbing; }
+    .tile.placed { opacity: .32; cursor: default; filter: grayscale(.45); }
+    .tile.wrong { border-color: var(--bad); background: #fef2f2; }
+    .tile .ico { height: 48px; display: flex; align-items: center; justify-content: center; }
+    .tile .ico svg { max-width: 42px; max-height: 46px; }
+    .tile span { display: block; font-size: 10px; line-height: 1.2; }
+    .hidden { display: none !important; }
+    .hint-bar {
+      position: absolute; right: 12px; top: 10px; z-index: 3; max-width: 340px; margin: 0;
+      background: rgba(255,255,255,.94); border-radius: 12px;
+      padding: 8px 12px; font-size: 13px; border: 1px solid var(--line);
+    }
+    .actions .hint-bar { position: static; max-width: none; }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 10px 12px; }
+    .btn {
+      appearance: none; border: 0; border-radius: 10px; padding: 9px 14px; font-size: 14px;
+      font-weight: 600; cursor: pointer; background: var(--accent); color: #fff;
+    }
+    .choice {
+      display: block; width: 100%; text-align: left; margin-bottom: 8px;
+      border: 1px solid var(--line); background: #fff; border-radius: 12px; padding: 10px 12px;
+      font-size: 13px; cursor: pointer;
+    }
+    .toast {
+      position: absolute; left: 50%; bottom: 64px; transform: translateX(-50%);
+      max-width: 90%; background: #111827; color: #fff; border-radius: 12px;
+      padding: 10px 14px; font-size: 13px; display: none; z-index: 5;
+    }
+    .toast.bad { background: #991b1b; }
+    .toast.ok { background: #166534; }
+    .ghost {
+      position: fixed; z-index: 80; pointer-events: none;
+      filter: drop-shadow(0 10px 16px rgba(15,23,42,.25));
+    }
+    .ghost svg { width: 72px; height: auto; }
+    .step { font-size: 13px; padding: 8px 0; border-bottom: 1px dashed var(--line); color: var(--muted); }
+    .step.now { color: var(--ink); font-weight: 700; }
+    .step.done { color: var(--ok); }
+    .obs { font-size: 13px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 10px; padding: 8px 10px; margin-top: 8px; }
+    .hazard { background: #fef2f2; border-color: #fecaca; color: #991b1b; }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <div class="badge" id="badge">虚拟实验台</div>
+      <h1 id="title">化学虚拟实验台</h1>
+      <p id="subtitle"></p>
+    </div>
+    <div class="eq" id="equation"></div>
+  </header>
+  <div class="wrap">
+    <section class="stage">
+      <div class="palette">
+        <div class="sec-title">器材 · 拖到同形虚线</div>
+        <div class="tiles" id="apparatus"></div>
+        <div class="sec-title">药品 · 拖到药品虚线</div>
+        <div class="tiles" id="reagents"></div>
+      </div>
+      <div class="hint-bar" id="step-hint"></div>
+      <div id="view"></div>
+      <div class="actions" id="actions"></div>
+      <div class="toast" id="toast"></div>
+    </section>
+    <aside class="log-col">
+      <div class="sec-title">实验步骤</div>
+      <div id="steps"></div>
+      <div class="sec-title">观察与安全</div>
+      <div id="log"></div>
+    </aside>
+  </div>
+  <div id="ghost" class="ghost hidden"></div>
+  <script type="application/json" id="lab-data">{"id": "electrolysis", "scene": "electrolysis", "title": "电解水", "subtitle": "通电分解 · 正氧负氢 · 体积比 1:2", "equation": "2H₂O 通电→ 2H₂↑ + O₂↑", "goal": "观察电解水，根据电极和体积比判断氢气、氧气，并检验。", "badge": "初中化学 · 分解反应", "inventory": {"apparatus": [{"id": "cell", "name": "电解器 / 水槽", "icon": "槽", "slot": "cell"}, {"id": "power", "name": "直流电源", "icon": "电", "slot": "power"}, {"id": "tubes", "name": "两支集气管", "icon": "管", "slot": "tubes"}, {"id": "splint", "name": "木条（点燃 / 带火星）", "icon": "木条", "slot": "splint"}, {"id": "lamp", "name": "酒精灯", "icon": "灯", "slot": ""}], "reagents": [{"id": "water", "name": "水（可加少量硫酸或氢氧化钠）", "color": "#38bdf8", "slot": "reagent"}, {"id": "hcl", "name": "浓盐酸", "color": "#22c55e", "slot": ""}]}, "required_apparatus": ["cell", "power", "tubes", "splint"], "required_reagents": ["water"], "steps": [{"id": "pick", "need": "select", "title": "选取仪器与药品", "hint": "从左上角把器材拖到形状相同的虚线工位；药品拖到「药品」虚线。放对会卡住，放错会弹回。不需要的仪器没有工位。"}, {"id": "power", "need": "action", "title": "通电", "action_label": "接通直流电源", "hint": "两极都有气泡，负极气泡更多。", "phenomenon": "两极冒出气泡，负极一侧气体体积约为正极的两倍。", "scene": {"gases": true, "ratio": true}}, {"id": "which", "need": "choice", "title": "判断气体", "hint": "正氧负氢：正极连电源正极，产生氧气；负极产生氢气。", "choices": [{"id": "ok", "label": "负极是氢气（体积多），正极是氧气（体积少）", "correct": true, "ok": "体积比约为 2:1，正好对应 2H₂ : O₂。"}, {"id": "swap", "label": "正极是氢气，负极是氧气", "correct": false, "hazard": "记反了。口诀：正氧负氢。"}]}, {"id": "test", "need": "choice", "title": "检验两极气体", "hint": "氢气能点燃，氧气使带火星木条复燃。", "choices": [{"id": "both", "label": "负极气体点燃；正极气体用带火星木条检验", "correct": true, "ok": "负极氢气安静燃烧或轻微爆鸣；正极氧气使木条复燃。"}, {"id": "same", "label": "两支管子都伸入带火星木条", "correct": false, "hazard": "氢气不能使带火星木条复燃，应用点燃的方法检验。"}]}, {"id": "safety", "need": "choice", "title": "用电安全", "hint": "用低电压直流电，手和装置保持干燥。", "choices": [{"id": "dc", "label": "使用低压直流电源，不要用湿手触摸电极", "correct": true, "ok": "电解水是用电实验，先保证绝缘和干燥。"}, {"id": "ac", "label": "直接接家庭交流电 220V，反应更快", "correct": false, "hazard": "高压交流电有触电危险，实验室只用低压直流电源。"}]}], "complete": {"title": "实验完成", "summary": "你完成了电解水：正氧负氢、体积比约 1:2，并正确检验了两种气体。"}}</script>
+  <script>/* 宏观实验台：写实 2D 器材 + 同形虚线工位。 */
+(function (global) {
+  var NS = "http://www.w3.org/2000/svg";
+  var svg, slots = {}, pieces = {}, fx = {};
+  var selecting = false, needed = {};
+
+  function el(name, attrs, html) {
+    var n = document.createElementNS(NS, name);
+    Object.keys(attrs || {}).forEach(function (k) { n.setAttribute(k, attrs[k]); });
+    if (html) n.innerHTML = html;
+    return n;
+  }
+  function tf(s) {
+    return "translate(" + s.x + "," + s.y + ") rotate(" + (s.r || 0) + ") scale(" + (s.s || 1) + ")";
+  }
+
+  var ART = {
+    stand: {
+      w: 150, h: 240, label: "铁架台",
+      outline: "M8 220 h134 v18 h-56 v-198 h14 v180 h-92z M64 48 h62 v16 H86 v40 H74 V64 H64z",
+      paint: '<defs><linearGradient id="g-iron" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#1f2937"/><stop offset=".45" stop-color="#9ca3af"/><stop offset="1" stop-color="#111827"/></linearGradient></defs>' +
+        '<path d="M8 220 h134 v18 h-56 v-198 h14 v180 h-92z" fill="url(#g-iron)"/>' +
+        '<path d="M64 48 h62 v16 H86 v40 H74 V64 H64z" fill="#374151"/>' +
+        '<circle cx="80" cy="80" r="5" fill="#9ca3af"/>'
+    },
+    tripod: {
+      w: 170, h: 130, label: "三脚架",
+      outline: "M22 122 L78 34 h14 L148 122 h-16 L85 48 38 122z M60 22 h50 v12 H60z",
+      paint: '<path d="M22 122 L78 34 h14 L148 122" fill="none" stroke="#4b5563" stroke-width="8" stroke-linejoin="round"/>' +
+        '<line x1="85" y1="40" x2="85" y2="122" stroke="#4b5563" stroke-width="8"/>' +
+        '<rect x="60" y="22" width="50" height="12" rx="2" fill="#6b7280"/>'
+    },
+    tube: {
+      w: 64, h: 196, label: "试管",
+      outline: "M18 8 h28 a4 4 0 0 1 4 4 v140 a18 22 0 0 1 -36 0 V12 a4 4 0 0 1 4 -4z",
+      paint: '<defs><linearGradient id="g-glass" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#94a3b8" stop-opacity=".35"/><stop offset=".22" stop-color="#f8fafc" stop-opacity=".15"/><stop offset=".55" stop-color="#bae6fd" stop-opacity=".45"/><stop offset="1" stop-color="#0369a1" stop-opacity=".28"/></linearGradient></defs>' +
+        '<path d="M18 8 h28 a4 4 0 0 1 4 4 v140 a18 22 0 0 1 -36 0 V12 a4 4 0 0 1 4 -4z" fill="url(#g-glass)" stroke="#64748b" stroke-width="1.4"/>' +
+        '<path d="M22 16 v148" stroke="#fff" stroke-opacity=".55" stroke-width="4" stroke-linecap="round"/>' +
+        '<rect x="16" y="4" width="32" height="8" rx="2" fill="#e2e8f0" stroke="#94a3b8"/>' +
+        '<g class="fx-powder" visibility="hidden"><ellipse cx="32" cy="158" rx="11" ry="7" fill="#6b21a8"/><ellipse cx="28" cy="154" rx="4" ry="3" fill="#a855f7"/></g>' +
+        '<g class="fx-zinc" visibility="hidden"><rect x="24" y="148" width="16" height="8" rx="1" fill="#94a3b8"/><rect x="26" y="150" width="6" height="4" fill="#e2e8f0"/></g>' +
+        '<g class="fx-marble" visibility="hidden"><circle cx="28" cy="154" r="5" fill="#f8fafc" stroke="#cbd5e1"/><circle cx="36" cy="157" r="4" fill="#e2e8f0"/></g>' +
+        '<g class="fx-acid" visibility="hidden"><path d="M20 120 h24 v36 a12 16 0 0 1 -24 0z" fill="#38bdf8" opacity=".45"/><ellipse cx="32" cy="120" rx="12" ry="4" fill="#7dd3fc" opacity=".6"/></g>'
+    },
+    lamp: {
+      w: 108, h: 136, label: "酒精灯",
+      outline: "M44 18 h20 v16 h10 a38 32 0 1 1 -40 0 h10z",
+      paint: '<defs><linearGradient id="g-amber" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fde68a"/><stop offset=".45" stop-color="#f59e0b"/><stop offset="1" stop-color="#b45309"/></linearGradient></defs>' +
+        '<path d="M20 54 h68 v48 a34 20 0 0 1 -68 0z" fill="url(#g-amber)" stroke="#92400e" stroke-width="1.4"/>' +
+        '<path d="M20 54 h68 v38 a34 18 0 0 1 -68 0z" fill="#fbbf24" opacity=".35"/>' +
+        '<ellipse cx="54" cy="54" rx="34" ry="8" fill="#fde68a"/>' +
+        '<path d="M24 62 v48" stroke="#fff" stroke-opacity=".35" stroke-width="6"/>' +
+        '<rect x="42" y="30" width="24" height="26" rx="3" fill="#78716c"/>' +
+        '<rect x="46" y="22" width="16" height="12" rx="2" fill="#a8a29e"/>' +
+        '<rect x="51" y="16" width="6" height="10" fill="#e7e5e4"/>' +
+        '<g class="fx-flame" visibility="hidden">' +
+        '<ellipse cx="54" cy="14" rx="10" ry="16" fill="#f97316" opacity=".9"/>' +
+        '<ellipse cx="54" cy="16" rx="5" ry="10" fill="#fde68a"/>' +
+        '</g>'
+    },
+    delivery: {
+      w: 250, h: 96, label: "导管",
+      outline: "M6 12 h154 q28 0 28 26 v40 h8 v16 h-24 V42 q0 -10 -14 -10 H6z",
+      paint: '<path d="M10 20 h148 q22 0 22 20 v34" fill="none" stroke="#94a3b8" stroke-width="9" stroke-linecap="round"/>' +
+        '<path d="M10 20 h148 q22 0 22 20 v34" fill="none" stroke="#e0f2fe" stroke-width="5" stroke-linecap="round"/>' +
+        '<path d="M180 74 h28" fill="none" stroke="#475569" stroke-width="7" stroke-linecap="round"/>' +
+        '<circle cx="10" cy="20" r="5" fill="#cbd5e1"/>'
+    },
+    trough: {
+      w: 230, h: 96, label: "水槽",
+      outline: "M10 22 h210 v8 H26 v48 h178 v8 H10z",
+      paint: '<rect x="8" y="18" width="214" height="70" rx="6" fill="#e0f2fe" stroke="#0369a1" stroke-width="2.2"/>' +
+        '<rect x="14" y="36" width="202" height="46" rx="4" fill="#38bdf8" opacity=".42" class="fx-trough-water"/>' +
+        '<ellipse cx="115" cy="38" rx="100" ry="7" fill="#7dd3fc" opacity=".55"/>' +
+        '<path d="M16 28 v48" stroke="#fff" stroke-opacity=".4" stroke-width="5"/>'
+    },
+    bottle: {
+      w: 100, h: 168, label: "集气瓶",
+      outline: "M38 4 h24 v16 h12 v8 H26 v112 a28 18 0 0 0 48 0 V28 H62 V20 H38z",
+      paint:         '<path d="M38 4 h24 v16 h12 v8 H26 v112 a28 18 0 0 0 48 0 V28 H62 V20 H38z" fill="url(#g-glass)" stroke="#64748b" stroke-width="1.5"/>' +
+        '<rect x="36" y="2" width="28" height="10" rx="2" fill="#e2e8f0" stroke="#94a3b8"/>' +
+        '<path d="M36 36 v110" stroke="#fff" stroke-opacity=".5" stroke-width="5"/>' +
+        '<g class="fx-gas" visibility="hidden"><rect x="34" y="70" width="32" height="70" fill="#f8fafc" opacity=".55"/></g>' +
+        '<g class="fx-bottle-water" visibility="hidden"><rect x="32" y="130" width="36" height="18" fill="#38bdf8" opacity=".45"/></g>'
+    },
+    splint: {
+      w: 32, h: 156, label: "木条",
+      outline: "M10 8 h12 v140 h-12z",
+      paint: '<rect x="11" y="28" width="10" height="120" rx="2" fill="#b45309"/>' +
+        '<rect x="12" y="30" width="3" height="110" fill="#fbbf24" opacity=".35"/>' +
+        '<ellipse class="fx-splint" cx="16" cy="18" rx="10" ry="12" fill="#fbbf24" opacity=".85"/>'
+    },
+    beaker: {
+      w: 124, h: 146, label: "烧杯",
+      outline: "M14 8 h78 l8 6 10 -6 h8 l10 128 H10z",
+      paint:         '<path d="M14 8 h78 l8 6 10 -6 h8 l10 128 H10z" fill="url(#g-glass)" stroke="#64748b" stroke-width="1.5"/>' +
+        '<path d="M12 8 h100" stroke="#94a3b8" stroke-width="2.5"/>' +
+        '<path d="M22 22 v100" stroke="#fff" stroke-opacity=".45" stroke-width="6"/>' +
+        '<path d="M86 40 h10 M86 58 h10 M86 76 h10" stroke="#94a3b8" stroke-width="1"/>' +
+        '<g class="fx-liquid"><path d="M24 78 h76 l4 50 h-84z" fill="#7dd3fc" opacity=".5"/><ellipse cx="62" cy="78" rx="38" ry="6" fill="#bae6fd" opacity=".65"/></g>' +
+        '<g class="fx-metal" visibility="hidden"><rect x="48" y="96" width="28" height="10" rx="2" fill="#94a3b8"/></g>' +
+        '<g class="fx-beaker-bubbles" visibility="hidden"><circle cx="44" cy="100" r="3" fill="#fff" opacity=".7"/><circle cx="62" cy="90" r="2.5" fill="#fff" opacity=".7"/><circle cx="78" cy="104" r="3" fill="#fff" opacity=".65"/></g>'
+    },
+    dropper: {
+      w: 40, h: 132, label: "胶头滴管",
+      outline: "M8 8 a12 14 0 0 1 24 0 v16 H22 v88 H18 V24 H8z",
+      paint: '<ellipse cx="20" cy="18" rx="12" ry="14" fill="#ef4444"/>' +
+        '<ellipse cx="20" cy="12" rx="6" ry="4" fill="#fecaca"/>' +
+        '<rect x="16" y="30" width="8" height="88" rx="2" fill="#e0f2fe" stroke="#64748b"/>' +
+        '<path d="M18 36 v70" stroke="#fff" stroke-opacity=".5" stroke-width="2"/>' +
+        '<circle class="fx-drip" cx="20" cy="126" r="4" fill="#38bdf8" visibility="hidden"/>'
+    },
+    rod: {
+      w: 188, h: 22, label: "玻璃棒",
+      outline: "M6 6 h176 v10 h-176z",
+      paint: '<rect x="6" y="6" width="176" height="10" rx="5" fill="#e2e8f0" stroke="#94a3b8"/>' +
+        '<rect x="10" y="8" width="70" height="3" fill="#fff" opacity=".6"/>'
+    },
+    goggles: {
+      w: 120, h: 50, label: "护目镜",
+      outline: "M8 12 h104 v26 h-104z",
+      paint: '<rect x="8" y="14" width="104" height="22" rx="10" fill="#0f766e"/>' +
+        '<ellipse cx="40" cy="25" rx="16" ry="12" fill="#e0f2fe" stroke="#134e4a"/>' +
+        '<ellipse cx="80" cy="25" rx="16" ry="12" fill="#e0f2fe" stroke="#134e4a"/>' +
+        '<ellipse cx="36" cy="22" rx="5" ry="4" fill="#fff" opacity=".5"/>'
+    },
+    funnel: {
+      w: 110, h: 140, label: "漏斗",
+      outline: "M8 8 h94 L64 78 h4 v54 h-22 V78 H16z",
+      paint: '<path d="M10 10 h90 L62 80 H48z" fill="url(#g-glass)" stroke="#0284c7" stroke-width="1.5"/>' +
+        '<rect x="48" y="78" width="14" height="54" fill="#e0f2fe" stroke="#0284c7"/>' +
+        '<path d="M22 18 L55 72" stroke="#fff" stroke-opacity=".45" stroke-width="4"/>' +
+        '<g class="fx-filter-paper" visibility="hidden"><path d="M22 16 h66 L58 72 H52z" fill="#f8fafc" opacity=".88" stroke="#cbd5e1"/></g>' +
+        '<g class="fx-residue" visibility="hidden"><ellipse cx="55" cy="40" rx="16" ry="8" fill="#a8a29e"/></g>'
+    },
+    paper: {
+      w: 84, h: 84, label: "滤纸",
+      outline: "M8 8 h68 v68 h-68z",
+      paint: '<rect x="10" y="10" width="64" height="64" rx="3" fill="#fffef5" stroke="#d6d3d1"/>' +
+        '<path d="M10 10 L74 74 M74 10 L10 74" stroke="#e7e5e4" stroke-width="1"/>' +
+        '<circle cx="42" cy="42" r="22" fill="none" stroke="#d6d3d1"/>'
+    },
+    dish: {
+      w: 128, h: 48, label: "蒸发皿",
+      outline: "M12 14 Q64 2 116 14 L108 36 Q64 48 20 36z",
+      paint: '<path d="M12 14 Q64 2 116 14 L108 36 Q64 48 20 36z" fill="#e2e8f0" stroke="#64748b" stroke-width="1.6"/>' +
+        '<ellipse class="fx-dish-liquid" cx="64" cy="22" rx="42" ry="8" fill="#7dd3fc" opacity=".5"/>' +
+        '<g class="fx-crystals" visibility="hidden"><rect x="40" y="18" width="8" height="8" fill="#e0f2fe" transform="rotate(20 44 22)"/><rect x="56" y="16" width="7" height="7" fill="#f8fafc" transform="rotate(35 60 20)"/><rect x="70" y="19" width="8" height="8" fill="#bae6fd" transform="rotate(12 74 23)"/></g>'
+    },
+    gauze: {
+      w: 128, h: 24, label: "陶土网",
+      outline: "M6 4 h116 v16 h-116z",
+      paint: '<rect x="6" y="4" width="116" height="16" fill="#94a3b8"/>' +
+        '<rect x="44" y="4" width="40" height="16" fill="#a8a29e"/>' +
+        '<path d="M8 8 h112 M8 16 h112 M20 4 v16 M40 4 v16 M60 4 v16 M80 4 v16 M100 4 v16" stroke="#64748b" stroke-width=".6"/>'
+    },
+    cell: {
+      w: 268, h: 118, label: "水槽",
+      outline: "M10 20 h248 v10 H24 v68 h220 v10 H10z",
+      paint: '<rect x="8" y="16" width="252" height="90" rx="6" fill="#e0f2fe" stroke="#0369a1" stroke-width="2"/>' +
+        '<rect x="16" y="40" width="236" height="58" fill="#38bdf8" opacity=".4"/>' +
+        '<rect x="70" y="8" width="8" height="98" fill="#94a3b8"/>' +
+        '<rect x="190" y="8" width="8" height="98" fill="#cbd5e1"/>'
+    },
+    power: {
+      w: 130, h: 74, label: "电源",
+      outline: "M8 10 h114 v54 h-114z",
+      paint: '<rect x="8" y="10" width="114" height="54" rx="6" fill="#111827"/>' +
+        '<circle cx="36" cy="37" r="10" fill="#dc2626"/><text x="36" y="41" text-anchor="middle" fill="#fff" font-size="12">+</text>' +
+        '<circle cx="94" cy="37" r="10" fill="#1d4ed8"/><text x="94" y="41" text-anchor="middle" fill="#fff" font-size="14">−</text>' +
+        '<rect x="54" y="18" width="22" height="8" rx="2" fill="#22c55e"/>'
+    },
+    tubes: {
+      w: 156, h: 176, label: "集气管",
+      outline: "M20 6 h32 v158 a6 6 0 0 1 -32 0z M104 6 h32 v158 a6 6 0 0 1 -32 0z",
+      paint: '<rect x="18" y="8" width="36" height="160" rx="4" fill="url(#g-glass)" stroke="#64748b"/>' +
+        '<rect x="102" y="8" width="36" height="160" rx="4" fill="url(#g-glass)" stroke="#64748b"/>' +
+        '<g class="fx-h2" visibility="hidden"><rect x="22" y="20" width="28" height="90" fill="#e0f2fe" opacity=".55"/></g>' +
+        '<g class="fx-o2" visibility="hidden"><rect x="106" y="70" width="28" height="40" fill="#e0f2fe" opacity=".55"/></g>' +
+        '<g class="fx-ratio" visibility="hidden"><text x="78" y="50" text-anchor="middle" fill="#0f766e" font-size="16" font-weight="700">2 : 1</text></g>'
+    },
+    balance: {
+      w: 188, h: 108, label: "天平",
+      outline: "M88 8 h12 v50 h-12z M10 58 h168 v12 h-168z M16 70 h52 v28 h-52z M120 70 h52 v28 h-52z",
+      paint: '<rect x="90" y="8" width="8" height="52" fill="#57534e"/>' +
+        '<rect x="12" y="56" width="164" height="10" rx="2" fill="#78716c"/>' +
+        '<rect x="18" y="70" width="50" height="26" rx="3" fill="#a8a29e"/>' +
+        '<rect x="120" y="70" width="50" height="26" rx="3" fill="#a8a29e"/>' +
+        '<circle cx="94" cy="14" r="6" fill="#44403c"/>'
+    },
+    cylinder: {
+      w: 58, h: 176, label: "量筒",
+      outline: "M16 18 h26 v148 H16z M12 6 h34 v14 H12z",
+      paint: '<rect x="16" y="10" width="26" height="156" rx="3" fill="url(#g-glass)" stroke="#0284c7"/>' +
+        '<path d="M18 18 v140" stroke="#fff" stroke-opacity=".45" stroke-width="3"/>' +
+        '<path d="M36 30 h8 M36 50 h8 M36 70 h8 M36 90 h8 M36 110 h8 M36 130 h8" stroke="#0284c7" stroke-width="1"/>' +
+        '<rect x="14" y="6" width="30" height="8" rx="2" fill="#e0f2fe" stroke="#0284c7"/>'
+    },
+    wire: {
+      w: 76, h: 156, label: "铁丝",
+      outline: "M34 8 v90 M18 110 q18 28 40 0 q-18 20 -40 0",
+      paint: '<path d="M38 8 v88" stroke="#78716c" stroke-width="4"/>' +
+        '<path d="M20 108 q18 26 38 0 q-14 18 -38 4 q16 16 36 -2" fill="none" stroke="#a8a29e" stroke-width="3.5"/>'
+    },
+    cover: {
+      w: 96, h: 20, label: "玻璃片",
+      outline: "M6 4 h84 v12 h-84z",
+      paint: '<rect x="6" y="4" width="84" height="12" rx="2" fill="#e0f2fe" stroke="#64748b" opacity=".85"/>'
+    },
+    lime_beaker: {
+      w: 124, h: 146, label: "石灰水",
+      outline: "M14 8 h78 l8 6 10 -6 h8 l10 128 H10z",
+      paint:         '<path d="M14 8 h78 l8 6 10 -6 h8 l10 128 H10z" fill="url(#g-glass)" stroke="#64748b" stroke-width="1.5"/>' +
+        '<path d="M22 22 v100" stroke="#fff" stroke-opacity=".45" stroke-width="6"/>' +
+        '<g class="fx-lime-liquid"><path d="M24 78 h76 l4 50 h-84z" fill="#e2e8f0" opacity=".7"/><ellipse cx="62" cy="78" rx="38" ry="6" fill="#f8fafc" opacity=".7"/></g>'
+    },
+    reagent: {
+      w: 72, h: 108, label: "药品",
+      outline: "M26 4 h20 v14 h10 v8 H16 v66 a18 14 0 0 0 40 0 V26 H46 V18 H26z",
+      paint: '<rect x="24" y="6" width="24" height="16" rx="2" fill="#78716c"/>' +
+        '<path d="M18 22 h36 v72 a16 12 0 0 1 -36 0z" fill="#7c3aed" opacity=".8" stroke="#5b21b6"/>' +
+        '<rect x="20" y="28" width="8" height="50" fill="#fff" opacity=".25"/>'
+    }
+  };
+
+  var SCENES = {
+    oxygen: [
+      { id: "stand", x: 300, y: 20, label: "铁架台" },
+      { id: "tube", x: 500, y: 20, label: "试管" },
+      { id: "delivery", x: 620, y: 20, label: "导管" },
+      { id: "splint", x: 900, y: 20, label: "木条" },
+      { id: "wire", x: 900, y: 200, label: "铁丝" },
+      { id: "paper", x: 900, y: 360, label: "试纸" },
+      { id: "lamp", x: 300, y: 300, label: "酒精灯" },
+      { id: "reagent", x: 500, y: 280, label: "药品" },
+      { id: "bottle", x: 620, y: 160, label: "集气瓶" },
+      { id: "cover", x: 760, y: 160, label: "玻璃片" },
+      { id: "trough", x: 620, y: 360, label: "水槽" },
+      { id: "lime_beaker", x: 760, y: 340, label: "石灰水" }
+    ],
+    neutralization: [
+      { id: "goggles", x: 310, y: 24, label: "护目镜" },
+      { id: "paper", x: 310, y: 120, label: "称量纸" },
+      { id: "balance", x: 300, y: 320, label: "天平" },
+      { id: "dropper", x: 500, y: 16, label: "胶头滴管" },
+      { id: "beaker", x: 500, y: 180, label: "烧杯" },
+      { id: "reagent", x: 500, y: 360, label: "药品" },
+      { id: "rod", x: 700, y: 200, label: "玻璃棒" },
+      { id: "cylinder", x: 820, y: 140, label: "量筒" }
+    ],
+    electrolysis: [
+      { id: "power", x: 400, y: 20, label: "电源" },
+      { id: "tubes", x: 400, y: 120, label: "集气管" },
+      { id: "cell", x: 360, y: 340, label: "水槽" },
+      { id: "reagent", x: 700, y: 340, label: "水" },
+      { id: "splint", x: 860, y: 80, label: "木条" }
+    ],
+    filtration: [
+      { id: "stand", x: 300, y: 40, label: "铁架台" },
+      { id: "funnel", x: 500, y: 30, label: "漏斗" },
+      { id: "paper", x: 660, y: 30, label: "滤纸" },
+      { id: "rod", x: 820, y: 40, label: "玻璃棒" },
+      { id: "beaker", x: 500, y: 280, label: "烧杯" },
+      { id: "reagent", x: 700, y: 280, label: "浊液" }
+    ],
+    evaporation: [
+      { id: "lamp", x: 320, y: 300, label: "酒精灯" },
+      { id: "stand", art: "tripod", x: 480, y: 280, label: "三脚架" },
+      { id: "gauze", x: 480, y: 40, label: "陶土网" },
+      { id: "dish", x: 480, y: 120, label: "蒸发皿" },
+      { id: "rod", x: 720, y: 40, label: "玻璃棒" },
+      { id: "reagent", x: 720, y: 200, label: "溶液" }
+    ]
+  };
+
+  function defsHtml() {
+    return '<defs>' +
+      '<linearGradient id="g-glass" x1="0" y1="0" x2="1" y2="0">' +
+      '<stop offset="0" stop-color="#94a3b8" stop-opacity=".35"/>' +
+      '<stop offset=".22" stop-color="#f8fafc" stop-opacity=".18"/>' +
+      '<stop offset=".55" stop-color="#bae6fd" stop-opacity=".42"/>' +
+      '<stop offset="1" stop-color="#0369a1" stop-opacity=".25"/></linearGradient>' +
+      '<filter id="f-soft" x="-20%" y="-20%" width="140%" height="140%">' +
+      '<feDropShadow dx="0" dy="3" stdDeviation="2.2" flood-color="#0f172a" flood-opacity=".18"/>' +
+      '</filter>' +
+      '</defs>';
+  }
+
+  function icon(id, size, color) {
+    var a = ART[id] || ART.reagent;
+    var w = size || 44;
+    var h = Math.round(w * a.h / a.w);
+    var paint = a.paint;
+    if (color && id === "reagent") {
+      paint = paint.replace("#7c3aed", color).replace("#5b21b6", color);
+    }
+    return '<svg xmlns="' + NS + '" viewBox="0 0 ' + a.w + " " + a.h + '" width="' + w + '" height="' + h + '">' + defsHtml() + paint + "</svg>";
+  }
+
+  function collectFx(root) {
+    root.querySelectorAll("[class^='fx-'], [class*=' fx-']").forEach(function (n) {
+      n.classList.forEach(function (c) {
+        if (c.indexOf("fx-") === 0) {
+          if (!fx[c]) fx[c] = [];
+          fx[c].push(n);
+        }
+      });
+    });
+  }
+  function vis(key, on) {
+    (fx[key] || []).forEach(function (n) { n.setAttribute("visibility", on ? "visible" : "hidden"); });
+  }
+
+  function layout(kind) {
+    slots = {}; pieces = {}; fx = {};
+    var list = SCENES[kind] || SCENES.oxygen;
+    list.forEach(function (spec) {
+      var artId = spec.art || spec.id;
+      var a = ART[artId] || ART.beaker;
+      var slot = el("g", { "class": "slot", "data-slot": spec.id, transform: tf(spec) });
+      slot.innerHTML = '<path class="slot-dash" d="' + a.outline + '" fill="none" stroke-linejoin="round" stroke-linecap="round"/>' +
+        '<text class="slot-label" x="' + (a.w / 2) + '" y="' + (a.h + 16) + '" text-anchor="middle">' + (spec.label || a.label) + "</text>";
+      slot.style.display = "none";
+      slots[spec.id] = slot;
+      svg.appendChild(slot);
+
+      var piece = el("g", { "class": "piece", "data-piece": spec.id, transform: tf(spec), filter: "url(#f-soft)" });
+      piece.innerHTML = a.paint;
+      piece.style.display = "none";
+      pieces[spec.id] = { el: piece, spec: spec, art: a };
+      svg.appendChild(piece);
+      collectFx(piece);
+    });
+    fx.pop = [el("text", { x: 760, y: 120, "class": "fx-pop", fill: "#dc2626", "font-size": "28", "font-weight": "700", visibility: "hidden" }, "爆鸣！")];
+    svg.appendChild(fx.pop[0]);
+    var jet = el("path", { d: "M210 128 q20 -28 8 -56", fill: "none", stroke: "#38bdf8", "stroke-width": "6", visibility: "hidden" });
+    fx["fx-jet"] = [jet];
+    svg.appendChild(jet);
+    var sparks = el("g", { visibility: "hidden" },
+      '<circle cx="560" cy="120" r="4" fill="#f97316"/><circle cx="580" cy="100" r="3" fill="#fbbf24"/><circle cx="540" cy="90" r="3" fill="#f97316"/>');
+    fx["fx-sparks"] = [sparks];
+    svg.appendChild(sparks);
+    var steam = el("g", { visibility: "hidden" },
+      '<ellipse cx="450" cy="140" rx="14" ry="8" fill="#cbd5e1" opacity=".45"/><ellipse cx="470" cy="118" rx="12" ry="7" fill="#e2e8f0" opacity=".4"/>');
+    fx["fx-steam"] = [steam];
+    svg.appendChild(steam);
+  }
+
+  function init(host, sceneKey) {
+    host.innerHTML = "";
+    svg = el("svg", { id: "bench", viewBox: "0 0 1000 520", preserveAspectRatio: "xMidYMid meet" });
+    svg.innerHTML = defsHtml();
+    host.appendChild(svg);
+    layout(sceneKey || "oxygen");
+  }
+
+  function setSelecting(on, needMap) {
+    selecting = !!on;
+    needed = needMap || {};
+    Object.keys(slots).forEach(function (k) {
+      slots[k].style.display = selecting && needed[k] ? "" : "none";
+      slots[k].classList.toggle("needed", !!(selecting && needed[k]));
+    });
+  }
+  function hoverSlot(name) {
+    Object.keys(slots).forEach(function (k) {
+      slots[k].classList.toggle("hot", k === name);
+    });
+  }
+  function setPiece(id, on) {
+    if (!pieces[id]) return;
+    pieces[id].el.dataset.placed = on ? "1" : "0";
+    pieces[id].el.style.display = on ? "" : "none";
+  }
+  function applyEffects(st) {
+    st = st || {};
+    vis("fx-powder", !!st.powder);
+    vis("fx-zinc", !!st.zinc);
+    vis("fx-marble", !!st.marble);
+    vis("fx-acid", !!st.acid);
+    vis("fx-flame", !!st.flame || !!st.heat);
+    vis("fx-gas", !!st.collected && !st.air_collect);
+    vis("fx-bottle-water", !!st.bottle_water);
+    vis("fx-drip", !!st.dripping);
+    vis("fx-metal", !!st.metal);
+    vis("fx-beaker-bubbles", !!st.acid_bubbles);
+    vis("fx-h2", !!st.gases);
+    vis("fx-o2", !!st.gases);
+    vis("fx-ratio", !!st.ratio);
+    vis("fx-filter-paper", !!st.paper);
+    vis("fx-residue", !!st.residue);
+    vis("fx-crystals", !!st.crystals);
+    vis("fx-steam", !!st.heat);
+    vis("fx-jet", !!st.jet_flame);
+    vis("fx-sparks", !!st.sparks);
+    vis("fx-pop", !!st.pop);
+    if (pieces.trough) {
+      var shown = pieces.trough.el.dataset.placed === "1" && !st.air_collect;
+      pieces.trough.el.style.display = shown ? "" : "none";
+    }
+    if (pieces.tube) {
+      var spec = Object.assign({}, pieces.tube.spec);
+      if (st.upright) spec.r = 0;
+      else if (st.tilt_up) spec.r = 26;
+      else if (st.tilt_down) spec.r = -26;
+      pieces.tube.el.setAttribute("transform", tf(spec));
+    }
+    (fx["fx-liquid"] || []).forEach(function (n) {
+      var colors = { pink: "#f9a8d4", pale: "#fce7f3", clear: "#7dd3fc" };
+      n.querySelectorAll("[fill]").forEach(function (p) {
+        if (p.tagName.toLowerCase() !== "ellipse") p.setAttribute("fill", colors[st.liquid] || colors.clear);
+      });
+      if (st.filtrate === false) n.setAttribute("visibility", "hidden");
+      if (st.filtrate) n.setAttribute("visibility", "visible");
+    });
+    (fx["fx-lime-liquid"] || []).forEach(function (n) {
+      n.querySelectorAll("path").forEach(function (p) {
+        p.setAttribute("fill", st.lime_milky ? "#f8fafc" : "#e2e8f0");
+      });
+    });
+    (fx["fx-dish-liquid"] || []).forEach(function (n) {
+      n.setAttribute("opacity", st.crystals ? "0.25" : "0.5");
+    });
+  }
+  function clientToSvg(clientX, clientY) {
+    if (!svg) return { x: 0, y: 0 };
+    var ctm = svg.getScreenCTM();
+    if (!ctm) return { x: 0, y: 0 };
+    var pt = svg.createSVGPoint();
+    pt.x = clientX;
+    pt.y = clientY;
+    var p = pt.matrixTransform(ctm.inverse());
+    return { x: p.x, y: p.y };
+  }
+  function specCenter(spec, art) {
+    var s = spec.s || 1;
+    var rad = (spec.r || 0) * Math.PI / 180;
+    var lx = art.w * s * 0.5;
+    var ly = art.h * s * 0.5;
+    return {
+      x: spec.x + lx * Math.cos(rad) - ly * Math.sin(rad),
+      y: spec.y + lx * Math.sin(rad) + ly * Math.cos(rad)
+    };
+  }
+  function snapR(spec, art) {
+    var s = spec.s || 1;
+    return Math.max(80, Math.max(art.w, art.h) * s * 0.55 + 48);
+  }
+  function hitSlot(clientX, clientY, preferId) {
+    var p = clientToSvg(clientX, clientY);
+    if (preferId && slots[preferId] && slots[preferId].style.display !== "none" && pieces[preferId]) {
+      var ps = pieces[preferId].spec, pa = pieces[preferId].art;
+      var pc = specCenter(ps, pa);
+      if (Math.hypot(p.x - pc.x, p.y - pc.y) <= snapR(ps, pa) * 1.2) return preferId;
+    }
+    var best = "", bestD = 1e9;
+    Object.keys(slots).forEach(function (k) {
+      if (!slots[k] || slots[k].style.display === "none" || !pieces[k]) return;
+      var spec = pieces[k].spec, art = pieces[k].art;
+      var c = specCenter(spec, art);
+      var d = Math.hypot(p.x - c.x, p.y - c.y);
+      if (d <= snapR(spec, art) && d < bestD) { bestD = d; best = k; }
+    });
+    return best;
+  }
+
+  global.Lab2D = {
+    init: init, icon: icon, setSelecting: setSelecting, hoverSlot: hoverSlot,
+    setPiece: setPiece, applyEffects: applyEffects, hitSlot: hitSlot
+  };
+})(window);
+</script>
+  <script>
+  (function () {
+    var DATA = JSON.parse(document.getElementById("lab-data").textContent);
+    var selectedA = {};
+    var selectedR = {};
+    var stepIndex = 0;
+    var lockedSelect = false;
+    var hazard = 0;
+    var okCount = 0;
+    var scene = {};
+    var drag = null;
+
+    function $(id) { return document.getElementById(id); }
+    function report(q, a, correct) {
+      try {
+        if (window.CW && window.CW.report) window.CW.report({ component: "chem_lab", question: q, answer: a, correct: correct });
+        if (correct === true && window.CW && window.CW.correct) window.CW.correct(q, a);
+        if (correct === false && window.CW && window.CW.wrong) window.CW.wrong(q, a);
+      } catch (e) {}
+    }
+    function toast(msg, kind) {
+      var el = $("toast");
+      el.textContent = msg;
+      el.className = "toast " + (kind || "");
+      el.style.display = "block";
+      setTimeout(function () { el.style.display = "none"; }, 2200);
+    }
+    function addLog(text, bad) {
+      var d = document.createElement("div");
+      d.className = "obs" + (bad ? " hazard" : "");
+      d.textContent = text;
+      $("log").prepend(d);
+    }
+    function current() { return DATA.steps[stepIndex]; }
+    function allItems() { return [].concat(DATA.inventory.apparatus || [], DATA.inventory.reagents || []); }
+    function isPlaced(id, reagent) { return reagent ? !!selectedR[id] : !!selectedA[id]; }
+    function iconOf(item, reagent) {
+      if (!window.Lab2D) return "";
+      return window.Lab2D.icon(reagent ? "reagent" : item.id, 42, item.color);
+    }
+
+    function neededSlots() {
+      var set = {};
+      allItems().forEach(function (it) {
+        var reagent = (DATA.inventory.reagents || []).some(function (r) { return r.id === it.id; });
+        if (it.slot && !isPlaced(it.id, reagent)) set[it.slot] = true;
+      });
+      return set;
+    }
+    function refreshSlots() {
+      var selecting = current() && current().need === "select" && !lockedSelect;
+      if (window.Lab2D) window.Lab2D.setSelecting(selecting, neededSlots());
+    }
+    function applyScene(extra) {
+      extra = extra || {};
+      if (!scene._boot && DATA.scene_init) {
+        Object.keys(DATA.scene_init).forEach(function (k) { scene[k] = DATA.scene_init[k]; });
+        scene._boot = true;
+      }
+      Object.keys(extra).forEach(function (k) { scene[k] = extra[k]; });
+      if (window.Lab2D) {
+        (DATA.inventory.apparatus || []).forEach(function (it) {
+          window.Lab2D.setPiece(it.id, !!selectedA[it.id]);
+        });
+        var hasR = (DATA.required_reagents || []).some(function (id) { return selectedR[id]; });
+        window.Lab2D.setPiece("reagent", hasR);
+        window.Lab2D.applyEffects(Object.assign({ paper: !!selectedA.paper || !!scene.paper }, scene));
+      }
+      refreshSlots();
+    }
+
+    function renderHeader() {
+      $("badge").textContent = DATA.badge || "虚拟实验台";
+      $("title").textContent = DATA.title;
+      $("subtitle").textContent = (DATA.subtitle || "") + (DATA.goal ? " · 目标：" + DATA.goal : "");
+      $("equation").textContent = DATA.equation || "";
+    }
+    function makeTile(item, reagent) {
+      var b = document.createElement("div");
+      b.className = "tile" + (isPlaced(item.id, reagent) ? " placed" : "");
+      b.innerHTML = '<div class="ico">' + iconOf(item, reagent) + "</div><span>" + item.name + "</span>";
+      b.addEventListener("pointerdown", function (e) {
+        if (e.button != null && e.button !== 0) return;
+        startDrag(e, item, reagent);
+      });
+      return b;
+    }
+    function renderCabinet() {
+      $("apparatus").innerHTML = ""; $("reagents").innerHTML = "";
+      (DATA.inventory.apparatus || []).forEach(function (item) { $("apparatus").appendChild(makeTile(item, false)); });
+      (DATA.inventory.reagents || []).forEach(function (item) { $("reagents").appendChild(makeTile(item, true)); });
+    }
+    function renderSteps() {
+      $("steps").innerHTML = "";
+      DATA.steps.forEach(function (s, i) {
+        var d = document.createElement("div");
+        d.className = "step" + (i < stepIndex ? " done" : i === stepIndex ? " now" : "");
+        d.textContent = (i + 1) + ". " + s.title;
+        $("steps").appendChild(d);
+      });
+    }
+    function missingRequired() {
+      var miss = [];
+      (DATA.required_apparatus || []).forEach(function (id) { if (!selectedA[id]) miss.push(id); });
+      (DATA.required_reagents || []).forEach(function (id) { if (!selectedR[id]) miss.push(id); });
+      return miss;
+    }
+    function tryFinishSelect() {
+      if (missingRequired().length) return;
+      lockedSelect = true;
+      okCount += 1;
+      addLog("仪器已放到对应虚线工位，药品已加入。", false);
+      report(current().title, "拖放组装完成", true);
+      toast("组装完成，开始实验", "ok");
+      next();
+    }
+    function placeItem(item, reagent) {
+      if (reagent) selectedR[item.id] = true;
+      else selectedA[item.id] = true;
+      renderCabinet();
+      applyScene({});
+      addLog("已放置：" + item.name, false);
+      report(current().title, "放置 " + item.name, true);
+      tryFinishSelect();
+    }
+    function startDrag(e, item, reagent) {
+      if (lockedSelect || !current() || current().need !== "select") return;
+      if (isPlaced(item.id, reagent)) return;
+      e.preventDefault();
+      var g = $("ghost");
+      g.innerHTML = iconOf(item, reagent);
+      g.classList.remove("hidden");
+      drag = { item: item, reagent: reagent, ghost: g };
+      moveGhost(e);
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+    }
+    function moveGhost(e) {
+      if (!drag) return;
+      drag.ghost.style.left = (e.clientX + 10) + "px";
+      drag.ghost.style.top = (e.clientY + 10) + "px";
+      if (window.Lab2D) window.Lab2D.hoverSlot(window.Lab2D.hitSlot(e.clientX, e.clientY, drag.item.slot));
+    }
+    function onMove(e) { moveGhost(e); }
+    function onUp(e) {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      if (!drag) return;
+      drag.ghost.classList.add("hidden");
+      drag.ghost.innerHTML = "";
+      if (window.Lab2D) window.Lab2D.hoverSlot("");
+      var hit = window.Lab2D ? window.Lab2D.hitSlot(e.clientX, e.clientY, drag.item.slot) : "";
+      var want = drag.item.slot || "";
+      var item = drag.item;
+      var reagent = drag.reagent;
+      drag = null;
+      if (want && hit === want) {
+        placeItem(item, reagent);
+        return;
+      }
+      hazard += 1;
+      addLog((want ? "工位不对：" : "这件东西本实验不用：") + item.name, true);
+      report(current().title, "放错 " + item.name, false);
+      toast(want ? "请拖到形状相同的虚线位置" : "这件不是本实验需要的", "bad");
+      renderCabinet();
+      document.querySelectorAll(".tile").forEach(function (t) {
+        if (t.textContent.indexOf(item.name) >= 0) {
+          t.classList.add("wrong");
+          setTimeout(function () { t.classList.remove("wrong"); }, 1200);
+        }
+      });
+    }
+    function next(sceneExtra) {
+      stepIndex += 1;
+      if (stepIndex >= DATA.steps.length) { finish(); return; }
+      renderSteps();
+      renderActions();
+      applyScene(sceneExtra || {});
+    }
+    function finish() {
+      lockedSelect = true;
+      $("step-hint").textContent = DATA.complete.title + " · " + DATA.complete.summary;
+      $("actions").innerHTML = "";
+      addLog(DATA.complete.summary, false);
+      addLog("正确操作 " + okCount + " 步" + (hazard ? "，安全失误 " + hazard + " 次。" : "，没有安全失误。"), hazard > 0);
+      report(DATA.title, "完成实验", true);
+      toast("实验完成", "ok");
+      renderSteps();
+      refreshSlots();
+    }
+    function renderActions() {
+      var s = current();
+      if (!s) return;
+      $("step-hint").textContent = s.title + "：" + (s.hint || "");
+      var box = $("actions"); box.innerHTML = "";
+      if (s.need === "select") {
+        var tip = document.createElement("p");
+        tip.className = "hint-bar";
+        tip.style.margin = "0";
+        tip.textContent = "从左上角把器材拖到形状相同的虚线工位，药品拖到「药品」虚线。放对卡住，放错弹回。";
+        box.appendChild(tip);
+      } else if (s.need === "action") {
+        var b = document.createElement("button");
+        b.className = "btn"; b.textContent = s.action_label || "执行操作";
+        b.onclick = function () {
+          okCount += 1;
+          if (s.phenomenon) addLog(s.phenomenon, false);
+          report(s.title, s.action_label || "操作", true);
+          toast(s.phenomenon || "操作完成", "ok");
+          next(s.scene || {});
+        };
+        box.appendChild(b);
+      } else if (s.need === "choice") {
+        (s.choices || []).forEach(function (c) {
+          var btn = document.createElement("button");
+          btn.type = "button"; btn.className = "choice"; btn.textContent = c.label;
+          btn.onclick = function () {
+            if (c.correct) {
+              okCount += 1;
+              addLog(c.ok || "操作正确。", false);
+              report(s.title, c.label, true);
+              toast(c.ok || "正确", "ok");
+              var sc = Object.assign({}, s.scene || {}, c.scene || {});
+              if (c.id === "tilt_down") sc.tilt_down = true;
+              if (c.id === "tilt_up") sc.tilt_up = true;
+              next(sc);
+            } else {
+              hazard += 1;
+              addLog(c.hazard || "这样不安全。", true);
+              report(s.title, c.label, false);
+              toast(c.hazard || "请重新选择", "bad");
+            }
+          };
+          box.appendChild(btn);
+        });
+      }
+    }
+
+    if (window.Lab2D) window.Lab2D.init($("view"), DATA.scene || "oxygen");
+    else toast("实验台未能加载", "bad");
+    renderHeader();
+    renderCabinet();
+    renderSteps();
+    renderActions();
+    applyScene({});
+  })();
+  </script>
+</body>
+</html>

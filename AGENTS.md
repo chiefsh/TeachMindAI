@@ -144,7 +144,7 @@ tasks/<队列>.py      → Celery 包装（薄，真正逻辑在 service）
 | `edu-solid-geometry` | 数学 | `lib/geometry_kernel.py` |
 | `edu-analytic-geometry` | 数学 | `lib/analytic_kernel.py` |
 | `edu-chem-reaction` | 化学/生物 | `lib/reaction_kernel.py` |
-| `edu-chem-lab` | 化学/科学 | 宏观实验台 `template/lab.html`（制气、电解水、中和、金属与酸、铵盐分解、铁丝燃烧、过滤、蒸发、配制溶液） |
+| `edu-chem-lab` | 化学/科学 | 宏观实验台 `template/lab.html` + `lab2d.js`（写实器材、同形虚线工位；制气、电解水、中和、金属与酸、铵盐分解、铁丝燃烧、过滤、蒸发、配制溶液） |
 
 除各 skill 的固定解题题型外，两个数学 skill 还有**通用兜底题型**，供没有具体题面的概念课出 3D / 画板：
 `solid_explore`（可旋转多面体：cube / cuboid / quad_pyramid / tetrahedron / tri_prism，讲底面与高、

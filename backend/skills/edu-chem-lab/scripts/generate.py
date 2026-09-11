@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""宏观化学实验台：把实验剧本注入 template/lab.html，产出可操作的单页 HTML。
+"""宏观化学实验台：把实验剧本注入 template/lab.html，产出自包含的 2D 写实器材单页 HTML。
 
 用法：
     python3 scripts/generate.py <实验key> [输出.html]
@@ -14,6 +14,7 @@ from pathlib import Path
 
 SKILL_DIR = Path(__file__).resolve().parent.parent
 TEMPLATE = SKILL_DIR / "template" / "lab.html"
+LAB2D_JS = SKILL_DIR / "template" / "lab2d.js"
 PLACEHOLDER = "__LAB_DATA__"
 
 
@@ -28,19 +29,25 @@ def with_slots(data: dict) -> dict:
     for step in data.get("steps") or []:
         if step.get("need") == "select":
             step["hint"] = (
-                "把左侧器材拖到台面上对应的虚线工位；药品拖到「药品」工位。"
+                "从左上角把器材拖到形状相同的虚线工位；药品拖到「药品」虚线。"
                 "放对会卡住，放错会弹回。不需要的仪器没有工位。"
             )
     return data
 
 
+def _inline_js(src: str) -> str:
+    return src.replace("</script>", "<\\/script>").replace("</SCRIPT>", "<\\/SCRIPT>")
+
+
 def render_html(data: dict, out_path: Path) -> Path:
     template = TEMPLATE.read_text(encoding="utf-8")
-    if PLACEHOLDER not in template:
-        raise RuntimeError(f"模板中未找到占位符 {PLACEHOLDER}")
+    if PLACEHOLDER not in template or "__LAB2D_JS__" not in template:
+        raise RuntimeError("模板缺少 __LAB_DATA__ / __LAB2D_JS__")
+    lab2d = _inline_js(LAB2D_JS.read_text(encoding="utf-8"))
     payload = json.dumps(with_slots(data), ensure_ascii=False)
+    html = template.replace("__LAB2D_JS__", lab2d).replace(PLACEHOLDER, payload)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(template.replace(PLACEHOLDER, payload), encoding="utf-8")
+    out_path.write_text(html, encoding="utf-8")
     return out_path
 
 

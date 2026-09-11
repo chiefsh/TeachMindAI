@@ -121,7 +121,7 @@ export const IFRAME_AUTO_HEIGHT = `
     var frames = document.querySelectorAll('iframe.cw-iframe');
     for (var i = 0; i < frames.length; i++) {
       if (frames[i].contentWindow === e.source) {
-        var cap = frames[i].classList.contains('cw-iframe--app') ? 920 : 720;
+        var cap = frames[i].classList.contains('cw-iframe--app') ? 1100 : 720;
         frames[i].style.height = Math.min(Math.max(Math.ceil(h), 360), cap) + 'px';
         break;
       }
@@ -149,12 +149,12 @@ const IFRAME_REPORT_HEIGHT = `
 const APP_EMBED_CSS = `
 <style id="cw-embed-fix">
 html,body{height:auto!important;min-height:100%!important}
-.wrap{grid-template-columns:168px minmax(0,1fr) 220px!important;min-height:520px;min-width:0}
-.stage{min-height:280px!important;min-width:0}
-.stage svg{height:auto!important;max-height:360px;min-height:220px}
+.wrap{grid-template-columns:minmax(0,1fr) 220px!important;min-height:540px;min-width:0}
+.stage{min-height:420px!important;min-width:0}
+#view,#bench{min-height:380px!important;width:100%!important}
+.palette{max-width:260px}
 @media (max-width:640px){
   .wrap{grid-template-columns:1fr!important;min-height:0!important}
-  .cabinet{max-height:160px}
 }
 </style>
 `

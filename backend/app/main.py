@@ -22,6 +22,7 @@ _INDEX_SQL = [
     "CREATE INDEX IF NOT EXISTS ix_questions_teacher_id ON questions (teacher_id)",
     "CREATE INDEX IF NOT EXISTS ix_questions_teacher_content_hash ON questions (teacher_id, content_hash)",
     "CREATE INDEX IF NOT EXISTS ix_coursewares_teacher_id ON coursewares (teacher_id)",
+    "CREATE INDEX IF NOT EXISTS ix_coursewares_created_at ON coursewares (created_at)",
     "CREATE INDEX IF NOT EXISTS ix_cw_versions_cw_id ON courseware_versions (courseware_id)",
     "CREATE INDEX IF NOT EXISTS ix_textbooks_teacher_id ON textbooks (teacher_id)",
     "CREATE INDEX IF NOT EXISTS ix_textbook_chapters_textbook_id ON textbook_chapters (textbook_id)",

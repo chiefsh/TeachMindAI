@@ -202,7 +202,7 @@ export function pageCss(theme: CoursewareTheme, mode: 'deck' | 'page'): string {
 .cw-imgs{display:flex;gap:12px;flex-wrap:wrap;margin-top:.6em}
 .cw-imgs img{max-height:${compact ? '32vh' : '320px'};border-radius:12px;background:var(--c-surface);object-fit:contain;box-shadow:var(--shadow-soft)}
 .cw-iframe{width:100%;border:0;display:block;background:var(--c-card);height:${compact ? '52vh' : '520px'}}
-.cw-iframe--app{height:${compact ? '72vh' : '680px'};min-height:560px}
+.cw-iframe--app{height:${compact ? '78vh' : '760px'};min-height:620px}
 .cw-notes{margin-top:12px}
 .body h3,.body h4,.body h5{color:var(--c-primary);margin:.7em 0 .25em}
 .body p{margin:.4em 0}

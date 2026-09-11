@@ -1,6 +1,7 @@
 # 宏观实验剧本
 
 `generate.py` 的 `build_*` 返回一份 JSON，注入 `template/lab.html` 的 `__LAB_DATA__`。
+生成时内联 `lab2d.js`，页面自包含。
 
 必填：`id`、`scene`（`oxygen` | `neutralization` | `electrolysis` | `filtration` | `evaporation`）、`title`、`inventory`、`required_apparatus`、`required_reagents`、`steps`、`complete`。
 
@@ -10,7 +11,7 @@
 
 `steps[].need`：
 
-- `select`：把器材拖到台面虚线工位、药品拖到容器工位；全部放对后自动进入下一步
+- `select`：从画布左上角把器材拖到同形虚线工位、药品拖到「药品」虚线；全部放对后自动进入下一步
 - `choice`：二选一/三选一，`choices[].correct` 为真才进入下一步；错选记安全事故
 - `action`：点一次操作按钮，写入 `phenomenon`，可带 `scene` 开关
 

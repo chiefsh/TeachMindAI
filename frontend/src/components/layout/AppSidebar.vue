@@ -118,7 +118,7 @@ const auth = useAuthStore()
   color: var(--sidebar-text);
 }
 .nav-item:hover {
-  background: #efece4;
+  background: var(--hover);
   color: var(--sidebar-text-active);
 }
 .nav-item.active {
@@ -132,7 +132,7 @@ const auth = useAuthStore()
   font-weight: 600;
 }
 .user-row:hover {
-  background: #efece4;
+  background: var(--hover);
 }
 .logout-btn {
   color: var(--ink-muted) !important;

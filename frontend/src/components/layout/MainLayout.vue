@@ -92,6 +92,7 @@
           <span v-if="edu.selectedGrade" class="ctx-pill ctx-pill-ink">{{ edu.selectedGrade?.name }}</span>
           <span v-if="edu.selectedSubject" class="ctx-pill ctx-pill-accent">{{ edu.selectedSubject?.name }}</span>
         </div>
+        <ThemeToggle />
       </header>
 
       <main class="flex-1 overflow-y-auto overflow-x-hidden">
@@ -111,6 +112,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import { Fold } from '@element-plus/icons-vue'
 import ProfileDrawer from './ProfileDrawer.vue'
+import ThemeToggle from './ThemeToggle.vue'
 import AppSidebar, { type NavItem } from './AppSidebar.vue'
 
 const auth = useAuthStore()
@@ -232,11 +234,11 @@ async function handleLogout() {
 }
 .ctx-pill {
   @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs;
-  background: #f4f1ea;
+  background: var(--pill-bg);
   color: var(--ink-secondary);
 }
 .ctx-pill-ink {
-  background: #ece8df;
+  background: var(--pill-bg-ink);
   color: var(--ink);
   font-weight: 600;
 }

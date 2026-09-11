@@ -58,7 +58,7 @@
           v-for="ts in edu.mySubjects"
           :key="ts.id"
           class="flex items-center gap-1.5 px-3 py-1.5 rounded-full"
-          style="background: #f4f1ea; border: 1px solid var(--border-subtle)"
+          style="background: var(--pill-bg); border: 1px solid var(--border-subtle)"
         >
           <span class="text-xs" style="color: var(--ink-muted)">{{ ts.grade.name }}</span>
           <span class="text-xs" style="color: var(--border)">·</span>
@@ -126,10 +126,10 @@ const quickActions = [
 .quick-item {
   @apply flex items-center gap-3 p-3 rounded-xl transition-all duration-150;
   border: 1px solid var(--border-subtle);
-  background: #faf8f3;
+  background: var(--muted-fill);
 }
 .quick-item:hover {
-  border-color: #c7d2fe;
+  border-color: var(--el-color-primary-light-5);
   background: var(--el-color-primary-light-9);
   transform: translateY(-1px);
 }

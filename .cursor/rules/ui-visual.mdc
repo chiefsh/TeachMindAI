@@ -6,8 +6,8 @@ alwaysApply: false
 
 # 视觉语言
 
-- 气质：面向中小学教师，干净、可信、略有温度。克制如 Linear / Notion，不要赛博霓虹、大面积花哨渐变、额外 UI 库。
-- 主色保持靛蓝 `primary-*` / `#4f46e5`。画布用暖纸色 `--canvas`，侧栏浅暖色 `--sidebar-bg`（不要深墨整条对比），卡片白底 + `--shadow-card`。不要另发明色板。
+- 气质：面向中小学教师，干净、可信。克制如 Linear / Notion，不要赛博霓虹、大面积花哨渐变、额外 UI 库。
+- 外壳主题两套，都是浅色，由 `html[data-theme]` 切换，色板写在 `assets/main.css`，选择存在 `localStorage.app_theme`（`stores/appearance.ts`）。默认 **暖纸** `paper`：靛蓝主色 `#4f46e5`、暖纸画布。可选 **科技** `tech`：冷灰蓝浅底 `#e8eef5`、白卡片、沉稳蓝 `#2563eb`。科技主题不是夜间模式，不要加 `html.dark`。
+- 新颜色用 CSS 变量（`--canvas` / `--surface` / `--ink` / `--hover` / `--pill-bg` 等），不要写死 `#f4f1ea`。课件 iframe 与公开页 `/s` `/c` 跟 `coursewareTheme`，不跟外壳主题。
 - 新页面用 `.page` / `.page-title` / `.page-subtitle` / `.card` / `.empty-hint`。列表保持「页头 + 筛选 + 内容」，只升级视觉。
 - 继续 Element Plus + Tailwind。图标按 `frontend.mdc`：侧栏全局注册，页面内显式 import。
----

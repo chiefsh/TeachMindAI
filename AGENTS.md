@@ -17,7 +17,7 @@
 - 前端 HTTP：`frontend/src/api/index.ts`（axios），接口按业务写在 `frontend/src/api/modules.ts`
 - 类型：`frontend/src/types/index.ts`
 - 路由：`frontend/src/router/index.ts`（登录守卫）；侧栏：`frontend/src/components/layout/MainLayout.vue`
-- 全局上下文：`frontend/src/stores/auth.ts`、`frontend/src/stores/education.ts`（学段/年级/科目）
+- 全局上下文：`frontend/src/stores/auth.ts`、`frontend/src/stores/education.ts`（学段/年级/科目）、`stores/appearance.ts`（外壳主题 paper/tech）
 
 重活走 Celery（`backend/app/tasks/`）：`celery_worker_fast` 消费 `fast_tasks`，`celery_worker_slow` 消费 `slow_tasks`，默认并发各 2。进度经 Redis pubsub → `GET/WS /api/v1/ws/task/{task_id}`。
 

@@ -30,7 +30,10 @@
     </aside>
 
     <!-- 表单侧 -->
-    <div class="flex items-center justify-center p-5 sm:p-8">
+    <div class="relative flex items-center justify-center p-5 sm:p-8">
+      <div class="absolute top-3 right-3 sm:top-5 sm:right-5">
+        <ThemeToggle />
+      </div>
       <div class="w-full max-w-[400px]">
         <div class="lg:hidden text-center mb-8">
           <div class="login-lockup login-lockup-center">
@@ -123,6 +126,7 @@ import { useEducationStore } from '@/stores/education'
 import { authApi } from '@/api/modules'
 import { ElMessage } from 'element-plus'
 import { User, Lock } from '@element-plus/icons-vue'
+import ThemeToggle from '@/components/layout/ThemeToggle.vue'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -249,21 +253,21 @@ onMounted(async () => {
   height: 280px;
   right: -60px;
   top: -40px;
-  background: rgba(79, 70, 229, 0.07);
+  background: var(--login-orb-a);
 }
 .login-orb-b {
   width: 360px;
   height: 360px;
   left: -80px;
   bottom: -80px;
-  background: rgba(217, 119, 6, 0.05);
+  background: var(--login-orb-b);
 }
 .login-grid {
   position: absolute;
   inset: 0;
   background-image:
-    linear-gradient(rgba(28, 25, 23, 0.035) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(28, 25, 23, 0.035) 1px, transparent 1px);
+    linear-gradient(var(--login-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--login-grid) 1px, transparent 1px);
   background-size: 48px 48px;
   mask-image: radial-gradient(ellipse at 30% 40%, black 20%, transparent 70%);
   pointer-events: none;

@@ -1,7 +1,7 @@
 <template>
   <el-drawer v-model="open" title="个人信息" size="400px">
     <div class="space-y-6">
-      <div class="flex items-center gap-3 p-3 rounded-xl" style="background: #f4f1ea">
+      <div class="flex items-center gap-3 p-3 rounded-xl" style="background: var(--pill-bg)">
         <el-avatar :size="48" class="!bg-indigo-500 text-white">
           {{ auth.teacher?.real_name?.charAt(0) || '师' }}
         </el-avatar>
@@ -11,6 +11,20 @@
         </div>
       </div>
       <div v-if="roleNames" class="text-xs" style="color: var(--ink-muted)">角色：{{ roleNames }}</div>
+
+      <div>
+        <p class="text-sm font-semibold mb-2" style="color: var(--ink)">外观</p>
+        <el-radio-group :model-value="appearance.theme" @change="appearance.setTheme">
+          <el-radio-button
+            v-for="t in THEMES"
+            :key="t.key"
+            :value="t.key"
+          >{{ t.label }}</el-radio-button>
+        </el-radio-group>
+        <p class="text-xs mt-2" style="color: var(--ink-muted)">
+          {{ THEMES.find(t => t.key === appearance.theme)?.hint }}
+        </p>
+      </div>
 
       <el-form :model="profileForm" label-width="88px">
         <el-form-item label="用户名">
@@ -28,7 +42,7 @@
       </el-form>
 
       <el-form :model="pwdForm" label-width="88px">
-        <p class="text-sm font-semibold text-slate-700 mb-3">修改密码</p>
+        <p class="text-sm font-semibold mb-3" style="color: var(--ink)">修改密码</p>
         <el-form-item label="原密码">
           <el-input v-model="pwdForm.old_password" type="password" show-password />
         </el-form-item>
@@ -44,8 +58,8 @@
       </el-form>
 
       <div>
-        <p class="text-sm font-semibold text-slate-700 mb-2">教学范围</p>
-        <div v-for="ts in mySubjects" :key="ts.id" class="text-sm text-slate-600 py-1">
+        <p class="text-sm font-semibold mb-2" style="color: var(--ink)">教学范围</p>
+        <div v-for="ts in mySubjects" :key="ts.id" class="text-sm py-1" style="color: var(--ink-secondary)">
           {{ ts.grade.name }} · {{ ts.subject.name }}
         </div>
         <el-empty v-if="!mySubjects.length" :image-size="48" description="由管理员在用户管理中绑定" />
@@ -57,6 +71,7 @@
 <script setup lang="ts">
 import { reactive, ref, computed, watch } from 'vue'
 import { useAuthStore } from '@/stores/auth'
+import { useAppearanceStore, THEMES } from '@/stores/appearance'
 import { educationApi, authApi } from '@/api/modules'
 import { ElMessage } from 'element-plus'
 import type { TeacherSubject } from '@/types'
@@ -70,6 +85,7 @@ const open = computed({
 })
 
 const auth = useAuthStore()
+const appearance = useAppearanceStore()
 const profileForm = reactive({ real_name: '', email: '' })
 const profileSaving = ref(false)
 const pwdForm = reactive({ old_password: '', new_password: '', confirm: '' })

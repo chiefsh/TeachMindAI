@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>生物探究</title>
+  <style>
+    :root {
+      --ink: #14532d; --muted: #64748b; --line: #dce7dc;
+      --ok: #16a34a; --bad: #dc2626; --accent: #15803d;
+      --panel: #f4faf4; --hi: #86efac;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; min-height: 640px; overflow: hidden; }
+    body {
+      font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+      color: #0f172a; background: #eef6ee; display: flex; flex-direction: column;
+    }
+    header {
+      padding: 10px 14px; background: #fff; border-bottom: 1px solid var(--line);
+      display: flex; align-items: center; gap: 10px; flex-wrap: wrap; flex-shrink: 0;
+    }
+    header h1 { font-size: 17px; margin: 0; color: var(--ink); }
+    header p { margin: 2px 0 0; font-size: 12px; color: var(--accent); }
+    .badge {
+      font-size: 11px; font-weight: 600; color: var(--accent);
+      background: #dcfce7; border-radius: 999px; padding: 2px 10px;
+    }
+    .eq {
+      margin-left: auto; font-size: 13px; background: #f8fafc; border: 1px solid var(--line);
+      border-radius: 10px; padding: 6px 10px; font-family: ui-serif, Georgia, serif;
+    }
+    .wrap {
+      flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) 280px;
+      min-height: 0; min-width: 0; overflow: hidden;
+    }
+    @media (max-width: 720px) {
+      html, body { height: auto; overflow: auto; }
+      .wrap { grid-template-columns: 1fr; }
+      .side { border-left: 0; border-top: 1px solid var(--line); max-height: 320px; }
+    }
+    .stage {
+      min-width: 0; min-height: 0; display: flex; flex-direction: column;
+      background: radial-gradient(1200px 600px at 50% 20%, #fff, #e8f4ea);
+      overflow: hidden; position: relative;
+    }
+    .stage-hint {
+      flex-shrink: 0; margin: 0; padding: 8px 14px; font-size: 13px; line-height: 1.45;
+      background: #fff; border-bottom: 1px solid var(--line); color: #334155;
+    }
+    #view { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 8px; }
+    #view svg { width: 100%; height: 100%; max-height: 100%; }
+    .sim-bar {
+      flex-shrink: 0; display: flex; align-items: center; gap: 10px;
+      padding: 8px 14px; background: #fff; border-top: 1px solid var(--line);
+    }
+    .sim-bar .btn { padding: 6px 12px; font-size: 12px; }
+    #sim-note { font-size: 12px; color: var(--muted); }
+    [data-flow] line, [data-flow] path {
+      stroke-dasharray: 10 12;
+      animation: dash-flow 1.15s linear infinite;
+    }
+    [data-pulse] { animation: pulse 1.6s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+    [data-breathe] { animation: breathe 2.4s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+    [data-beat] { animation: beat .9s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+    [data-spin] { animation: spin 6s linear infinite; transform-box: fill-box; transform-origin: center; }
+    [data-bob] { animation: bob 2s ease-in-out infinite; }
+    @keyframes dash-flow { to { stroke-dashoffset: -44; } }
+    @keyframes pulse { 50% { transform: scale(1.08); } }
+    @keyframes breathe { 50% { transform: scale(1.04, 1.09); } }
+    @keyframes beat {
+      0%, 40%, 100% { transform: scale(1); }
+      12% { transform: scale(1.12); }
+      24% { transform: scale(.96); }
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes bob { 50% { transform: translateY(-10px); } }
+    #view.paused [data-flow] line,
+    #view.paused [data-flow] path,
+    #view.paused [data-pulse],
+    #view.paused [data-breathe],
+    #view.paused [data-beat],
+    #view.paused [data-spin],
+    #view.paused [data-bob] { animation-play-state: paused; }
+    .part { cursor: pointer; transition: opacity .2s, filter .2s; }
+    .part:hover { filter: brightness(1.06); }
+    .part.is-on { filter: drop-shadow(0 0 6px #22c55e); }
+    .part.is-dim { opacity: .28; }
+    .phase { transition: opacity .35s; }
+    .phase.is-off, [data-phase].is-off { opacity: 0; pointer-events: none; }
+    .side {
+      background: #fff; border-left: 1px solid var(--line); padding: 12px;
+      display: flex; flex-direction: column; min-height: 0; overflow: hidden;
+    }
+    .sec-title {
+      font-size: 11px; font-weight: 700; letter-spacing: .06em; color: var(--muted);
+      margin: 0 0 8px; flex-shrink: 0;
+    }
+    #legend { flex-shrink: 0; display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+    .chip {
+      border: 1px solid var(--line); background: #fff; border-radius: 999px;
+      padding: 4px 10px; font-size: 12px; cursor: pointer; color: #334155;
+    }
+    .chip.on { background: #dcfce7; border-color: #86efac; color: var(--ink); font-weight: 700; }
+    .chip.seen { box-shadow: inset 0 0 0 1px #86efac; }
+    #detail {
+      flex: 1; min-height: 0; overflow-y: auto; background: var(--panel);
+      border: 1px solid var(--line); border-radius: 12px; padding: 12px; font-size: 13px; line-height: 1.55;
+    }
+    #detail h2 { margin: 0 0 6px; font-size: 16px; color: var(--ink); }
+    #detail .hint { color: var(--accent); font-weight: 600; margin: 0 0 8px; }
+    #detail .mist { margin: 10px 0 0; padding: 8px 10px; background: #fff7ed; border: 1px solid #fed7aa; border-radius: 10px; color: #9a3412; font-size: 12px; }
+    .phases { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+    .pbtn {
+      border: 1px solid var(--line); background: #fff; border-radius: 10px;
+      padding: 6px 10px; font-size: 12px; cursor: pointer;
+    }
+    .pbtn.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; flex-shrink: 0; }
+    .btn {
+      appearance: none; border: 0; border-radius: 10px; padding: 8px 12px; font-size: 13px;
+      font-weight: 600; cursor: pointer; background: var(--accent); color: #fff;
+    }
+    .btn.ghost { background: #fff; color: var(--ink); border: 1px solid var(--line); }
+    .choice {
+      display: block; width: 100%; text-align: left; margin: 0 0 8px;
+      border: 1px solid var(--line); background: #fff; border-radius: 12px; padding: 10px 12px;
+      font-size: 13px; cursor: pointer;
+    }
+    .choice:hover { border-color: #86efac; }
+    .toast {
+      position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%);
+      max-width: 90%; background: #14532d; color: #fff; border-radius: 12px;
+      padding: 10px 14px; font-size: 13px; display: none; z-index: 5;
+    }
+    .toast.bad { background: #991b1b; }
+    .toast.ok { background: #166534; }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <div class="badge" id="badge">生物探究</div>
+      <h1 id="title">生物探究</h1>
+      <p id="subtitle"></p>
+    </div>
+    <div class="eq" id="equation"></div>
+  </header>
+  <div class="wrap">
+    <section class="stage">
+      <p class="stage-hint" id="hint"></p>
+      <div id="view"></div>
+      <div class="sim-bar">
+        <button class="btn" id="btn-play" type="button">暂停仿真</button>
+        <span id="sim-note">仿真播放中</span>
+      </div>
+      <div class="toast" id="toast"></div>
+    </section>
+    <aside class="side">
+      <div class="sec-title" id="list-title">点击结构</div>
+      <div id="legend"></div>
+      <div class="phases" id="phases"></div>
+      <div id="detail"></div>
+      <div class="actions" id="actions"></div>
+    </aside>
+  </div>
+  <script type="application/json" id="bio-data">__BIO_DATA__</script>
+  <script>__BIO_JS__</script>
+  <!-- edu-sim:1 -->
+</body>
+</html>

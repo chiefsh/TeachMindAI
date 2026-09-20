@@ -33,7 +33,8 @@ async def list_animations(
 ):
     view_all = is_admin(teacher)
     rows = await svc.list_assets(db, teacher.id, subject=subject, view_all=view_all)
-    return {"items": [svc.to_out(r) for r in rows]}
+    # 列表不加载 MEDIUMTEXT html，避免点开菜单时把几十份动画正文读进内存
+    return {"items": [svc.to_out(r, has_html=None) for r in rows]}
 
 
 @router.get("/{anim_id}", response_model=AnimationOut)

@@ -7,6 +7,8 @@ export const useAuthStore = defineStore('auth', () => {
   const teacher = ref<Teacher | null>(null)
   const token = ref<string>(localStorage.getItem('token') || '')
   const permissions = ref<string[]>([])
+  const meLoaded = ref(false)
+  let mePromise: Promise<void> | null = null
 
   function setToken(t: string) {
     token.value = t
@@ -16,6 +18,16 @@ export const useAuthStore = defineStore('auth', () => {
   function applyMe(res: Teacher) {
     teacher.value = res
     permissions.value = res.permissions || []
+    meLoaded.value = true
+  }
+
+  function clearSession() {
+    token.value = ''
+    teacher.value = null
+    permissions.value = []
+    meLoaded.value = false
+    mePromise = null
+    localStorage.removeItem('token')
   }
 
   function can(code?: string) {
@@ -40,17 +52,25 @@ export const useAuthStore = defineStore('auth', () => {
       email: '',
       is_active: true,
     }
+    meLoaded.value = false
     return res
   }
 
   async function fetchMe() {
     if (!token.value) return
-    try {
-      const res: any = await authApi.me()
-      applyMe(res)
-    } catch {
-      logout()
-    }
+    if (mePromise) return mePromise
+    mePromise = (async () => {
+      try {
+        const res: any = await authApi.me()
+        applyMe(res)
+      } catch {
+        // 只清本地会话，避免再打 /logout 触发 401 拦截器与路由守卫互锁
+        clearSession()
+      } finally {
+        mePromise = null
+      }
+    })()
+    return mePromise
   }
 
   async function updateProfile(data: { real_name?: string; email?: string }) {
@@ -61,13 +81,13 @@ export const useAuthStore = defineStore('auth', () => {
 
   async function logout() {
     try { await authApi.logout() } catch {}
-    token.value = ''
-    teacher.value = null
-    permissions.value = []
-    localStorage.removeItem('token')
+    clearSession()
   }
 
   const isLoggedIn = () => !!token.value
 
-  return { teacher, token, permissions, login, logout, fetchMe, updateProfile, isLoggedIn, can }
+  return {
+    teacher, token, permissions, meLoaded,
+    login, logout, fetchMe, updateProfile, isLoggedIn, can, clearSession,
+  }
 })

@@ -6,7 +6,7 @@ from app.models.base import TimestampMixin
 
 
 class InteractiveAsset(Base, TimestampMixin):
-    """可复用互动动画：系统预置实验台 + 教师另存。"""
+    """可复用互动动画：系统预置（实验台 / 数学探究 / 分子 3D）+ 教师另存。"""
     __tablename__ = "interactive_assets"
     __table_args__ = (
         Index("ix_anim_subject_group", "subject", "group"),

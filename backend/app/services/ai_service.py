@@ -1,7 +1,10 @@
 """AI 生成服务：课件、作业、OCR、成绩分析"""
+import asyncio
 import copy
 import json
 import logging
+from types import SimpleNamespace
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -70,6 +73,71 @@ def build_litellm_kwargs(cfg: LLMConfig, api_key: str | None) -> dict:
     return kwargs
 
 
+# 上游网关（如 Cloudflare / LiteLLM proxy）常见 120s 读超时 → HTTP 524。
+# 非流式要等完整响应才回包，推理模型很容易踩中；流式先吐 token 可保活。
+# OpenAI 客户端默认再把 5xx 连着重试 2 次（3×120s），这里关掉，改由我们短间隔重试。
+_LLM_ATTEMPTS = 3
+_LLM_RETRY_WAIT = (2, 8)
+_LLM_TIMEOUT_SECONDS = 300
+_LLM_RETRYABLE_MARKERS = (
+    "524", "502", "503", "504",
+    "timeout", "timed out", "overloaded",
+    "rate limit", "429",
+    "connection reset", "connecterror", "remoteprotocolerror",
+    "server disconnected", "temporarily unavailable",
+)
+
+
+def _is_llm_retryable(exc: BaseException) -> bool:
+    text = str(exc).lower()
+    return any(m in text for m in _LLM_RETRYABLE_MARKERS)
+
+
+def _delta_field(delta, name: str) -> str:
+    if delta is None:
+        return ""
+    if isinstance(delta, dict):
+        value = delta.get(name)
+    else:
+        value = getattr(delta, name, None)
+        if not value and isinstance(getattr(delta, "model_extra", None), dict):
+            value = delta.model_extra.get(name)
+    return value or ""
+
+
+async def _collect_stream(resp):
+    """把 litellm 流式块拼成与非流式相同的结构，供 _resp_content 使用。"""
+    if hasattr(resp, "choices") and not hasattr(resp, "__aiter__"):
+        return resp
+    content_parts: list[str] = []
+    reasoning_parts: list[str] = []
+    finish_reason = None
+    usage = None
+    async for chunk in resp:
+        usage = getattr(chunk, "usage", None) or usage
+        choices = getattr(chunk, "choices", None) or []
+        if not choices:
+            continue
+        choice = choices[0]
+        finish_reason = getattr(choice, "finish_reason", None) or finish_reason
+        delta = getattr(choice, "delta", None)
+        piece = _delta_field(delta, "content")
+        if piece:
+            content_parts.append(piece)
+        reasoning = _delta_field(delta, "reasoning_content")
+        if reasoning:
+            reasoning_parts.append(reasoning)
+    msg = SimpleNamespace(
+        content="".join(content_parts),
+        reasoning_content="".join(reasoning_parts) or None,
+        model_extra=None,
+    )
+    return SimpleNamespace(
+        choices=[SimpleNamespace(message=msg, finish_reason=finish_reason)],
+        usage=usage,
+    )
+
+
 async def _call_llm(cfg: LLMConfig, messages: list[dict], stream: bool = False, max_tokens: int | None = None):
     from app.core.proxy import sanitize_proxy_env
     sanitize_proxy_env()
@@ -79,13 +147,34 @@ async def _call_llm(cfg: LLMConfig, messages: list[dict], stream: bool = False, 
     effective_max_tokens = max_tokens or cfg.max_tokens
     if not effective_max_tokens or effective_max_tokens <= 0:
         effective_max_tokens = 4096
-    return await litellm.acompletion(
+    call_kwargs = dict(
         messages=messages,
         temperature=cfg.temperature,
         max_tokens=effective_max_tokens,
-        stream=stream,
+        # 一律走 HTTP 流式：网关 120s 内看到首包就不会 524；非流式要等整段生成完才回包
+        stream=True,
+        timeout=_LLM_TIMEOUT_SECONDS,
+        num_retries=0,
         **build_litellm_kwargs(cfg, api_key),
     )
+    last_exc: BaseException | None = None
+    for attempt in range(1, _LLM_ATTEMPTS + 1):
+        try:
+            resp = await litellm.acompletion(**call_kwargs)
+            if stream:
+                return resp
+            return await _collect_stream(resp)
+        except Exception as e:
+            last_exc = e
+            if attempt >= _LLM_ATTEMPTS or not _is_llm_retryable(e):
+                raise
+            wait = _LLM_RETRY_WAIT[min(attempt - 1, len(_LLM_RETRY_WAIT) - 1)]
+            logger.warning(
+                "LLM 调用失败（第 %s/%s 次）：%s；%ss 后重试",
+                attempt, _LLM_ATTEMPTS, e, wait,
+            )
+            await asyncio.sleep(wait)
+    raise last_exc  # pragma: no cover
 
 
 def _resp_content(resp) -> str:
@@ -434,36 +523,228 @@ def _parse_json_object(raw: str) -> dict | None:
     return None
 
 
+def _str_list(raw, limit: int) -> list[str]:
+    if not isinstance(raw, list):
+        return []
+    return [str(x).strip() for x in raw if str(x).strip()][:limit]
+
+
 def _normalize_knowledge_points(raw_points: list, max_points: int = 4) -> list[dict]:
-    """规范化知识点结构，保证后续组装课件稳定。"""
+    """规范化知识点结构，保证后续组装课件稳定。空字段保持为空，便于验收。"""
     out: list[dict] = []
     for i, p in enumerate(raw_points or []):
         if not isinstance(p, dict):
             continue
-        name = str(p.get("name") or p.get("title") or f"知识点{i + 1}").strip()
+        name = str(p.get("name") or p.get("title") or "").strip()
         if not name:
             name = f"知识点{i + 1}"
-        plain = str(p.get("plain_explanation") or p.get("explanation") or "").strip()
-        concepts = p.get("core_concepts") if isinstance(p.get("core_concepts"), list) else []
-        concepts = [str(x).strip() for x in concepts if str(x).strip()][:5]
-        mistakes = p.get("common_mistakes") if isinstance(p.get("common_mistakes"), list) else []
-        mistakes = [str(x).strip() for x in mistakes if str(x).strip()][:3]
-        life_example = str(p.get("life_example") or "").strip()
-        activity_goal = str(p.get("activity_goal") or f"通过互动练习掌握{name}").strip()
-        # 网页样式课件才会产出，供学生自主阅读的深入讲解段落
-        deep_dive = str(p.get("deep_dive") or "").strip()
-        teacher_focus = str(p.get("teacher_focus") or "").strip()
         out.append({
             "name": name[:64],
-            "plain_explanation": plain,
-            "core_concepts": concepts,
-            "common_mistakes": mistakes,
-            "life_example": life_example,
-            "activity_goal": activity_goal,
-            "deep_dive": deep_dive,
-            "teacher_focus": teacher_focus,
+            "plain_explanation": str(p.get("plain_explanation") or p.get("explanation") or "").strip(),
+            "core_concepts": _str_list(p.get("core_concepts"), 5),
+            "common_mistakes": _str_list(p.get("common_mistakes"), 3),
+            "life_example": str(p.get("life_example") or "").strip(),
+            "activity_goal": str(p.get("activity_goal") or "").strip(),
+            "deep_dive": str(p.get("deep_dive") or "").strip(),
+            "teacher_focus": str(p.get("teacher_focus") or "").strip(),
         })
     return out[:max_points]
+
+
+def _normalize_intro(raw) -> dict:
+    if not isinstance(raw, dict):
+        raw = {}
+    steps = []
+    for item in (raw.get("steps") or [])[:4]:
+        if isinstance(item, dict) and (item.get("title") or item.get("detail")):
+            steps.append({
+                "title": str(item.get("title") or "").strip(),
+                "detail": str(item.get("detail") or item.get("content") or "").strip(),
+            })
+    return {
+        "title": str(raw.get("title") or "情境导入").strip() or "情境导入",
+        "subtitle": str(raw.get("subtitle") or "").strip(),
+        "content": str(raw.get("content") or "").strip(),
+        "steps": steps,
+    }
+
+
+def _normalize_exercises(raw) -> list[dict]:
+    out: list[dict] = []
+    for item in raw or []:
+        if isinstance(item, str) and item.strip():
+            out.append({"question": item.strip(), "answer": ""})
+        elif isinstance(item, dict):
+            q = str(item.get("question") or item.get("prompt") or "").strip()
+            a = str(item.get("answer") or item.get("answer_hint") or item.get("solution") or "").strip()
+            if q:
+                out.append({"question": q, "answer": a})
+    return out[:6]
+
+
+def _normalize_homework(raw) -> list[dict]:
+    out: list[dict] = []
+    for item in raw or []:
+        if isinstance(item, str) and item.strip():
+            out.append({"task": item.strip()})
+        elif isinstance(item, dict):
+            t = str(item.get("task") or item.get("content") or "").strip()
+            if t:
+                out.append({"task": t})
+    return out[:4]
+
+
+def _normalize_example(raw) -> dict | None:
+    if not isinstance(raw, dict):
+        return None
+    prompt = str(raw.get("prompt") or raw.get("question") or "").strip()
+    solution = str(raw.get("solution") or raw.get("answer") or "").strip()
+    if not prompt:
+        return None
+    return {"prompt": prompt, "solution": solution}
+
+
+def _normalize_blueprint(obj: dict, *, web_style: bool = False) -> dict:
+    grain = str((obj or {}).get("lesson_grain") or "period").strip()
+    if grain not in ("period", "unit"):
+        grain = "period"
+    max_points = 4 if grain == "unit" else 2
+    points = _normalize_knowledge_points((obj or {}).get("knowledge_points") or [], max_points)
+    return {
+        "topic": str((obj or {}).get("topic") or "").strip(),
+        "lesson_grain": grain,
+        "cover_subtitle": str((obj or {}).get("cover_subtitle") or "").strip(),
+        "objectives": _str_list((obj or {}).get("objectives"), 4),
+        "intro": _normalize_intro((obj or {}).get("intro")),
+        "knowledge_points": points,
+        "example": _normalize_example((obj or {}).get("example")),
+        "exercises": _normalize_exercises((obj or {}).get("exercises")),
+        "homework": _normalize_homework((obj or {}).get("homework")),
+        "summary": _str_list((obj or {}).get("summary"), 4),
+        "web_style": web_style,
+    }
+
+
+def _point_gaps(p: dict, *, web_style: bool) -> list[str]:
+    gaps: list[str] = []
+    if not (p.get("name") or "").strip() or str(p.get("name")).startswith("知识点"):
+        gaps.append("name")
+    if len(p.get("plain_explanation") or "") < 18:
+        gaps.append("plain_explanation")
+    if len(p.get("core_concepts") or []) < 2:
+        gaps.append("core_concepts")
+    if not p.get("life_example"):
+        gaps.append("life_example")
+    if not p.get("common_mistakes"):
+        gaps.append("common_mistakes")
+    if web_style and len(p.get("deep_dive") or "") < 40:
+        gaps.append("deep_dive")
+    return gaps
+
+
+def _blueprint_gaps(bp: dict) -> list[str]:
+    gaps: list[str] = []
+    web_style = bool(bp.get("web_style"))
+    if not bp.get("topic"):
+        gaps.append("topic")
+    if len(bp.get("objectives") or []) < 2:
+        gaps.append("objectives")
+    if len((bp.get("intro") or {}).get("steps") or []) < 2:
+        gaps.append("intro")
+    points = bp.get("knowledge_points") or []
+    if not points:
+        gaps.append("knowledge_points")
+    else:
+        for i, p in enumerate(points, 1):
+            for g in _point_gaps(p, web_style=web_style):
+                gaps.append(f"point{i}.{g}")
+    if len(bp.get("exercises") or []) < 2:
+        gaps.append("exercises")
+    if not bp.get("homework"):
+        gaps.append("homework")
+    if len(bp.get("summary") or []) < 2:
+        gaps.append("summary")
+    return gaps
+
+
+def _fill_blueprint_gaps(bp: dict, cw) -> dict:
+    """抽取仍缺字段时，用已有知识点补具体内容，禁止再写万能套话或自拟题。"""
+    points = bp.get("knowledge_points") or []
+    if not bp.get("topic"):
+        bp["topic"] = (points[0]["name"] if points else cw.title)
+    if not bp.get("cover_subtitle"):
+        bp["cover_subtitle"] = f"{cw.title} · 本课时" if bp["topic"] != cw.title else ""
+    if len(bp.get("objectives") or []) < 2:
+        derived = list(bp.get("objectives") or [])
+        for p in points:
+            for c in p.get("core_concepts") or []:
+                derived.append(f"能指出：{c}")
+            if p.get("life_example"):
+                derived.append(f"能结合「{p['life_example'][:24]}」说明{p['name']}")
+        bp["objectives"] = derived[:4] or [f"能说明「{bp['topic']}」并给出判断依据"]
+    intro = bp.get("intro") or _normalize_intro({})
+    if len(intro.get("steps") or []) < 2:
+        steps = []
+        for p in points:
+            if p.get("life_example"):
+                steps.append({"title": "观察", "detail": p["life_example"]})
+                steps.append({
+                    "title": "追问",
+                    "detail": f"这个现象和「{p['name']}」有什么关系？先让学生说，再进新知。",
+                })
+        if not steps:
+            steps = [
+                {"title": "定向", "detail": f"今天只解决：{bp['topic']}。先问学生已经知道什么。"},
+                {"title": "证据", "detail": "不能停在感觉上，要用实验或具体例子拿出证据。"},
+            ]
+        intro["steps"] = steps[:4]
+        intro["content"] = intro.get("content") or f"用具体情境引出「{bp['topic']}」，不要空讲生活。"
+        bp["intro"] = intro
+    if not bp.get("example") and points:
+        p0 = points[0]
+        mistake = (p0.get("common_mistakes") or ["只记结论，说不出依据"])[0]
+        bp["example"] = {
+            "prompt": f"有同学说：“{mistake}”。这种说法对吗？请说明理由。",
+            "solution": p0.get("plain_explanation") or f"对照「{p0['name']}」的核心要点判断。",
+        }
+    if len(bp.get("exercises") or []) < 2:
+        exercises = list(bp.get("exercises") or [])
+        for p in points:
+            for m in p.get("common_mistakes") or []:
+                exercises.append({
+                    "question": f"判断：{m}。对还是错？依据是什么？",
+                    "answer": "这是常见误区，说法不正确。",
+                })
+            for c in p.get("core_concepts") or []:
+                exercises.append({
+                    "question": f"用一句话解释：{c}",
+                    "answer": p.get("plain_explanation") or "",
+                })
+        bp["exercises"] = exercises[:4]
+    product_task = {
+        "task": "作品：给一个未知对象写一张小体检单（现象/操作 → 结论 → 依据），下节课用 1 分钟交流。",
+    }
+    if not bp.get("homework"):
+        tasks = []
+        if points and points[0].get("life_example"):
+            tasks.append({"task": f"基础：结合「{points[0]['life_example']}」写 3 句判断依据，不要只抄结论。"})
+        else:
+            tasks.append({"task": f"基础：用自己的话写出「{bp['topic']}」的判断依据，举一个具体例子。"})
+        tasks.append({"task": "规范：写出今天最容易错的一点，并改成正确说法。"})
+        tasks.append(product_task)
+        bp["homework"] = tasks[:4]
+    else:
+        tasks = list(bp["homework"])
+        blob = " ".join(str(t.get("task") if isinstance(t, dict) else t) for t in tasks)
+        if "作品" not in blob and "体检单" not in blob:
+            tasks.append(product_task)
+        bp["homework"] = tasks[:4]
+    if len(bp.get("summary") or []) < 2:
+        takeaways = []
+        for p in points:
+            takeaways.extend(p.get("core_concepts") or [])
+        bp["summary"] = takeaways[:4] or [bp["topic"], "能说出判断依据"]
+    return bp
 
 
 def _teacher_intent(cw) -> str:
@@ -594,6 +875,148 @@ async def _apply_teacher_intent(cfg, cw, lesson: dict, intent: str) -> dict:
     return lesson
 
 
+def _lesson_extract_prompts(cw, chapter_content: str, subject_name: str, subject_block: str, web_style: bool, missing: list[str] | None = None):
+    subject_hint = ""
+    if subject_block:
+        subject_hint = (
+            f"\n【学科：{subject_name or '通用'}】请结合学科特征设计一节 45 分钟课。\n{subject_block}\n"
+        )
+    web_rule = ""
+    deep_dive_field = ""
+    if web_style:
+        web_rule = (
+            "\n5. 本课件将以【网页】形式呈现，学生会自己滚动阅读："
+            "plain_explanation 写 2~3 句完整的话；"
+            "每个知识点必须给 deep_dive（150~300 字），讲清原理、方法与典型场景。"
+        )
+        deep_dive_field = ',\n      "deep_dive": "适合自主阅读的深入讲解"'
+    intent = _teacher_intent(cw)
+    intent_rule = ""
+    focus_field = ""
+    if intent:
+        intent_rule = (
+            "\n6. 【教师想法是硬约束】选题、讲解侧重、例题、练习与作业必须对齐；"
+            "点名要讲的概念写入该点 teacher_focus。"
+        )
+        focus_field = ',\n      "teacher_focus": "本点如何落实教师想法"'
+    lab_rule = ""
+    if getattr(cw, "want_virtual_lab", False):
+        lab_rule = (
+            "\n7. 教师勾选了实验/动画：仅当本课时确实在做该实验时才把实验操作写成知识点；"
+            "指示剂课不要写成中和实验，制气课不要写成过滤。"
+        )
+    retry_rule = ""
+    if missing:
+        retry_rule = (
+            "\n8. 上次缺了这些字段，必须补全且写具体内容，禁止套话："
+            + "、".join(missing[:12])
+        )
+    system_prompt = f"""你是一线特级教师。根据课题和课本，设计【一节可直接上的 45 分钟课】的教学蓝图，只输出 JSON。{subject_hint}
+
+要求：
+1. 先定课时：课题若是大单元名（如酸碱盐、力、电），默认 lesson_grain=period，只取本节最该先上的 1～2 个点，topic 写成具体课时名（如「溶液的酸碱性：指示剂与pH」），不要用单元名当课时名。仅当教师明确要求单元复习时用 unit，可抽 3～4 点。
+2. 目标必须可检测（能说出/会判断/会操作），禁止「理解某某标题」「掌握某某知识点」。目标给学生上课前不要念，写进 objectives 供教师备课。
+3. 导入必须是具体物品或现象，禁止「从熟悉的生活场景出发」这类空话。课序是先探究再命名：学生先看现象、动手，再出现规范说法。
+4. 每个知识点必须有：至少 2 条 core_concepts、至少 1 个真实 life_example、至少 1 条 common_mistakes。
+5. 例题、随堂练习、作业都要写具体题面；作业禁止「自拟题」，并包含一个小作品（如体检单、方案、口头报告）。练习要带简短判断依据（给学生看题，依据留给教师）。
+6. 小结写学生能复述的短句，不要重复知识点标题。
+7. 只输出 JSON，不要 markdown。{web_rule}{intent_rule}{lab_rule}{retry_rule}
+
+JSON 格式：
+{{
+  "topic": "具体课时名，不要照抄过大的单元名",
+  "lesson_grain": "period",
+  "cover_subtitle": "一句课眼",
+  "objectives": ["能……", "会……"],
+  "intro": {{
+    "title": "具体情境标题",
+    "subtitle": "",
+    "content": "为什么要从这里切入",
+    "steps": [{{"title": "看", "detail": "具体物品/现象"}}, {{"title": "问", "detail": "学生要回答的问题"}}]
+  }},
+  "knowledge_points": [
+    {{
+      "name": "知识点名称",
+      "plain_explanation": "用白话解释",
+      "core_concepts": ["要点1", "要点2"],
+      "common_mistakes": ["易错1"],
+      "life_example": "真实物品或课本实例",
+      "activity_goal": "互动要达成的可观察目标"{deep_dive_field}{focus_field}
+    }}
+  ],
+  "example": {{"prompt": "完整题干（含选项则写在同一段）", "solution": "判断依据"}},
+  "exercises": [{{"question": "具体题", "answer": "依据"}}],
+  "homework": [{{"task": "基础：……"}}, {{"task": "规范或挑战：……"}}],
+  "summary": ["带走的短句1", "短句2"]
+}}"""
+    user_prompt = f"课件课题：{cw.title}\n\n课本内容：\n{chapter_content[:9000]}"
+    if intent:
+        user_prompt += (
+            f"\n\n【教师想法——必须遵守】\n{intent}\n"
+            "请据此决定讲哪些点、讲到多深、用什么例子。"
+        )
+    return system_prompt, user_prompt
+
+
+async def _extract_lesson_blueprint(
+    cfg,
+    cw,
+    chapter_content: str,
+    subject_name: str = "",
+    subject_block: str = "",
+    web_style: bool = False,
+) -> dict:
+    """抽出一节课的教学蓝图：课时名、目标、导入、知识点、例题、练习、作业。"""
+    max_tok = max(cfg.max_tokens or 0, 7000 if web_style else 5000)
+    system_prompt, user_prompt = _lesson_extract_prompts(
+        cw, chapter_content, subject_name, subject_block, web_style,
+    )
+    resp = await _call_llm(
+        cfg,
+        [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
+        max_tokens=max_tok,
+    )
+    obj = _parse_json_object(_resp_content(resp)) or {}
+    bp = _normalize_blueprint(obj, web_style=web_style)
+    gaps = _blueprint_gaps(bp)
+    if gaps:
+        logger.info("课件 %s 蓝图缺字段，补抽一次：%s", getattr(cw, "id", "?"), "、".join(gaps[:8]))
+        system2, user2 = _lesson_extract_prompts(
+            cw, chapter_content, subject_name, subject_block, web_style, missing=gaps,
+        )
+        resp2 = await _call_llm(
+            cfg,
+            [{"role": "system", "content": system2}, {"role": "user", "content": user2}],
+            max_tokens=max_tok,
+        )
+        obj2 = _parse_json_object(_resp_content(resp2)) or {}
+        bp2 = _normalize_blueprint(obj2, web_style=web_style)
+        if not _blueprint_gaps(bp2) or len(_blueprint_gaps(bp2)) < len(gaps):
+            bp = bp2
+        else:
+            # 两次都缺，合并非空字段
+            if bp2.get("topic"):
+                bp["topic"] = bp2["topic"]
+            if bp2.get("objectives"):
+                bp["objectives"] = bp2["objectives"]
+            if (bp2.get("intro") or {}).get("steps"):
+                bp["intro"] = bp2["intro"]
+            if bp2.get("knowledge_points"):
+                bp["knowledge_points"] = bp2["knowledge_points"]
+            if bp2.get("example"):
+                bp["example"] = bp2["example"]
+            if bp2.get("exercises"):
+                bp["exercises"] = bp2["exercises"]
+            if bp2.get("homework"):
+                bp["homework"] = bp2["homework"]
+            if bp2.get("summary"):
+                bp["summary"] = bp2["summary"]
+    bp = _fill_blueprint_gaps(bp, cw)
+    if not bp.get("knowledge_points"):
+        return {}
+    return bp
+
+
 async def _extract_knowledge_points(
     cfg,
     cw,
@@ -602,82 +1025,11 @@ async def _extract_knowledge_points(
     subject_block: str = "",
     web_style: bool = False,
 ) -> list[dict]:
-    """先分析课本内容，抽取可教学的知识点。
-
-    web_style=True 时课件将以网页形式呈现（学生自主滚动阅读），
-    因此要求更完整的讲解正文，并额外产出 deep_dive 深入讲解段落。
-    """
-    subject_hint = ""
-    if subject_block:
-        subject_hint = (
-            f"\n【学科：{subject_name or '通用'}】请结合学科特征抽取知识点。\n{subject_block}\n"
-        )
-    web_rule = ""
-    deep_dive_field = ""
-    if web_style:
-        web_rule = (
-            "\n5. 本课件将以【网页】形式呈现，学生会自己滚动阅读，没有老师逐句讲解："
-            "plain_explanation 要写成 2~3 句完整的话；"
-            "并额外给 deep_dive —— 150~300 字的深入讲解，讲清原理、使用方法与典型场景，可分成若干短段（用换行分段）。"
-        )
-        deep_dive_field = ',\n      "deep_dive": "适合自主阅读的深入讲解段落"'
-    intent = _teacher_intent(cw)
-    intent_rule = ""
-    focus_field = ""
-    if intent:
-        intent_rule = (
-            "\n6. 【教师想法是硬约束】选题、讲解侧重、例题和生活例子必须对齐教师想法；"
-            "教师点名要讲的概念必须单独成点或写入该点的 teacher_focus；"
-            "教师对难度、节奏、练习的要求写进 activity_goal。"
-        )
-        focus_field = ',\n      "teacher_focus": "本点如何落实教师想法（一两句）"'
-    lab_rule = ""
-    if getattr(cw, "want_virtual_lab", False):
-        lab_rule = (
-            "\n7. 教师要求本课必须有可操作的化学实验：优先抽取与实验装置、药品、现象、"
-            "安全操作相关的知识点（如制取氧气/氢气/二氧化碳、电解水、酸碱中和、金属与酸、"
-            "碳酸氢铵分解、铁丝在氧气中燃烧、过滤、蒸发结晶、配制溶液），"
-            "activity_goal 写成学生能动手完成的实验目标。"
-        )
-    system_prompt = f"""你是资深教研专家。请先分析课本内容，抽取可直接用于上课的知识点，输出 JSON。{subject_hint}
-
-要求：
-1. 只保留最关键、最适合课堂互动的知识点，3~4个。
-2. 解释要生动、有趣、直白，便于学生快速理解；每个知识点必须给生活化例子。
-3. 每个知识点都给一个可操作的互动目标（activity_goal），用于后续生成互动课件。
-4. 只输出 JSON，不要解释，不要 markdown 代码块。{web_rule}{intent_rule}{lab_rule}
-
-JSON 格式：
-{{
-  "topic": "本节主题",
-  "knowledge_points": [
-    {{
-      "name": "知识点名称",
-      "plain_explanation": "用白话解释",
-      "core_concepts": ["要点1", "要点2"],
-      "common_mistakes": ["易错1"],
-      "life_example": "生活中的例子",
-      "activity_goal": "该知识点互动页要达成的学习目标"{deep_dive_field}{focus_field}
-    }}
-  ]
-}}"""
-    user_prompt = f"课件课题：{cw.title}\n\n课本内容：\n{chapter_content[:9000]}"
-    if intent:
-        user_prompt += (
-            f"\n\n【教师想法——必须遵守，优先于泛泛讲解】\n{intent}\n"
-            "请据此决定讲哪些点、讲到多深、用什么例子，不要只当参考。"
-        )
-
-    resp = await _call_llm(
-        cfg,
-        [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
-        # 网页样式多产出 deep_dive 长段落，给足输出预算，避免 JSON 被截断
-        max_tokens=max(cfg.max_tokens or 0, 6000 if web_style else 4000),
+    """给知识图谱等调用方：只返回知识点列表。"""
+    bp = await _extract_lesson_blueprint(
+        cfg, cw, chapter_content, subject_name, subject_block, web_style,
     )
-    raw = _resp_content(resp)
-    obj = _parse_json_object(raw) or {}
-    points = _normalize_knowledge_points(obj.get("knowledge_points") or [])
-    return points
+    return (bp or {}).get("knowledge_points") or []
 
 
 def _extract_html_from_response(raw: str) -> str:
@@ -727,7 +1079,7 @@ def _fallback_interactive_html(point: dict, point_idx: int) -> str:
     """当 LLM 无法产出互动 HTML 时，用知识点数据本地拼出一个基础互动卡片。
 
     保证互动环节始终有可渲染、可作答的内容，而不是空白。
-    交互：点击“显示答案/要点”翻开讲解；有误区时做一个“判断对错”小测。
+    交互：先给现象，再判断；规范说法点开后才出现。
     """
     import html as _html
 
@@ -740,7 +1092,7 @@ def _fallback_interactive_html(point: dict, point_idx: int) -> str:
 
     concepts_li = "".join(f"<li>{c}</li>" for c in concepts) or "<li>掌握本知识点的核心含义</li>"
     life_block = (
-        f"<div class='panel' style='margin-top:12px'><b>生活中的例子</b><p class='muted' style='margin:6px 0 0'>{life}</p></div>"
+        f"<div class='panel' style='margin-top:12px'><b>先观察</b><p class='muted' style='margin:6px 0 0'>{life}</p></div>"
         if life else ""
     )
 
@@ -750,11 +1102,11 @@ def _fallback_interactive_html(point: dict, point_idx: int) -> str:
         wrong_stmt = mistakes[0]
         quiz_block = f"""
   <div class='card' style='margin-top:14px'>
-    <p class='badge'>判断题</p>
-    <p style='margin:8px 0'>有同学说：“{wrong_stmt}”。这种说法对吗？</p>
+    <p class='badge'>根据现象判断</p>
+    <p style='margin:8px 0'>有同学说：“{wrong_stmt}”。对照你刚才看到的现象，这种说法站得住吗？</p>
     <div class='row'>
-      <button class='btn' onclick='cwJudge(this,false)'>✅ 正确</button>
-      <button class='btn' onclick='cwJudge(this,true)'>❌ 错误</button>
+      <button class='btn' onclick='cwJudge(this,false)'>站得住</button>
+      <button class='btn' onclick='cwJudge(this,true)'>站不住</button>
     </div>
     <div id='cw-fb' class='hint' style='display:none;margin-top:10px'></div>
   </div>"""
@@ -773,7 +1125,9 @@ def _fallback_interactive_html(point: dict, point_idx: int) -> str:
     var correct = isWrongStmt === true;
     if(fb){
       fb.style.display='block';
-      fb.textContent = correct ? '回答正确！这确实是一个常见误区，要避开它。' : '再想想~ 这其实是一个常见误区，说法是不对的。';
+      fb.textContent = correct
+        ? '根据现象可以判断：这句话把结论说反了。先说出你看到了什么，再对照规范说法。'
+        : '再看一眼现象。这句话听起来像结论，但和常见观察对不上，所以站不住。';
     }
     var btns = btn.parentNode.querySelectorAll('.btn');
     btns.forEach(function(b){ b.disabled = true; });
@@ -782,17 +1136,24 @@ def _fallback_interactive_html(point: dict, point_idx: int) -> str:
   }
   </script>"""
 
+    observe_block = life_block or (
+        f"<div class='panel'><b>先观察</b><p class='muted' style='margin:6px 0 0'>"
+        f"结合「{name}」想一个你见过的具体现象，再说它说明什么。</p></div>"
+    )
     return f"""<div class="stage fade-in">
   <p class="title">{name}</p>
-  <p class="subtitle">互动目标：{goal}</p>
+  <p class="subtitle">先看现象，再说结论 · {goal}</p>
   <div class="card">
-    <p class="badge">核心要点</p>
-    <ul style="margin:8px 0 0;padding-left:20px">{concepts_li}</ul>
-    {life_block}
-    <button class="btn primary" style="margin-top:14px" onclick="cwReveal(this)">显示白话讲解</button>
-    <div id="cw-explain" class="panel" style="display:none;margin-top:12px">{plain or '结合课本内容理解本知识点。'}</div>
+    <p class="badge">先探究</p>
+    {observe_block}
+    {quiz_block}
+    <button class="btn primary" style="margin-top:14px" onclick="cwReveal(this)">对照规范说法</button>
+    <div id="cw-explain" class="panel" style="display:none;margin-top:12px">
+      <p class="muted">规范说法（操作后再看）</p>
+      <ul style="margin:8px 0 0;padding-left:20px">{concepts_li}</ul>
+      <p style="margin:10px 0 0">{plain or '结合刚才的现象，用课本语言把判断依据说完整。'}</p>
+    </div>
   </div>
-  {quiz_block}
   {script}
 </div>"""
 
@@ -824,9 +1185,12 @@ async def _generate_interactive_html_for_point(
 学科：{subject_name or "通用"}{image_ref}{_interactive_teacher_intent_block(cw, point)}
 
 风格要求：
-- 生动、有趣、直白，语言口语化，句子简短。
-- 至少包含 1 个生活化情境、1 个可操作互动（点击/拖拽/输入）。
-- 互动后必须给即时反馈；有对错判断时调用 window.CW?.correct(题目, 答案) 或 window.CW?.wrong(题目, 答案)。
+- 生动、直白，句子短。至少 1 个真实情境、1 个可操作互动（点击/拖拽/输入）。
+- 一屏只做一个主操作（观察 / 调节 / 判断三选一），不要再堆一套选择题或概念清单。
+- 先观察或判断，再公布规范说法；不要在学生操作前列出核心要点或答案。
+- 反馈要诠释现象：根据学生看到的颜色/读数/变化说明「为什么这样判断」，不要只写「正确/错误」。
+- 学科事实必须正确。化学：石蕊只有红/紫/蓝，酚酞只有无色/红；彩虹色仅用于 pH 试纸；不要用万能指示剂颜色冒充石蕊或酚酞。
+- 判定对错时调用 window.CW?.correct(题目, 答案) 或 window.CW?.wrong(题目, 答案)。
 
 【输出格式——严格遵守，不要有任何多余文字】
 
@@ -1238,11 +1602,11 @@ async def _generate_lesson_content(
     cfg, cw, chapter_content: str, image_catalog: str,
     subject_name: str = "", subject_block: str = "", subject_interactive: str = "",
 ) -> dict:
-    """两阶段课件生成：先抽取知识点，再按知识点生成互动课件。
+    """两阶段课件生成：先抽教学蓝图，再按蓝图拼课。
 
-    render_style 决定同一份结构化内容的写法：
-    - ppt：面向教师讲授的幻灯片，正文精炼、要点化；
-    - html：面向学生自主阅读的网页，正文更完整并带深入讲解段落。
+    蓝图含课时名、可检测目标、具体导入/例题/练习/作业；拼课时不再用点名盖空壳。
+    互动页默认最多 2 个（1 个概念互动 + 至多 1 个自动匹配的动画库实验）。
+    render_style：ppt 精炼要点；html 带深入讲解段落。
     """
     from app.models.courseware import RenderStyle
 
@@ -1253,10 +1617,11 @@ async def _generate_lesson_content(
         from app.services.courseware_components import build_interactive_prompt
         interactive_hint = build_interactive_prompt(subject_interactive)
 
-    # Stage 1: 分析知识点
-    points = await _extract_knowledge_points(
+    # Stage 1: 抽出可上课的教学蓝图（课时名、目标、导入、例题、练习、作业）
+    blueprint = await _extract_lesson_blueprint(
         cfg, cw, chapter_content, subject_name, subject_block, web_style=is_web,
     )
+    points = (blueprint or {}).get("knowledge_points") or []
     if not points:
         logger.warning("课件 %s 未提取到有效知识点，回退到旧版整课件生成", cw.id)
         # 回退：沿用旧版单次生成，避免任务失败
@@ -1279,14 +1644,13 @@ async def _generate_lesson_content(
         system_prompt = f"""你是一位资深的一线教师和课件设计专家。请基于课本内容，设计{form_hint}，时长约 40-45 分钟。{subject_hint}
 要求：
 1. 课件需有 meta + slides 结构。每页字段：index,type,title,subtitle,bullets,content,notes；对比页可加 columns[{{title,items}}]，过程页可加 steps[{{title,detail}}]，例题页可加 prompt/solution。
-2. type 必须从以下页面类型中选择，并按课型组合，不要所有页都用同一种：
-   cover（封面）/ objectives（学习目标）/ knowledge（新知讲解）/ example（例题精讲）/
-   interactive（互动探究）/ comparison（对比辨析）/ process（过程路径或情境导入）/
-   summary（课堂小结）/ exercise（随堂练习）/ homework（课后作业）。
-   旧别名 title/content/intro/quiz 也可，但优先用上面的标准 type。
+2. 课序必须先探究再命名：cover → process（导入）→ interactive → knowledge → comparison → example → summary → exercise → homework。
+   不要生成 objectives 页；可检测目标只写在 meta.objectives，供教师备课。
+   type 从以上标准类型中选；旧别名 title/content/intro/quiz 也可。
 3. 全部中文，输出严格 JSON，不要 markdown 代码块。
-4. 若为互动课件，可在 interactive 页附 html 字段（片段）。
-5. 若用户给出了教师想法，必须当作硬约束：选题、讲解侧重、例题难度、练习与作业都要对齐，不能只写在备注里。
+4. 若为互动课件，可在 interactive 页附 html 字段（片段）。一屏一个主操作；反馈要诠释现象，不要只报对错。
+5. 例题解析、练习答案只写在 notes，不要和题干并排展示。作业含一个小作品（体检单/方案/口头报告）。
+6. 若用户给出了教师想法，必须当作硬约束：选题、讲解侧重、例题难度、练习与作业都要对齐，不能只写在备注里。
 {interactive_hint}
 """
         user_prompt = f"课件课题：{cw.title}\n\n课本内容：\n{chapter_content[:8000]}{image_hint}"
@@ -1315,95 +1679,82 @@ async def _generate_lesson_content(
             fallback = await _apply_teacher_intent(cfg, cw, fallback, fallback_intent)
         return fallback
 
-    # Stage 2: 按知识点组装课件 + 生成互动页
+    return await _assemble_lesson_from_blueprint(
+        cfg, cw, blueprint, points, subject_name, image_catalog, interactive_hint, is_web,
+    )
+
+
+async def _assemble_lesson_from_blueprint(
+    cfg, cw, blueprint: dict, points: list[dict],
+    subject_name: str, image_catalog: str, interactive_hint: str, is_web: bool,
+) -> dict:
+    """用蓝图拼课：先探究再命名；目标只进 meta，不给学生看。"""
+    from app.models.courseware import RenderStyle
+    from app.services.animation_service import resolve_keys as _resolve_anim_keys
+
+    topic = blueprint.get("topic") or cw.title
+    unit_note = f"单元：{cw.title}。" if topic != cw.title else ""
+    subtitle = blueprint.get("cover_subtitle") or (
+        f"{subject_name} · {cw.title}" if subject_name else cw.title
+    )
+    intro = blueprint.get("intro") or _normalize_intro({})
+    example = blueprint.get("example")
+    exercises = blueprint.get("exercises") or []
+    homework = blueprint.get("homework") or []
+    summary = blueprint.get("summary") or []
+    objectives = blueprint.get("objectives") or []
+
+    explicit_anim = bool(getattr(cw, "animation_keys", None))
+    anim_keys = _resolve_anim_keys(cw, points, topic, subject_name) if cw.is_interactive else []
+    if not explicit_anim:
+        anim_keys = anim_keys[:1]
+    point_ix_budget = 0
+    if cw.is_interactive:
+        point_ix_budget = 1 if anim_keys else 2
+
     slides: list[dict] = []
     idx = 1
     slides.append({
-        "index": idx, "type": "cover", "title": cw.title, "subtitle": f"{subject_name} · 知识点互动课",
-        "bullets": [], "content": "", "notes": "开场：抛出本节核心问题，说明学习目标。"
+        "index": idx, "type": "cover", "title": topic, "subtitle": subtitle,
+        "bullets": [], "content": "",
+        "notes": (
+            f"{unit_note}开场抛出本节核心问题：{topic}。"
+            "不要念教学目标。停课点：学生猜完再进情境。"
+        ).strip(),
     })
     idx += 1
     slides.append({
-        "index": idx, "type": "objectives", "title": "学习目标", "subtitle": "",
-        "bullets": [f"理解：{p['name']}" for p in points[:3]],
-        "content": "本节课以核心知识点为主线，通过生活化例子和互动练习帮助学生真正理解与应用。",
-        "notes": "用学生听得懂的话解释“学什么、为什么学、怎么学”。",
-    })
-    idx += 1
-    intro_steps = []
-    for p in points:
-        if p.get("life_example"):
-            intro_steps.append({"title": p["name"], "detail": p["life_example"]})
-    slides.append({
-        "index": idx, "type": "process", "title": "情境导入", "subtitle": "从生活现象切入",
-        "bullets": [p.get("life_example") for p in points if p.get("life_example")][:3],
-        "steps": intro_steps[:4] or [{"title": "观察", "detail": "从熟悉的生活场景出发，引出本节知识点。"}],
-        "content": "先从熟悉的生活场景出发，引出本节知识点，激发学习兴趣。",
-        "notes": "引导学生先观察、再表达自己的判断，不急于给标准答案。",
+        "index": idx, "type": "process",
+        "title": intro.get("title") or "情境导入",
+        "subtitle": intro.get("subtitle") or "从具体现象切入",
+        "bullets": [s["detail"] for s in intro.get("steps") or [] if s.get("detail")][:3],
+        "steps": intro.get("steps") or [],
+        "content": intro.get("content") or f"用具体情境引出「{topic}」。",
+        "notes": "停课点：学生说完自己的判断后再往下翻。这一页只观察、只表达，不公布规范说法。",
     })
     idx += 1
 
-    # 先拼讲解页骨架；互动 HTML 有限并发生成，缩短墙钟时间
-    interactive_jobs: list[tuple[int, int, dict]] = []  # (slide_list_index, point_i, point)
+    interactive_jobs: list[tuple[int, int, dict]] = []
     for point_i, p in enumerate(points, 1):
-        bullets = p.get("core_concepts") or []
-        if not bullets and p.get("plain_explanation"):
-            bullets = [p["plain_explanation"]]
-        content_parts = []
-        if p.get("plain_explanation"):
-            content_parts.append(f"### 先用一句话说清楚\n{p['plain_explanation']}")
-        if is_web and p.get("deep_dive"):
-            content_parts.append(f"### 深入理解\n{p['deep_dive']}")
-        if p.get("common_mistakes"):
-            content_parts.append("### 常见误区\n" + "\n".join(f"- {x}" for x in p["common_mistakes"]))
-        if p.get("teacher_focus"):
-            content_parts.append(f"### 按教师要求\n{p['teacher_focus']}")
-        if p.get("life_example"):
-            content_parts.append(f"### 生活中的例子\n- {p['life_example']}")
-
-        slides.append({
-            "index": idx,
-            "type": "knowledge",
-            "title": f"{point_i}. {p['name']}",
-            "subtitle": "知识点讲解",
-            "bullets": bullets[:5],
-            "content": "\n\n".join(content_parts),
-            "notes": "讲解要短句、直白。让学生先说自己的理解，再做纠偏。",
-        })
-        idx += 1
-
-        if p.get("life_example") and point_i <= 2:
-            slides.append({
-                "index": idx,
-                "type": "example",
-                "title": f"{point_i}. {p['name']} · 例题",
-                "subtitle": "把知识用起来",
-                "prompt": p["life_example"],
-                "bullets": [p["life_example"]],
-                "content": p.get("plain_explanation") or "",
-                "notes": "先让学生尝试，再对照解析。",
-            })
-            idx += 1
-
+        if point_i > point_ix_budget:
+            break
         interactive_slide = {
             "index": idx,
             "type": "interactive",
-            "title": f"{point_i}. {p['name']} - 互动练习",
-            "subtitle": "边做边学",
-            "bullets": [p.get("activity_goal") or "通过互动练习巩固本知识点"],
-            "content": "请完成下面互动任务，系统会即时反馈并说明原因。",
-            "notes": "先让学生独立操作，再进行讲评。重点解释“为什么对/错”。",
+            "title": f"{p['name']} · 动手做",
+            "subtitle": "先观察再下结论",
+            "bullets": [p.get("activity_goal") or "根据现象说出判断依据"],
+            "content": "先完成一个操作，再根据现象说出判断依据。系统会解释你看到的现象，不急着给标准答案。",
+            "notes": (
+                "停课点：操作后先问「你看到了什么？这说明什么？」不要立刻给标准答案。"
+                "反馈要诠释现象，不要只报对错。"
+            ),
         }
         slides.append(interactive_slide)
-        if cw.is_interactive:
-            interactive_jobs.append((len(slides) - 1, point_i, p))
+        interactive_jobs.append((len(slides) - 1, point_i, p))
         idx += 1
 
-    from app.services.animation_service import resolve_keys as _resolve_anim_keys
-    anim_keys = _resolve_anim_keys(cw, points, cw.title, subject_name) if cw.is_interactive else []
-
     if interactive_jobs:
-        import asyncio
         from app.services import skill_service
         sem = asyncio.Semaphore(3)
 
@@ -1434,7 +1785,7 @@ async def _generate_lesson_content(
                 slides[slide_i]["skill"] = routed
 
     if anim_keys:
-        from app.services.animation_service import payload_for_key
+        from app.services.animation_service import payload_for_key, KIND_SUBTITLE
         for key in anim_keys:
             try:
                 html, routed = await payload_for_key(key)
@@ -1443,22 +1794,59 @@ async def _generate_lesson_content(
                 continue
             if not html or not routed:
                 continue
+            kind = routed.get("kind") or ""
+            is_lab = kind == "chem_lab" or routed.get("skill") == "edu-chem-lab"
             slides.append({
                 "index": idx,
                 "type": "interactive",
-                "title": routed.get("title") or "虚拟实验台",
-                "subtitle": "动画库 · 选仪器 · 加药品 · 观察现象",
-                "bullets": ["从互动动画库引入，不重复生成"],
+                "title": routed.get("title") or "互动动画",
+                "subtitle": KIND_SUBTITLE.get(kind) or "动画库 · 可操作演示",
+                "bullets": ["与本课核心点对齐的动画库实验，不重复生成"],
                 "content": "",
-                "notes": "让学生按步骤操作，错了先讲安全再重做。",
+                "notes": (
+                    "停课点：让学生按步骤操作，看完现象先口述，再点名概念。"
+                    "错了先讲安全再重做。若本课尚未建立对应概念，只作为现象观察。"
+                    if is_lab else
+                    "停课点：让学生按提示操作，先描述变化，再对照规范说法。"
+                ),
                 "html": html,
                 "skill": routed,
             })
             idx += 1
 
+    for point_i, p in enumerate(points, 1):
+        bullets = p.get("core_concepts") or []
+        if not bullets and p.get("plain_explanation"):
+            bullets = [p["plain_explanation"]]
+        content_parts = []
+        if p.get("plain_explanation"):
+            content_parts.append(f"### 先用一句话说清楚\n{p['plain_explanation']}")
+        if is_web and p.get("deep_dive"):
+            content_parts.append(f"### 深入理解\n{p['deep_dive']}")
+        if p.get("common_mistakes"):
+            content_parts.append("### 常见误区\n" + "\n".join(f"- {x}" for x in p["common_mistakes"]))
+        if p.get("teacher_focus"):
+            content_parts.append(f"### 按教师要求\n{p['teacher_focus']}")
+        if p.get("life_example"):
+            content_parts.append(f"### 生活中的例子\n- {p['life_example']}")
+        slides.append({
+            "index": idx,
+            "type": "knowledge",
+            "title": p["name"] if len(points) == 1 else f"{point_i}. {p['name']}",
+            "subtitle": "把刚才看到的现象说成规范说法",
+            "bullets": bullets[:5],
+            "content": "\n\n".join(content_parts),
+            "notes": "停课点：先让学生用刚才的现象自己说，再揭开规范说法。讲解要短句、直白。",
+        })
+        idx += 1
+
     mistakes = [m for p in points for m in (p.get("common_mistakes") or [])][:4]
     if mistakes:
-        corrects = [p.get("plain_explanation") or p["name"] for p in points[:4]]
+        corrects = []
+        for p in points:
+            corrects.extend(p.get("core_concepts") or [])
+        if not corrects:
+            corrects = [p.get("plain_explanation") or p["name"] for p in points[:4]]
         slides.append({
             "index": idx,
             "type": "comparison",
@@ -1468,54 +1856,83 @@ async def _generate_lesson_content(
             "right_title": "正确理解",
             "columns": [
                 {"title": "常见误区", "items": mistakes},
-                {"title": "正确理解", "items": corrects},
+                {"title": "正确理解", "items": corrects[:4]},
             ],
-            "bullets": mistakes + corrects,
+            "bullets": mistakes + corrects[:4],
             "content": "",
-            "notes": "先让学生指出错在哪里，再对照正确说法。",
+            "notes": "停课点：先让学生指出错在哪里，再对照正确说法。",
+        })
+        idx += 1
+
+    if example:
+        solution = example.get("solution") or ""
+        slides.append({
+            "index": idx,
+            "type": "example",
+            "title": "例题精讲",
+            "subtitle": "先做，再对照依据",
+            "prompt": example["prompt"],
+            "bullets": [],
+            "content": "",
+            "solution": solution,
+            "notes": (
+                "停课点：先独立做，不要投影解析。\n"
+                f"解析：{solution}\n"
+                "追问：换一种试剂或条件，结论会怎么变？"
+            ),
         })
         idx += 1
 
     slides.append({
         "index": idx,
         "type": "summary",
-        "title": "课堂小结",
-        "subtitle": "",
-        "bullets": [p["name"] for p in points[:4]],
-        "content": "回顾每个知识点：是什么、怎么判断、容易错在哪里、怎么在生活中应用。",
-        "notes": "让学生复述“今天最重要的三个收获”。",
+        "title": "今天带走这几句话",
+        "subtitle": "让学生复述，不要老师再念标题",
+        "bullets": summary[:4],
+        "content": "",
+        "notes": (
+            "抽三名学生各说一句。"
+            + (f" 课末回扣：{'；'.join(objectives[:2])}。" if objectives else "")
+        ),
     })
     idx += 1
+    answer_notes = "\n".join(
+        f"{i+1}. {ex.get('answer') or '看判断依据。'}" for i, ex in enumerate(exercises)
+    )
     slides.append({
         "index": idx,
         "type": "exercise",
         "title": "随堂练习",
-        "subtitle": "当堂检验",
-        "bullets": [p.get("activity_goal") or f"用自己的话解释「{p['name']}」" for p in points[:3]],
-        "content": "独立完成后再对答案，重点说清判断依据。",
-        "notes": "巡视时关注卡在概念判断上的学生。",
+        "subtitle": "当堂检验，先写依据再对答案",
+        "bullets": [ex["question"] for ex in exercises[:4]],
+        "content": "独立完成后对照教师讲稿里的判断依据。能说出“因为……”才算过关。",
+        "notes": (
+            "停课点：先收判断依据，再对答案。\n"
+            + (answer_notes or "巡视时关注卡在概念判断上的学生。")
+        ),
     })
     idx += 1
     slides.append({
         "index": idx,
         "type": "homework",
         "title": "课后任务",
-        "subtitle": "",
-        "bullets": [f"围绕“{p['name']}”各完成1道自拟题并说明判断依据" for p in points[:2]],
-        "content": "请结合今天的知识点，完成分层练习：基础题巩固 + 一题生活迁移题。",
-        "notes": "布置作业时强调“会说出理由”比“只选对答案”更重要。",
+        "subtitle": "会说出理由，比只选对答案更重要",
+        "bullets": [h["task"] for h in homework[:4]],
+        "content": "分层完成：基础巩固 + 规范改错 + 小作品。不要自拟题目。",
+        "notes": "停课点：下节课用 1 分钟交流作品。收作业时抽查“依据”一栏。",
     })
 
     lesson = {
         "meta": {
-            "title": cw.title,
+            "title": topic,
             "subject": subject_name or "",
             "render_style": RenderStyle.html.value if is_web else RenderStyle.ppt.value,
             "duration": "45分钟",
-            "objectives": [f"掌握：{p['name']}" for p in points[:3]],
+            "lesson_grain": blueprint.get("lesson_grain") or "period",
+            "unit_title": cw.title,
+            "objectives": objectives[:4],
             "key_points": [p["name"] for p in points[:3]],
             "difficulties": [m for p in points for m in p.get("common_mistakes", [])][:3],
-            # 完整知识点结构，供知识图谱回填（前端展示时可忽略）
             "knowledge_points": points,
         },
         "slides": slides,

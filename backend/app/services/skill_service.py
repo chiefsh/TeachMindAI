@@ -67,6 +67,14 @@ SKILL_CAPABILITIES: dict[str, dict] = {
         "subjects": ["化学", "科学"],
         "problem_types": {},  # 由 LAB_CATALOG 填入
     },
+    "edu-bio": {
+        "subjects": ["生物"],
+        "problem_types": {},  # 由 BIO_CATALOG 填入
+    },
+    "edu-physics": {
+        "subjects": ["物理"],
+        "problem_types": {},  # 由 PHYSICS_CATALOG 填入
+    },
 }
 
 
@@ -77,6 +85,14 @@ def _is_math(subject: str) -> bool:
 def _is_chem(subject: str) -> bool:
     s = subject or ""
     return ("化学" in s) or ("生物" in s)
+
+
+def _is_bio(subject: str) -> bool:
+    return "生物" in (subject or "")
+
+
+def _is_physics(subject: str) -> bool:
+    return "物理" in (subject or "")
 
 
 def _is_lab_subject(subject: str) -> bool:
@@ -95,9 +111,11 @@ LAB_CATALOG: list[dict] = [
     {"key": "electrolysis", "title": "电解水", "group": "反应与性质",
      "keywords": ("电解水", "正氧负氢", "霍夫曼", "通电分解")},
     {"key": "neutralization", "title": "酸碱中和（酚酞指示剂）", "group": "反应与性质",
-     "keywords": ("中和", "酚酞", "滴定", "指示剂", "恰好完全")},
+     "keywords": ("中和", "中和反应", "酸碱中和", "滴定", "恰好完全")},
     {"key": "metal_acid", "title": "金属与稀盐酸反应", "group": "反应与性质",
      "keywords": ("金属活动性", "置换氢", "锌和稀盐酸", "铁和稀盐酸", "铜不反应")},
+    {"key": "metal_oxide_acid", "title": "氧化铜与稀硫酸反应", "group": "反应与性质",
+     "keywords": ("氧化铜", "稀硫酸", "硫酸铜", "金属氧化物", "黑色粉末变蓝")},
     {"key": "nh4hco3_decomp", "title": "碳酸氢铵受热分解", "group": "反应与性质",
      "keywords": ("碳酸氢铵", "铵盐分解", "湿润红色石蕊", "扇闻")},
     {"key": "iron_in_oxygen", "title": "铁丝在氧气中燃烧", "group": "反应与性质",
@@ -112,6 +130,141 @@ LAB_CATALOG: list[dict] = [
 LAB_KEYWORDS: dict[str, tuple[str, ...]] = {e["key"]: e["keywords"] for e in LAB_CATALOG}
 SKILL_CAPABILITIES["edu-chem-lab"]["problem_types"] = {
     e["key"]: f"{e['title']}（宏观实验台）" for e in LAB_CATALOG
+}
+
+# 生物探究：点击结构 / 分阶段播放。新增场景先改 generate.py REGISTRY，再在此补一行。
+BIO_CATALOG: list[dict] = [
+    {"key": "animal_cell", "title": "动物细胞结构", "group": "细胞",
+     "keywords": ("动物细胞", "细胞膜", "中心体", "溶酶体"),
+     "knowledge_tags": ["动物细胞", "细胞结构", "细胞器"]},
+    {"key": "plant_cell", "title": "植物细胞结构", "group": "细胞",
+     "keywords": ("植物细胞", "细胞壁", "叶绿体", "液泡", "大液泡"),
+     "knowledge_tags": ["植物细胞", "细胞结构", "细胞壁"]},
+    {"key": "mitosis", "title": "有丝分裂", "group": "细胞增殖",
+     "keywords": ("有丝分裂", "赤道板", "纺锤体", "细胞周期"),
+     "knowledge_tags": ["有丝分裂", "细胞分裂", "细胞周期"]},
+    {"key": "digestive_system", "title": "人体消化系统", "group": "人体",
+     "keywords": ("消化系统", "小肠", "消化腺", "消化道"),
+     "knowledge_tags": ["消化系统", "小肠", "消化"]},
+    {"key": "circulatory_system", "title": "人体循环系统", "group": "人体",
+     "keywords": ("循环系统", "体循环", "肺循环", "心脏", "动脉", "静脉"),
+     "knowledge_tags": ["循环系统", "血液循环", "心脏"]},
+    {"key": "respiratory_system", "title": "人体呼吸系统", "group": "人体",
+     "keywords": ("呼吸系统", "肺泡", "膈肌", "呼吸道"),
+     "knowledge_tags": ["呼吸系统", "肺", "肺泡"]},
+    {"key": "neuron", "title": "神经元", "group": "神经",
+     "keywords": ("神经元", "树突", "轴突", "突触", "神经细胞"),
+     "knowledge_tags": ["神经元", "神经细胞"]},
+    {"key": "nervous_system", "title": "人体神经系统", "group": "神经",
+     "keywords": ("神经系统", "脊髓", "反射弧", "周围神经"),
+     "knowledge_tags": ["神经系统", "脑", "脊髓"]},
+    {"key": "photosynthesis", "title": "光合作用", "group": "代谢",
+     "keywords": ("光合作用", "叶绿体", "光反应", "暗反应"),
+     "knowledge_tags": ["光合作用", "叶绿体"]},
+    {"key": "dna_structure", "title": "DNA 双螺旋", "group": "遗传",
+     "keywords": ("DNA", "双螺旋", "碱基互补", "碱基对", "脱氧核糖核酸"),
+     "knowledge_tags": ["DNA", "双螺旋", "碱基互补配对"]},
+]
+BIO_KEYWORDS: dict[str, tuple[str, ...]] = {e["key"]: e["keywords"] for e in BIO_CATALOG}
+SKILL_CAPABILITIES["edu-bio"]["problem_types"] = {
+    e["key"]: e["title"] for e in BIO_CATALOG
+}
+
+PHYSICS_CATALOG: list[dict] = [
+    {"key": "magnetic_field", "title": "磁场与磁感线", "group": "电磁",
+     "keywords": ("磁场", "磁感线", "条形磁铁", "小磁针"),
+     "knowledge_tags": ["磁场", "磁感线", "磁极"]},
+    {"key": "electromagnetic_induction", "title": "电磁感应", "group": "电磁",
+     "keywords": ("电磁感应", "感应电流", "磁通量", "楞次定律", "磁场变化"),
+     "knowledge_tags": ["电磁感应", "感应电流", "磁场变化"]},
+    {"key": "circuit_series_parallel", "title": "串并联电路", "group": "电学",
+     "keywords": ("串联", "并联", "串并联", "电路"),
+     "knowledge_tags": ["串联", "并联", "电路"]},
+    {"key": "ohm_law", "title": "欧姆定律", "group": "电学",
+     "keywords": ("欧姆定律", "电压表", "电流表"),
+     "knowledge_tags": ["欧姆定律", "电阻"]},
+    {"key": "force_composition", "title": "力的合成", "group": "力学",
+     "keywords": ("力的合成", "平行四边形定则", "合力"),
+     "knowledge_tags": ["力的合成", "合力", "平行四边形定则"]},
+    {"key": "newton_laws", "title": "牛顿运动定律", "group": "力学",
+     "keywords": ("牛顿定律", "牛顿第一定律", "牛顿第二定律", "惯性", "作用力与反作用力"),
+     "knowledge_tags": ["牛顿运动定律", "惯性", "牛顿第二定律"]},
+    {"key": "state_change", "title": "物态变化", "group": "热学",
+     "keywords": ("物态变化", "熔化", "汽化", "升华", "凝华", "液化"),
+     "knowledge_tags": ["物态变化", "熔化", "汽化"]},
+    {"key": "light_reflection", "title": "光的反射", "group": "光学",
+     "keywords": ("光的反射", "反射定律", "入射角", "平面镜"),
+     "knowledge_tags": ["光的反射", "反射定律", "平面镜"]},
+    {"key": "convex_lens", "title": "凸透镜成像", "group": "光学",
+     "keywords": ("凸透镜", "焦距", "实像", "虚像", "放大镜"),
+     "knowledge_tags": ["凸透镜", "凸透镜成像"]},
+    {"key": "buoyancy", "title": "浮力", "group": "力学",
+     "keywords": ("浮力", "阿基米德", "排开液体", "漂浮"),
+     "knowledge_tags": ["浮力", "阿基米德原理"]},
+    {"key": "projectile_motion", "title": "抛体运动", "group": "力学",
+     "keywords": ("抛体", "平抛", "斜抛", "抛射", "抛物线运动"),
+     "knowledge_tags": ["抛体运动", "平抛运动"]},
+    {"key": "simple_pendulum", "title": "单摆", "group": "振动",
+     "keywords": ("单摆", "简谐", "摆长", "周期公式"),
+     "knowledge_tags": ["单摆", "简谐运动"]},
+    {"key": "collision_momentum", "title": "碰撞与动量", "group": "力学",
+     "keywords": ("碰撞", "动量守恒", "弹性碰撞", "非弹性"),
+     "knowledge_tags": ["动量守恒", "碰撞"]},
+    {"key": "circular_motion", "title": "匀速圆周运动", "group": "力学",
+     "keywords": ("圆周运动", "向心力", "向心加速度", "匀速圆周"),
+     "knowledge_tags": ["圆周运动", "向心力"]},
+    {"key": "incline_friction", "title": "斜面与摩擦", "group": "力学",
+     "keywords": ("斜面", "摩擦角", "自锁", "动摩擦因数"),
+     "knowledge_tags": ["斜面", "摩擦力"]},
+    {"key": "light_refraction", "title": "光的折射", "group": "光学",
+     "keywords": ("折射", "折射率", "全反射", "临界角", "斯涅尔"),
+     "knowledge_tags": ["光的折射", "全反射"]},
+    {"key": "coulomb_law", "title": "库仑定律", "group": "电磁",
+     "keywords": ("库仑", "点电荷", "静电力", "电荷相互作用"),
+     "knowledge_tags": ["库仑定律", "静电力"]},
+    {"key": "lever_balance", "title": "杠杆平衡", "group": "机械",
+     "keywords": ("杠杆", "力臂", "力矩", "省力杠杆"),
+     "knowledge_tags": ["杠杆", "力矩平衡"]},
+    {"key": "pressure", "title": "压强", "group": "力学",
+     "keywords": ("压强", "液体压强", "受力面积", "ρgh"),
+     "knowledge_tags": ["压强", "液体压强"]},
+    {"key": "mechanical_energy", "title": "动能与重力势能", "group": "能量",
+     "keywords": ("动能", "重力势能", "机械能", "机械能守恒"),
+     "knowledge_tags": ["动能", "重力势能", "机械能"]},
+    {"key": "spring_harmonic", "title": "弹簧振子", "group": "振动",
+     "keywords": ("弹簧振子", "简谐运动", "劲度系数", "胡克定律"),
+     "knowledge_tags": ["弹簧振子", "简谐运动"]},
+    {"key": "pulley_block", "title": "滑轮组与机械效率", "group": "机械",
+     "keywords": ("滑轮", "动滑轮", "定滑轮", "机械效率", "滑轮组"),
+     "knowledge_tags": ["滑轮", "机械效率"]},
+    {"key": "ampere_force", "title": "安培力", "group": "电磁",
+     "keywords": ("安培力", "左手定则", "通电导线", "磁场力"),
+     "knowledge_tags": ["安培力", "左手定则"]},
+    {"key": "parallel_capacitor", "title": "平行板电容器", "group": "电磁",
+     "keywords": ("电容器", "电容", "平行板", "介电常数"),
+     "knowledge_tags": ["电容器", "电容"]},
+    {"key": "transformer", "title": "变压器", "group": "电磁",
+     "keywords": ("变压器", "匝数比", "升压", "降压", "互感"),
+     "knowledge_tags": ["变压器", "互感"]},
+    {"key": "ideal_gas", "title": "理想气体", "group": "热学",
+     "keywords": ("理想气体", "玻意耳", "查理定律", "气体压强", "pV=nRT"),
+     "knowledge_tags": ["理想气体", "气体实验定律"]},
+    {"key": "mechanical_wave", "title": "横波与纵波", "group": "波动",
+     "keywords": ("横波", "纵波", "机械波", "波长", "波速"),
+     "knowledge_tags": ["机械波", "横波", "纵波"]},
+    {"key": "doppler_effect", "title": "多普勒效应", "group": "波动",
+     "keywords": ("多普勒", "频率变化", "红移", "音调"),
+     "knowledge_tags": ["多普勒效应"]},
+    {"key": "gravitation_orbit", "title": "万有引力与卫星", "group": "力学",
+     "keywords": ("万有引力", "卫星", "第一宇宙速度", "圆轨道", "开普勒"),
+     "knowledge_tags": ["万有引力", "卫星运动"]},
+    {"key": "photoelectric", "title": "光电效应", "group": "近代",
+     "keywords": ("光电效应", "逸出功", "光子", "截止频率", "爱因斯坦"),
+     "knowledge_tags": ["光电效应", "光子"]},
+]
+PHYSICS_KEYWORDS: dict[str, tuple[str, ...]] = {e["key"]: e["keywords"] for e in PHYSICS_CATALOG}
+SKILL_CAPABILITIES["edu-physics"]["problem_types"] = {
+    e["key"]: e["title"] for e in PHYSICS_CATALOG
 }
 
 
@@ -138,6 +291,9 @@ def match_lab_key(text: str, explicit: str | None = None) -> str | None:
         n = sum(1 for w in words if w in blob)
         if n > best_n:
             best_key, best_n = k, n
+    # 单个共享词（如「氧气」）不够，避免把不相关课时配上实验台
+    if best_n < 2:
+        return None
     return best_key
 
 
@@ -145,7 +301,7 @@ def pick_chem_lab(
     points: list[dict],
     title: str = "",
     lab_key: str | None = None,
-    default: str | None = "prep_oxygen_kmno4",
+    default: str | None = None,
 ) -> tuple[int, str] | None:
     """给整课指定 1 个宏观实验：返回 (知识点下标, problem_type)。"""
     caps = SKILL_CAPABILITIES["edu-chem-lab"]["problem_types"]
@@ -164,6 +320,48 @@ def pick_chem_lab(
         if n > best_n:
             best_i, best_n = i, n
     return best_i, key
+
+
+def match_bio_key(text: str) -> str | None:
+    blob = text or ""
+    best_key, best_n = None, 0
+    for k, words in BIO_KEYWORDS.items():
+        n = sum(1 for w in words if w in blob)
+        if n > best_n:
+            best_key, best_n = k, n
+    return best_key
+
+
+def route_bio_point(point: dict, subject_name: str) -> dict | None:
+    """生物探究：关键词命中即用模板，不调 LLM。"""
+    if not _is_bio(subject_name):
+        return None
+    text = " ".join(str(point.get(k) or "") for k in ("name", "plain_explanation", "activity_goal"))
+    key = match_bio_key(text)
+    if not key:
+        return None
+    return {"skill": "edu-bio", "problem_type": key, "spec": {}}
+
+
+def match_physics_key(text: str) -> str | None:
+    blob = text or ""
+    best_key, best_n = None, 0
+    for k, words in PHYSICS_KEYWORDS.items():
+        n = sum(1 for w in words if w in blob)
+        if n > best_n:
+            best_key, best_n = k, n
+    return best_key
+
+
+def route_physics_point(point: dict, subject_name: str) -> dict | None:
+    """物理探究：关键词命中即用模板，不调 LLM。"""
+    if not _is_physics(subject_name):
+        return None
+    text = " ".join(str(point.get(k) or "") for k in ("name", "plain_explanation", "activity_goal"))
+    key = match_physics_key(text)
+    if not key:
+        return None
+    return {"skill": "edu-physics", "problem_type": key, "spec": {}}
 
 
 # ---------------------------------------------------------------------------
@@ -414,12 +612,32 @@ async def render_chem_lab_html(routed: dict, timeout: float = 45.0) -> str:
     return await _render_via_cli("edu-chem-lab", routed["problem_type"], timeout)
 
 
+async def render_bio_html(routed: dict, timeout: float = 30.0) -> str:
+    return await _render_via_cli("edu-bio", routed["problem_type"], timeout)
+
+
+async def render_physics_html(routed: dict, timeout: float = 30.0) -> str:
+    return await _render_via_cli("edu-physics", routed["problem_type"], timeout)
+
+
 _RENDERERS = {
     "edu-solid-geometry": render_solid_geometry_html,
     "edu-analytic-geometry": render_analytic_geometry_html,
     "edu-chem-reaction": render_chem_reaction_html,
     "edu-chem-lab": render_chem_lab_html,
+    "edu-bio": render_bio_html,
+    "edu-physics": render_physics_html,
 }
+
+
+async def render_skill_html(routed: dict, timeout: float | None = None) -> str:
+    """按 routed.skill 调对应渲染器；未知 skill 或失败返回空串。"""
+    renderer = _RENDERERS.get((routed or {}).get("skill") or "")
+    if not renderer:
+        return ""
+    if timeout is None:
+        return await renderer(routed)
+    return await renderer(routed, timeout)
 
 
 # ---------------------------------------------------------------------------
@@ -439,6 +657,12 @@ async def maybe_generate_skill(
         if not routed:
             if _is_math(subject_name):
                 routed = await route_math_point(cfg, point, subject_name)
+            elif _is_physics(subject_name):
+                routed = route_physics_point(point, subject_name)
+            elif _is_bio(subject_name):
+                routed = route_bio_point(point, subject_name)
+                if not routed:
+                    routed = await route_chem_point(cfg, point, subject_name)
             elif _is_chem(subject_name):
                 routed = await route_chem_point(cfg, point, subject_name)
     except Exception as e:
@@ -451,7 +675,7 @@ async def maybe_generate_skill(
     renderer = _RENDERERS.get(routed["skill"])
     if not renderer:
         return "", None
-    html = await renderer(routed)
+    html = await render_skill_html(routed)
     if not html:
         return "", None
     logger.info("知识点「%s」命中 skill %s/%s", point.get("name"),

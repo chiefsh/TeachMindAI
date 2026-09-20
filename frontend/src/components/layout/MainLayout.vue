@@ -17,14 +17,16 @@
     </aside>
 
     <el-drawer
-      v-else
       v-model="drawerOpen"
       direction="ltr"
       size="260px"
       :with-header="false"
+      :modal="!isDesktop"
+      append-to-body
       class="mobile-nav-drawer"
     >
       <AppSidebar
+        v-if="!isDesktop"
         :nav-menu="navMenu"
         :expanded-key="expandedKey"
         :is-child-active="isChildActive"

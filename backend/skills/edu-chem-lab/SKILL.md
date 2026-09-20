@@ -8,8 +8,8 @@ description: >-
 
 # 宏观化学实验台
 
-产出一份自包含 HTML：画布左上角器材/药品，中间写实 2D 器材与同形虚线工位，右侧步骤与观察记录。
-数据由 `scripts/generate.py` 注入 `template/lab.html`，并内联 `template/lab2d.js`。
+产出一份自包含 HTML：左侧试剂架/仪器，中间 2D 示意或 3D 实验台，pH/温度与加热滑条，右侧实验讲解可自动分步演示。
+数据由 `scripts/generate.py` 注入 `template/lab.html`，并内联 `template/lab2d.js`（3D 脚本延迟加载）。
 不要让模型现写 HTML / WebGL。
 
 ```bash

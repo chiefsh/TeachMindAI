@@ -170,10 +170,13 @@ export function pageCss(theme: CoursewareTheme, mode: 'deck' | 'page'): string {
 .cw-points{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px}
 .cw-points li{background:var(--c-card);box-shadow:var(--shadow-soft);border-radius:12px;padding:10px 14px;display:flex;gap:8px}
 .cw-points li::before{content:"▸";color:var(--c-primary);font-weight:700}
-.cw-example{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:10px}
+.cw-example{display:flex;flex-direction:column;gap:14px;margin-top:10px}
 .cw-example-q{background:var(--c-surface);border-radius:16px;padding:16px;box-shadow:var(--shadow-soft)}
 .cw-example-a{background:var(--c-card);border-radius:16px;padding:16px;box-shadow:var(--shadow);border-left:5px solid var(--c-accent)}
 .cw-example h3{margin:0 0 8px;font-size:1em;color:var(--c-primary)}
+.cw-reveal{background:var(--c-card);border-radius:16px;padding:12px 16px;box-shadow:var(--shadow-soft);border-left:5px solid var(--c-accent)}
+.cw-reveal summary{cursor:pointer;font-weight:700;color:var(--c-primary)}
+.cw-reveal[open] summary{margin-bottom:8px}
 .cw-interact{margin-top:8px;background:var(--c-card);border-radius:16px;box-shadow:var(--shadow);overflow:hidden}
 .cw-interact-bar{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;
   background:linear-gradient(90deg,var(--c-primary),var(--c-accent));color:var(--c-on-cover);font-weight:700}
@@ -342,16 +345,20 @@ function innerByKind(kind: PageKind, slide: any, media: SlideMedia, ctx: SlideCt
   }
   if (kind === 'example') {
     const prompt = slide.prompt || (bs.length ? bs.join('；') : (slide.title || '例题'))
-    const solution = media.mdHtml || (slide.solution ? esc(slide.solution) : '')
+    const solText = String(slide.solution || '').trim()
+    const solutionBody = solText ? esc(solText) : media.mdHtml
+    const reveal = solutionBody
+      ? `<details class="cw-reveal"><summary>想好后再看解析</summary><div class="body">${solutionBody}</div></details>`
+      : ''
     return `${kicker(label, ctx.index)}${heading(slide)}
       <div class="cw-example">
         <div class="cw-example-q"><h3>题干</h3><div>${esc(String(prompt))}</div></div>
-        <div class="cw-example-a"><h3>解析</h3><div class="body">${solution || pointsList(bs)}</div></div>
+        ${reveal}
       </div>${imgs}${notes}`
   }
   if (kind === 'interactive') {
     return `${kicker(label, ctx.index)}${heading(slide)}${pointsList(bs)}${md}
-      <div class="cw-interact"><div class="cw-interact-bar"><span>动手做一做</span><span>即时反馈</span></div>${frame}</div>
+      <div class="cw-interact"><div class="cw-interact-bar"><span>先观察 · 再判断</span><span>现象即依据</span></div>${frame}</div>
       ${imgs}${notes}`
   }
   if (kind === 'comparison') {
@@ -386,7 +393,7 @@ function innerByKind(kind: PageKind, slide: any, media: SlideMedia, ctx: SlideCt
   if (kind === 'homework') {
     const tasks = bs.length ? bs : ['完成课后巩固练习']
     return `${kicker(label, ctx.index)}${heading(slide)}
-      <div class="cw-block-accent">分层任务：基础巩固 + 生活迁移</div>
+      <div class="cw-block-accent">分层任务：基础巩固 + 生活迁移 + 小作品</div>
       <div class="cw-hw">${tasks.map((t) =>
         `<div class="cw-hw-item"><span class="cw-hw-box"></span><div>${esc(t)}</div></div>`
       ).join('')}</div>${md}${imgs}${notes}`

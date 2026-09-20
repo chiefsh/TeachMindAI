@@ -124,7 +124,7 @@ function overviewHtml(meta: any, theme: CoursewareTheme): string {
     '</ul></div>'
   ).join('')
   return `<section class="cw-page sec" id="sec-overview">${decoSvg(theme)}
-    <div class="cw-inner"><span class="cw-kicker">课程概览</span>
+    <div class="cw-inner"><span class="cw-kicker">备课备忘</span>
     <div class="overview" style="margin-top:12px">${cols}</div></div></section>`
 }
 
@@ -156,10 +156,10 @@ export function buildLessonPage(content: any, imageMap: PageImageMap = {}, opts:
   const sections = bodySlides.map((s, i) => sectionHtml(s, i, imageMap, theme, subject)).join('\n')
 
   const tocItems: string[] = ['<a href="#sec-cover">封面</a>']
-  if (overview) tocItems.push('<a href="#sec-overview">课程概览</a>')
   bodySlides.forEach((s, i) => {
     tocItems.push(`<a href="#sec-${i}">${esc(s.title || pageTypeLabel(s.type) || `第 ${i + 1} 节`)}</a>`)
   })
+  if (overview) tocItems.push('<a href="#sec-overview">备课备忘</a>')
 
   return `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -175,8 +175,8 @@ ${coverHtml}
 <div class="layout">
   <nav class="toc"><h2>目录</h2>${tocItems.join('')}</nav>
   <main>
-${overview}
 ${sections}
+${overview}
   </main>
 </div>
 <footer>本网页课件由知序台生成，可离线保存与分享</footer>

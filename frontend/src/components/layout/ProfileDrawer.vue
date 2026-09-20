@@ -1,5 +1,5 @@
 <template>
-  <el-drawer v-model="open" title="个人信息" size="400px">
+  <el-drawer v-model="open" title="个人信息" size="400px" class="profile-drawer">
     <div class="space-y-6">
       <div class="flex items-center gap-3 p-3 rounded-xl" style="background: var(--pill-bg)">
         <el-avatar :size="48" class="!bg-indigo-500 text-white">

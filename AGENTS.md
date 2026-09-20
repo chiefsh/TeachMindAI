@@ -96,6 +96,7 @@ tasks/<队列>.py      → Celery 包装（薄，真正逻辑在 service）
 - 后端：`api/v1/courseware.py`、`api/v1/interaction.py`、`models/courseware.py`、`models/interaction.py`、`models/subject_prompt.py`、`services/ai_service.py`（`do_generate_courseware`）、`services/courseware_components.py`、`services/skill_service.py`、`tasks/ai_tasks.py`、`services/export_service.py`；`POST /coursewares/{id}/regenerate` 可改配置后重出；历史版本表 `courseware_versions`（可分享、可应用为当前）
 - 前端：`views/courseware/`、`views/public/SessionPlay.vue`、`utils/coursewareFrame.ts`、`utils/revealDeck.ts`、`utils/lessonPage.ts`、`utils/coursewareTheme.ts`
 - 呈现样式 `render_style`：`ppt` 走 `revealDeck.ts`，`html` 走 `lessonPage.ts`（单页滚动网页，可下载）
+- 拼课课序：封面 → 导入 → 互动/实验 → 新知命名 → 对照 → 例题 → 小结 → 练习 → 作业（先探究再命名）；可检测目标只进 `meta.objectives`，不给学生放学习目标页
 - 视觉主题 `theme`：调色板在 `services/courseware_theme.py` 与 `utils/coursewareTheme.ts`，两份必须同步；在线预览与导出的 PPT/Word/PDF 共用
 - 理科确定性互动页：见下方「Skills」，失败回退 LLM HTML
 
@@ -103,7 +104,7 @@ tasks/<队列>.py      → Celery 包装（薄，真正逻辑在 service）
 
 - 后端：`api/v1/animation.py`、`schemas/animation.py`、`models/animation.py`、`services/animation_service.py`
 - 前端：`views/animation/AnimationsView.vue`；侧栏「AI 生成 → 互动动画」
-- 系统预置来自 `LAB_CATALOG`（启动 `ensure_system_labs` 只补缺失行）；教师可从模板另存。出课勾选后写 `animation_keys`，生成时引用库 HTML，不要每次重跑实验 CLI。
+- 系统预置来自 `animation_service.system_catalog`（化学 `LAB_CATALOG` + 数学探究台 + 分子 3D + 生物 `BIO_CATALOG` + 物理 `PHYSICS_CATALOG`；启动 `ensure_system_labs` 补缺失行并同步系统元数据，不覆盖标题/HTML）；教师可从模板另存。出课勾选后写 `animation_keys`，生成时引用库 HTML，不要每次重跑 CLI。自动匹配须标签打中知识点或关键词足够强；对不上本课核心点不要塞实验台，化学不再兜底制氧。
 
 ### 作业 / 试卷
 
@@ -150,7 +151,9 @@ tasks/<队列>.py      → Celery 包装（薄，真正逻辑在 service）
 | `edu-solid-geometry` | 数学 | `lib/geometry_kernel.py` |
 | `edu-analytic-geometry` | 数学 | `lib/analytic_kernel.py` |
 | `edu-chem-reaction` | 化学/生物 | `lib/reaction_kernel.py` |
-| `edu-chem-lab` | 化学/科学 | 宏观实验台 `template/lab.html` + `lab2d.js`（写实器材、同形虚线工位；制气、电解水、中和、金属与酸、铵盐分解、铁丝燃烧、过滤、蒸发、配制溶液） |
+| `edu-chem-lab` | 化学/科学 | 宏观实验台 `template/lab.html` + `lab2d.js` / `lab3d.js`（试剂架、2D/3D、讲解演示；制气、电解水、中和、金属与酸、氧化铜与酸、铵盐分解、铁丝燃烧、过滤、蒸发、配制溶液） |
+| `edu-bio` | 生物 | 探究页 `template/explore.html`（点击细胞器/器官看功能，或分阶段播放有丝分裂；细胞、人体系统、光合作用、DNA） |
+| `edu-physics` | 物理 | 探究页 `template/explore.html`（PhET 风格：拖动物体、滑条改 U/R/力/密度/角度，仪表即时反馈；力学含抛体/单摆/碰撞/圆周/斜面/杠杆/压强/机械能/弹簧/滑轮/万有引力，电磁含磁场/感应/安培力/库仑/电容/变压器，光学含反射折射/凸透镜，另有物态/理想气体/机械波/多普勒/光电效应） |
 
 除各 skill 的固定解题题型外，两个数学 skill 还有**通用兜底题型**，供没有具体题面的概念课出 3D / 画板：
 `solid_explore`（可旋转多面体：cube / cuboid / quad_pyramid / tetrahedron / tri_prism，讲底面与高、

@@ -57,7 +57,7 @@ function metaSection(meta: any, theme: CoursewareTheme): string {
       <ul>${items.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>`
   ).join('')
   return `<section class="cw-page cw-page--objectives">${decoSvg(theme)}
-    <div class="cw-inner"><span class="cw-kicker">课程概览</span>
+    <div class="cw-inner"><span class="cw-kicker">备课备忘</span>
     <div class="meta-grid" style="margin-top:12px">${cols}</div></div></section>`
 }
 
@@ -84,15 +84,10 @@ export function buildRevealDeck(content: any, imageMap: DeckImageMap = {}, opts:
   }
   const metaSec = metaSection(meta, theme)
 
-  let metaInserted = false
   slides.forEach((s, i) => {
     sections.push(slideSection(s, imageMap, theme, { index: i + 1, subject }))
-    if (!metaInserted && (s.type === 'title' || s.type === 'cover') && metaSec) {
-      sections.push(metaSec)
-      metaInserted = true
-    }
   })
-  if (!metaInserted && metaSec) sections.splice(1, 0, metaSec)
+  if (metaSec) sections.push(metaSec)
 
   return `<!DOCTYPE html>
 <html lang="zh-CN">

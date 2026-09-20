@@ -93,9 +93,9 @@ async def list_coursewares(
 async def list_lab_experiments(
     teacher: Teacher = Depends(get_current_teacher),
 ):
-    """宏观虚拟实验目录（创建课件下拉的单一数据源）。"""
-    from app.services.skill_service import lab_experiment_catalog
-    return lab_experiment_catalog()
+    """互动动画目录（创建课件下拉的兜底数据源；前端优先走 GET /animations）。"""
+    from app.services.animation_service import catalog_for_picker
+    return catalog_for_picker()
 
 
 @router.post("", response_model=CoursewareOut, status_code=201)

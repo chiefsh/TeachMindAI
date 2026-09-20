@@ -147,7 +147,7 @@ export const animationApi = {
     request.get<{ items: InteractiveAsset[] }>('/animations', { params }),
   get: (id: number) => request.get<InteractiveAsset>(`/animations/${id}`),
   getHtml: (id: number) =>
-    request.get<string>(`/animations/${id}/html`, { responseType: 'text', timeout: 60000 }),
+    request.get<string>(`/animations/${id}/html`, { responseType: 'text', timeout: 120000 }),
   create: (data: { template_key: string; title: string; keywords?: string[]; knowledge_tags?: string[] }) =>
     request.post<InteractiveAsset>('/animations', data),
   update: (id: number, data: { title?: string; keywords?: string[]; knowledge_tags?: string[] }) =>

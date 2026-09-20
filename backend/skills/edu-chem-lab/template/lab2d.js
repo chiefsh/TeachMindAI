@@ -42,7 +42,8 @@
         '<g class="fx-powder" visibility="hidden"><ellipse cx="32" cy="158" rx="11" ry="7" fill="#6b21a8"/><ellipse cx="28" cy="154" rx="4" ry="3" fill="#a855f7"/></g>' +
         '<g class="fx-zinc" visibility="hidden"><rect x="24" y="148" width="16" height="8" rx="1" fill="#94a3b8"/><rect x="26" y="150" width="6" height="4" fill="#e2e8f0"/></g>' +
         '<g class="fx-marble" visibility="hidden"><circle cx="28" cy="154" r="5" fill="#f8fafc" stroke="#cbd5e1"/><circle cx="36" cy="157" r="4" fill="#e2e8f0"/></g>' +
-        '<g class="fx-acid" visibility="hidden"><path d="M20 120 h24 v36 a12 16 0 0 1 -24 0z" fill="#38bdf8" opacity=".45"/><ellipse cx="32" cy="120" rx="12" ry="4" fill="#7dd3fc" opacity=".6"/></g>'
+        '<g class="fx-acid" visibility="hidden"><path d="M20 120 h24 v36 a12 16 0 0 1 -24 0z" fill="#38bdf8" opacity=".45"/><ellipse cx="32" cy="120" rx="12" ry="4" fill="#7dd3fc" opacity=".6"/></g>' +
+        '<g class="fx-acid-bubbles" visibility="hidden"><circle cx="24" cy="130" r="2.2" fill="#fff" opacity=".75"/><circle cx="36" cy="122" r="2" fill="#fff" opacity=".7"/><circle cx="30" cy="140" r="1.8" fill="#fff" opacity=".7"/></g>'
     },
     lamp: {
       w: 108, h: 136, label: "酒精灯",
@@ -117,8 +118,9 @@
         '<path d="M22 22 v100" stroke="#fff" stroke-opacity=".45" stroke-width="6"/>' +
         '<path d="M86 40 h10 M86 58 h10 M86 76 h10" stroke="#94a3b8" stroke-width="1"/>' +
         '<g class="fx-liquid"><path d="M24 78 h76 l4 50 h-84z" fill="#7dd3fc" opacity=".5"/><ellipse cx="62" cy="78" rx="38" ry="6" fill="#bae6fd" opacity=".65"/></g>' +
+        '<g class="fx-oxide" visibility="hidden"><ellipse cx="62" cy="118" rx="20" ry="7" fill="#1e293b"/><ellipse cx="54" cy="114" rx="6" ry="4" fill="#334155"/></g>' +
         '<g class="fx-metal" visibility="hidden"><rect x="48" y="96" width="28" height="10" rx="2" fill="#94a3b8"/></g>' +
-        '<g class="fx-beaker-bubbles" visibility="hidden"><circle cx="44" cy="100" r="3" fill="#fff" opacity=".7"/><circle cx="62" cy="90" r="2.5" fill="#fff" opacity=".7"/><circle cx="78" cy="104" r="3" fill="#fff" opacity=".65"/></g>'
+        '<g class="fx-beaker-bubbles" visibility="hidden"><circle cx="44" cy="110" r="3" fill="#fff" opacity=".75"/><circle cx="62" cy="100" r="2.5" fill="#fff" opacity=".75"/><circle cx="78" cy="114" r="3" fill="#fff" opacity=".7"/></g>'
     },
     dropper: {
       w: 40, h: 132, label: "胶头滴管",
@@ -134,6 +136,15 @@
       outline: "M6 6 h176 v10 h-176z",
       paint: '<rect x="6" y="6" width="176" height="10" rx="5" fill="#e2e8f0" stroke="#94a3b8"/>' +
         '<rect x="10" y="8" width="70" height="3" fill="#fff" opacity=".6"/>'
+    },
+    clamp: {
+      w: 96, h: 168, label: "试管夹",
+      outline: "M18 8 h22 v52 h16 v12 h-16 v80 H18 V72 H8 V60 h10z",
+      paint: '<rect x="40" y="22" width="12" height="118" rx="4" fill="#1e3a5f"/>' +
+        '<rect x="42" y="26" width="4" height="70" fill="#93c5fd" opacity=".35"/>' +
+        '<ellipse cx="28" cy="36" rx="18" ry="10" fill="none" stroke="#cbd5e1" stroke-width="6"/>' +
+        '<ellipse cx="28" cy="70" rx="16" ry="9" fill="none" stroke="#94a3b8" stroke-width="5"/>' +
+        '<rect x="22" y="48" width="10" height="16" rx="2" fill="#9ca3af"/>'
     },
     goggles: {
       w: 120, h: 50, label: "护目镜",
@@ -242,88 +253,108 @@
     }
   };
 
-  /* 工位按课本装置连接：管口接导管、灯在受热部位下、瓶口在水面下、漏斗对准烧杯。 */
+  /* 桌面在 CSS 背景 58% 处，固定 viewBox 高 600 → y=348。器材落在桌面上并按课本连成一套装置。 */
+  var TABLE = 348;
   var SCENES = {
-    oxygen: [
-      { id: "stand", x: 123, y: 166, label: "铁架台" },
-      { id: "tube", x: 186, y: 138, r: 84, ox: 32, oy: 100, label: "试管" },
-      { id: "lamp", x: 72, y: 241, label: "酒精灯" },
-      { id: "reagent", x: 16, y: 360, label: "药品" },
-      { id: "delivery", x: 296, y: 208, label: "导管" },
-      { id: "trough", x: 386, y: 440, label: "水槽" },
-      { id: "bottle", art: "bottle_inv", x: 460, y: 322, label: "集气瓶" },
-      { id: "splint", x: 700, y: 300, label: "木条" },
-      { id: "cover", x: 720, y: 460, label: "玻璃片" },
-      { id: "paper", x: 820, y: 80, label: "试纸" },
-      { id: "lime_beaker", x: 820, y: 360, label: "石灰水" },
-      { id: "wire", x: 900, y: 80, label: "铁丝" }
+    prep_oxygen_kmno4: [
+      { id: "stand", x: 292, y: TABLE - 240, label: "铁架台" },
+      { id: "tube", x: 338, y: 96, r: 80, ox: 32, oy: 100, label: "试管" },
+      { id: "lamp", x: 262, y: TABLE - 136, label: "酒精灯" },
+      { id: "delivery", x: 452, y: 80, label: "导管" },
+      { id: "trough", x: 528, y: TABLE - 130, label: "水槽" },
+      { id: "bottle", art: "bottle_inv", x: 608, y: 132, label: "集气瓶" },
+      { id: "splint", x: 840, y: TABLE - 156, label: "木条" },
+      { id: "reagent", x: 210, y: TABLE - 108, label: "药品" }
     ],
-    gas_wet: [
-      { id: "stand", x: 40, y: 100, label: "铁架台" },
-      { id: "tube", x: 168, y: 88, label: "试管" },
-      { id: "reagent", x: 16, y: 300, label: "药品" },
-      { id: "delivery", art: "delivery_down", x: 186, y: 76, label: "导管" },
-      { id: "trough", x: 248, y: 360, label: "水槽" },
-      { id: "bottle", art: "bottle_inv", x: 286, y: 244, label: "集气瓶" },
-      { id: "splint", x: 560, y: 240, label: "木条" },
-      { id: "cover", x: 580, y: 400, label: "玻璃片" },
-      { id: "lime_beaker", x: 700, y: 320, label: "石灰水" },
-      { id: "lamp", x: 16, y: 440, label: "酒精灯" }
+    nh4hco3_decomp: [
+      { id: "stand", x: 300, y: TABLE - 240, label: "铁架台" },
+      { id: "tube", x: 346, y: 96, r: 80, ox: 32, oy: 100, label: "试管" },
+      { id: "lamp", x: 270, y: TABLE - 136, label: "酒精灯" },
+      { id: "paper", x: 590, y: TABLE - 84, label: "试纸" },
+      { id: "lime_beaker", x: 500, y: TABLE - 146, label: "石灰水" },
+      { id: "reagent", x: 210, y: TABLE - 108, label: "药品" }
     ],
-    gas_air: [
-      { id: "stand", x: 40, y: 70, label: "铁架台" },
-      { id: "tube", x: 168, y: 48, label: "试管" },
-      { id: "reagent", x: 16, y: 280, label: "药品" },
-      { id: "delivery", art: "delivery_down", x: 186, y: 36, s: 0.5, label: "导管" },
-      { id: "bottle", x: 210, y: 158, label: "集气瓶" },
-      { id: "cover", x: 222, y: 138, label: "玻璃片" },
-      { id: "lime_beaker", x: 360, y: 250, label: "石灰水" },
-      { id: "trough", x: 700, y: 430, label: "水槽" },
-      { id: "splint", x: 700, y: 80, label: "木条" },
-      { id: "lamp", x: 16, y: 430, label: "酒精灯" }
+    prep_hydrogen: [
+      { id: "stand", x: 292, y: TABLE - 240, label: "铁架台" },
+      { id: "tube", x: 338, y: 122, label: "试管" },
+      { id: "delivery", art: "delivery_down", x: 356, y: 108, s: 0.72, label: "导管" },
+      { id: "trough", x: 400, y: TABLE - 130, label: "水槽" },
+      { id: "bottle", art: "bottle_inv", x: 430, y: 140, label: "集气瓶" },
+      { id: "splint", x: 820, y: TABLE - 156, label: "木条" },
+      { id: "reagent", x: 210, y: TABLE - 108, label: "药品" }
     ],
-    burn: [
-      { id: "lamp", x: 120, y: 300, label: "酒精灯" },
-      { id: "wire", x: 248, y: 168, label: "铁丝" },
-      { id: "cover", x: 398, y: 148, label: "玻璃片" },
-      { id: "bottle", x: 386, y: 168, label: "集气瓶" },
-      { id: "reagent", x: 540, y: 280, label: "药品" },
-      { id: "trough", x: 700, y: 430, label: "水槽" }
+    prep_co2: [
+      { id: "stand", x: 280, y: TABLE - 240, label: "铁架台" },
+      { id: "tube", x: 348, y: 122, label: "试管" },
+      { id: "delivery", art: "delivery_down", x: 356, y: 110, s: 0.72, label: "导管" },
+      { id: "bottle", x: 430, y: TABLE - 168, label: "集气瓶" },
+      { id: "lime_beaker", x: 548, y: TABLE - 146, label: "石灰水" },
+      { id: "splint", x: 820, y: TABLE - 156, label: "木条" },
+      { id: "reagent", x: 210, y: TABLE - 108, label: "药品" }
+    ],
+    iron_in_oxygen: [
+      { id: "lamp", x: 300, y: TABLE - 136, label: "酒精灯" },
+      { id: "wire", x: 508, y: 92, label: "铁丝" },
+      { id: "bottle", x: 490, y: TABLE - 168, label: "集气瓶" },
+      { id: "cover", x: 640, y: TABLE - 20, label: "玻璃片" },
+      { id: "reagent", x: 210, y: TABLE - 108, label: "药品" }
     ],
     neutralization: [
-      { id: "goggles", x: 36, y: 36, label: "护目镜" },
-      { id: "beaker", x: 360, y: 250, label: "烧杯" },
-      { id: "dropper", x: 402, y: 108, label: "胶头滴管" },
-      { id: "rod", x: 350, y: 236, r: -32, ox: 94, oy: 11, label: "玻璃棒" },
-      { id: "reagent", x: 540, y: 300, label: "药品" },
-      { id: "cylinder", x: 240, y: 220, label: "量筒" },
-      { id: "balance", x: 36, y: 380, label: "天平" },
-      { id: "paper", x: 86, y: 320, label: "称量纸" }
+      { id: "goggles", x: 268, y: TABLE - 50, label: "护目镜" },
+      { id: "beaker", x: 456, y: TABLE - 146, label: "烧杯" },
+      { id: "dropper", x: 506, y: 96, label: "胶头滴管" },
+      { id: "rod", x: 428, y: 248, r: -32, ox: 94, oy: 11, label: "玻璃棒" },
+      { id: "reagent", x: 620, y: TABLE - 108, label: "药品" }
+    ],
+    metal_acid: [
+      { id: "goggles", x: 268, y: TABLE - 50, label: "护目镜" },
+      { id: "beaker", x: 456, y: TABLE - 146, label: "烧杯" },
+      { id: "rod", x: 428, y: 248, r: -32, ox: 94, oy: 11, label: "玻璃棒" },
+      { id: "reagent", x: 620, y: TABLE - 108, label: "药品" }
+    ],
+    solution_prep: [
+      { id: "balance", x: 250, y: TABLE - 108, label: "天平" },
+      { id: "paper", x: 268, y: TABLE - 108 - 36, label: "称量纸" },
+      { id: "cylinder", x: 468, y: TABLE - 176, label: "量筒" },
+      { id: "beaker", x: 560, y: TABLE - 146, label: "烧杯" },
+      { id: "rod", x: 532, y: 248, r: -28, ox: 94, oy: 11, label: "玻璃棒" },
+      { id: "reagent", x: 700, y: TABLE - 108, label: "药品" }
     ],
     electrolysis: [
-      { id: "power", x: 372, y: 20, label: "电源" },
-      { id: "tubes", x: 378, y: 168, label: "集气管" },
-      { id: "cell", x: 322, y: 310, label: "水槽" },
-      { id: "reagent", x: 640, y: 320, label: "水" },
-      { id: "splint", x: 680, y: 80, label: "木条" }
+      { id: "power", x: 268, y: TABLE - 74, label: "电源" },
+      { id: "cell", x: 430, y: TABLE - 118, label: "水槽" },
+      { id: "tubes", x: 486, y: 78, label: "集气管" },
+      { id: "splint", x: 780, y: TABLE - 156, label: "木条" },
+      { id: "reagent", x: 210, y: TABLE - 108, label: "水" }
     ],
     filtration: [
-      { id: "stand", x: 90, y: 70, label: "铁架台" },
-      { id: "funnel", x: 130, y: 68, label: "漏斗" },
-      { id: "paper", x: 280, y: 70, label: "滤纸" },
-      { id: "rod", x: 248, y: 90, r: -48, ox: 20, oy: 11, label: "玻璃棒" },
-      { id: "beaker", x: 123, y: 198, label: "烧杯" },
-      { id: "reagent", x: 320, y: 320, label: "浊液" }
+      { id: "stand", x: 400, y: TABLE - 240, label: "铁架台" },
+      { id: "funnel", x: 438, y: 72, label: "漏斗" },
+      { id: "paper", x: 620, y: TABLE - 84, label: "滤纸" },
+      { id: "rod", x: 508, y: 92, r: -48, ox: 20, oy: 11, label: "玻璃棒" },
+      { id: "beaker", x: 428, y: TABLE - 146, label: "烧杯" },
+      { id: "reagent", x: 700, y: TABLE - 108, label: "浊液" }
     ],
     evaporation: [
-      { id: "lamp", x: 200, y: 398, label: "酒精灯" },
-      { id: "stand", art: "tripod", x: 168, y: 300, label: "三脚架" },
-      { id: "gauze", x: 190, y: 288, label: "陶土网" },
-      { id: "dish", x: 202, y: 246, label: "蒸发皿" },
-      { id: "rod", x: 360, y: 230, r: -16, ox: 20, oy: 11, label: "玻璃棒" },
-      { id: "reagent", x: 430, y: 360, label: "溶液" }
+      { id: "lamp", x: 448, y: TABLE - 136, label: "酒精灯" },
+      { id: "stand", art: "tripod", x: 416, y: 226, label: "三脚架" },
+      { id: "gauze", x: 438, y: 234, label: "陶土网" },
+      { id: "dish", x: 444, y: 212, label: "蒸发皿" },
+      { id: "rod", x: 560, y: 208, r: -16, ox: 20, oy: 11, label: "玻璃棒" },
+      { id: "reagent", x: 680, y: TABLE - 108, label: "溶液" }
+    ],
+    metal_oxide_acid: [
+      { id: "lamp", x: 428, y: TABLE - 136, label: "酒精灯" },
+      { id: "tube", x: 448, y: 58, r: 34, ox: 32, oy: 168, label: "试管" },
+      { id: "rod", art: "clamp", x: 512, y: 78, r: -14, label: "试管夹" },
+      { id: "reagent", x: 280, y: TABLE - 108, label: "药品" }
     ]
   };
+  SCENES.oxygen = SCENES.prep_oxygen_kmno4;
+  SCENES.gas_wet = SCENES.prep_hydrogen;
+  SCENES.gas_air = SCENES.prep_co2;
+  SCENES.burn = SCENES.iron_in_oxygen;
+  SCENES.oxide = SCENES.metal_oxide_acid;
 
   function defsHtml() {
     return '<defs>' +
@@ -363,9 +394,11 @@
     (fx[key] || []).forEach(function (n) { n.setAttribute("visibility", on ? "visible" : "hidden"); });
   }
 
-  function layout(kind) {
+  var sceneExp = "";
+  function layout(kind, expId) {
     slots = {}; pieces = {}; fx = {};
-    var list = SCENES[kind] || SCENES.oxygen;
+    sceneExp = expId || kind || "";
+    var list = SCENES[sceneExp] || SCENES[kind] || SCENES.oxygen;
     list.forEach(function (spec) {
       var artId = spec.art || spec.id;
       var a = ART[artId] || ART.beaker;
@@ -398,48 +431,18 @@
     svg.appendChild(steam);
   }
 
-  function init(host, sceneKey) {
+  function init(host, sceneKey, expId) {
     host.innerHTML = "";
     svg = el("svg", { id: "bench", viewBox: "0 0 1100 600", preserveAspectRatio: "xMidYMid meet" });
     svg.innerHTML = defsHtml();
     host.appendChild(svg);
-    layout(sceneKey || "oxygen");
+    layout(sceneKey || "oxygen", expId || sceneKey);
     refit();
   }
 
   function refit() {
     if (!svg) return;
-    var ctm = svg.getScreenCTM();
-    if (!ctm) {
-      requestAnimationFrame(refit);
-      return;
-    }
-    var inv;
-    try { inv = ctm.inverse(); } catch (e) { return; }
-    var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    function acc(node) {
-      if (!node || node.style.display === "none") return;
-      var r = node.getBoundingClientRect();
-      if (!r.width || !r.height) return;
-      [[r.left, r.top], [r.right, r.top], [r.left, r.bottom], [r.right, r.bottom]].forEach(function (p) {
-        var pt = svg.createSVGPoint();
-        pt.x = p[0];
-        pt.y = p[1];
-        var u = pt.matrixTransform(inv);
-        minX = Math.min(minX, u.x);
-        minY = Math.min(minY, u.y);
-        maxX = Math.max(maxX, u.x);
-        maxY = Math.max(maxY, u.y);
-      });
-    }
-    Object.keys(slots).forEach(function (k) { acc(slots[k]); });
-    Object.keys(pieces).forEach(function (k) { acc(pieces[k].el); });
-    if (!isFinite(minX) || maxX <= minX || maxY <= minY) return;
-    var padX = Math.max(48, (maxX - minX) * 0.1);
-    var padY = Math.max(40, (maxY - minY) * 0.1);
-    svg.setAttribute("viewBox",
-      (minX - padX) + " " + (minY - padY) + " " +
-      (maxX - minX + padX * 2) + " " + (maxY - minY + padY * 2));
+    svg.setAttribute("viewBox", "0 0 1100 600");
   }
 
   function setSelecting(on, needMap) {
@@ -459,20 +462,26 @@
   function setPiece(id, on) {
     if (!pieces[id]) return;
     pieces[id].el.dataset.placed = on ? "1" : "0";
+    if (id === "reagent") {
+      pieces[id].el.style.display = "none";
+      return;
+    }
     pieces[id].el.style.display = on ? "" : "none";
   }
   function applyEffects(st) {
     st = st || {};
-    vis("fx-powder", !!st.powder);
+    vis("fx-powder", (!!st.powder || !!st.oxide) && st.liquid !== "blue");
     vis("fx-zinc", !!st.zinc);
     vis("fx-marble", !!st.marble);
-    vis("fx-acid", !!st.acid);
+    vis("fx-acid", !!st.acid || !!st.oxide_acid || st.liquid === "blue");
+    vis("fx-oxide", !!st.oxide && st.liquid !== "blue");
     vis("fx-flame", !!st.flame || !!st.heat);
     vis("fx-gas", !!st.collected && !st.air_collect);
     vis("fx-bottle-water", !!st.bottle_water);
     vis("fx-drip", !!st.dripping);
     vis("fx-metal", !!st.metal);
     vis("fx-beaker-bubbles", !!st.acid_bubbles);
+    vis("fx-acid-bubbles", !!st.acid_bubbles || !!st.oxide_bubbles);
     vis("fx-h2", !!st.gases);
     vis("fx-o2", !!st.gases);
     vis("fx-ratio", !!st.ratio);
@@ -490,8 +499,8 @@
     if (pieces.tube) {
       var spec = Object.assign({}, pieces.tube.spec);
       if (st.upright) spec.r = 0;
-      else if (st.tilt_up) spec.r = 78;
-      else if (st.tilt_down) spec.r = 96;
+      else if (st.tilt_up) spec.r = 62;
+      else if (st.tilt_down) spec.r = spec.r > 40 ? spec.r : 82;
       pieces.tube.el.setAttribute("transform", tf(spec));
     }
     if (pieces.bottle) {
@@ -503,8 +512,16 @@
       }
       pieces.bottle.el.setAttribute("transform", tf(bs));
     }
+    (fx["fx-powder"] || []).forEach(function (n) {
+      if (!st.oxide) return;
+      n.querySelectorAll("[fill]").forEach(function (p) { p.setAttribute("fill", "#1e293b"); });
+    });
+    (fx["fx-acid"] || []).forEach(function (n) {
+      if (st.liquid !== "blue") return;
+      n.querySelectorAll("[fill]").forEach(function (p) { p.setAttribute("fill", "#2563eb"); });
+    });
     (fx["fx-liquid"] || []).forEach(function (n) {
-      var colors = { pink: "#f9a8d4", pale: "#fce7f3", clear: "#7dd3fc" };
+      var colors = { pink: "#f9a8d4", pale: "#fce7f3", clear: "#7dd3fc", blue: "#2563eb" };
       n.querySelectorAll("[fill]").forEach(function (p) {
         if (p.tagName.toLowerCase() !== "ellipse") p.setAttribute("fill", colors[st.liquid] || colors.clear);
       });

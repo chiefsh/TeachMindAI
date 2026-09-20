@@ -1,7 +1,21 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { nextTick } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import NProgress from 'nprogress'
 import 'nprogress/nprogress.css'
+
+NProgress.configure({ showSpinner: false, trickleSpeed: 120 })
+
+function releasePageLock() {
+  document.body.classList.remove('el-popup-parent--hidden')
+  document.body.style.removeProperty('overflow')
+  document.body.style.removeProperty('padding-right')
+  document.body.style.removeProperty('width')
+  document.querySelectorAll('body > .el-overlay').forEach((el) => {
+    if (el.querySelector('.mobile-nav-drawer, .profile-drawer')) return
+    el.remove()
+  })
+}
 
 const router = createRouter({
   history: createWebHistory(),
@@ -41,14 +55,15 @@ const router = createRouter({
   ],
 })
 
-router.beforeEach(async (to) => {
-  NProgress.start()
+router.beforeEach(async (to, from) => {
+  if (to.fullPath !== from.fullPath) NProgress.start()
   const auth = useAuthStore()
   if (!to.meta.public && !auth.isLoggedIn()) {
     return '/login'
   }
-  if (!to.meta.public && auth.isLoggedIn() && !auth.teacher?.permissions) {
+  if (!to.meta.public && auth.isLoggedIn() && !auth.meLoaded) {
     await auth.fetchMe()
+    if (!auth.isLoggedIn()) return '/login'
   }
   const perm = to.meta.perm as string | undefined
   if (perm && auth.isLoggedIn() && !auth.can(perm)) {
@@ -61,6 +76,14 @@ router.beforeEach(async (to) => {
   }
 })
 
-router.afterEach(() => NProgress.done())
+router.afterEach(() => {
+  NProgress.done()
+  nextTick(releasePageLock)
+})
+
+router.onError(() => {
+  NProgress.done()
+  nextTick(releasePageLock)
+})
 
 export default router

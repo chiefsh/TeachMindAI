@@ -161,7 +161,7 @@
         <el-form-item v-if="form.courseware_type === 'interactive'" label="互动动画">
           <el-checkbox v-model="form.want_virtual_lab">引入动画库中的实验/动画</el-checkbox>
           <p class="text-xs text-slate-400 mt-1">
-            从「互动动画」库引用，不重复生成。不选具体条目时按本章知识点自动匹配。
+            可引入实验台、数学探究、分子反应、生物细胞与人体、物理磁场电路光学等。不选具体条目时按本章知识点自动匹配。
           </p>
           <el-select
             v-if="form.want_virtual_lab"
@@ -317,7 +317,11 @@ async function loadLabExperiments() {
   try {
     const data = await animationApi.list()
     labExperiments.value = (data.items || []).map((a) => ({
-      key: a.key, title: a.title, group: a.origin === 'system' ? a.group : `我的 · ${a.group || a.subject}`,
+      key: a.key,
+      title: a.title,
+      group: a.origin === 'system'
+        ? `${a.subject} · ${a.group || '其他'}`
+        : `我的 · ${a.group || a.subject}`,
     }))
   } catch {
     try {

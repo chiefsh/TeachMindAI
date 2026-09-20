@@ -322,7 +322,7 @@ export interface SessionBoard {
   records: SessionBoardRecord[]
 }
 
-export type ShareResourceType = 'courseware' | 'courseware_version' | 'question_analysis'
+export type ShareResourceType = 'courseware' | 'courseware_version' | 'question_analysis' | 'animation'
 
 export interface ShareLink {
   id: number

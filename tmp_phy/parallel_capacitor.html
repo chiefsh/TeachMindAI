@@ -1,0 +1,1545 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>物理探究</title>
+  <style>
+    :root {
+      --ink: #1a365d; --muted: #5b6b7c; --line: #c5d4e4;
+      --accent: #0171c3; --play: #e8f3fb; --dock: #eef2f6;
+      --reset: #f5d76e; --panel: rgba(255,255,255,.92);
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; overflow: hidden; }
+    body {
+      font-family: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+      color: #123; background: #9ec9ea; display: flex; flex-direction: column;
+    }
+    .play {
+      flex: 1; min-height: 0; position: relative;
+      background:
+        radial-gradient(900px 420px at 50% 0%, #f7fbff, transparent 60%),
+        linear-gradient(#cfe6f7, #eaf4fb 55%, #d7e8c8 55%, #c5d9a8);
+    }
+    #view { position: absolute; inset: 0 268px 92px 0; }
+    #view svg { width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
+    #view svg:active { cursor: grabbing; }
+    .hud-top {
+      position: absolute; left: 14px; top: 12px; z-index: 3;
+      background: var(--panel); border: 1px solid var(--line); border-radius: 16px;
+      padding: 8px 14px 10px; max-width: min(420px, 46%);
+      box-shadow: 0 10px 28px rgba(15,40,70,.12);
+    }
+    .badge {
+      font-size: 10px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase;
+      color: var(--accent); background: #d6ecff; border-radius: 999px; padding: 2px 8px;
+    }
+    .hud-top h1 { margin: 4px 0 0; font-size: 17px; }
+    .hud-top p { margin: 2px 0 0; font-size: 12px; color: var(--muted); }
+    .eq {
+      margin-top: 6px; display: inline-block; font-size: 13px;
+      background: #fff; border: 1px solid var(--line); border-radius: 10px;
+      padding: 3px 9px; font-family: ui-serif, Georgia, serif; color: var(--accent);
+    }
+    .labpad {
+      position: absolute; right: 12px; top: 12px; bottom: 92px; width: 248px; z-index: 3;
+      background: var(--panel); border: 1px solid var(--line); border-radius: 18px;
+      padding: 12px; display: flex; flex-direction: column;
+      box-shadow: 0 10px 28px rgba(15,40,70,.12);
+    }
+    .sec { font-size: 10px; font-weight: 800; letter-spacing: .12em; color: var(--muted); margin: 0 0 8px; }
+    .meters { display: grid; gap: 6px; margin-bottom: 10px; }
+    .meter {
+      background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 7px 10px;
+    }
+    .meter .k { font-size: 11px; color: var(--muted); }
+    .meter .v { font-size: 18px; font-weight: 800; color: var(--ink); font-variant-numeric: tabular-nums; }
+    #detail { flex: 1; min-height: 0; overflow: auto; font-size: 13px; line-height: 1.55; color: #334; }
+    #detail h2 { margin: 0 0 6px; font-size: 15px; color: var(--ink); }
+    #detail .hint { color: var(--accent); font-weight: 700; margin: 0 0 6px; }
+    #detail .mist { margin: 8px 0 0; padding: 8px; background: #fff7ed; border: 1px solid #fed7aa; border-radius: 10px; color: #9a3412; font-size: 12px; }
+    .choice {
+      display: block; width: 100%; text-align: left; margin: 0 0 8px;
+      border: 1px solid var(--line); background: #fff; border-radius: 12px; padding: 8px 10px;
+      font-size: 13px; cursor: pointer;
+    }
+    .choice:hover { border-color: var(--accent); }
+    .dock {
+      position: absolute; left: 12px; right: 12px; bottom: 10px; z-index: 3; height: 74px;
+      background: var(--dock); border: 1px solid var(--line); border-radius: 16px;
+      display: flex; align-items: center; gap: 14px; padding: 8px 12px;
+      box-shadow: 0 8px 22px rgba(15,40,70,.12);
+    }
+    .sliders { display: flex; gap: 16px; flex: 1; min-width: 0; overflow-x: auto; }
+    .slider { min-width: 140px; }
+    .slider label { display: flex; justify-content: space-between; font-size: 12px; font-weight: 700; }
+    .slider input { width: 100%; accent-color: var(--accent); }
+    .toggles { display: flex; gap: 8px; flex-wrap: wrap; }
+    .toggles label { font-size: 12px; display: flex; align-items: center; gap: 4px; white-space: nowrap; }
+    .btn {
+      appearance: none; border: 0; border-radius: 10px; padding: 8px 12px; font-size: 13px;
+      font-weight: 800; cursor: pointer; background: var(--accent); color: #fff;
+    }
+    .btn.reset { background: var(--reset); color: #3a2a00; }
+    .btn.ghost { background: #fff; color: var(--ink); border: 1px solid var(--line); }
+    .toast {
+      position: absolute; left: 50%; bottom: 96px; transform: translateX(-50%);
+      background: #123; color: #fff; border-radius: 12px; padding: 8px 14px;
+      font-size: 13px; display: none; z-index: 6;
+    }
+    .toast.bad { background: #9f1239; }
+    .toast.ok { background: #14532d; }
+    @media (max-width: 820px) {
+      #view { inset: 88px 8px 168px 8px; }
+      .labpad { left: 8px; right: 8px; top: auto; bottom: 92px; width: auto; height: 68px; flex-direction: row; gap: 10px; }
+      .hud-top { max-width: calc(100% - 24px); }
+    }
+  </style>
+</head>
+<body>
+  <div class="play">
+    <div class="hud-top">
+      <div class="badge" id="badge">物理探究</div>
+      <h1 id="title">物理探究</h1>
+      <p id="subtitle"></p>
+      <div class="eq" id="equation"></div>
+    </div>
+    <div id="view"></div>
+    <aside class="labpad">
+      <div class="sec">实时读数</div>
+      <div class="meters" id="meters"></div>
+      <div class="sec">规律</div>
+      <div id="detail"></div>
+    </aside>
+    <div class="dock" id="dock"></div>
+    <div class="toast" id="toast"></div>
+  </div>
+  <script type="application/json" id="phy-data">{"id": "parallel_capacitor", "sim": "capacitor", "needPlay": false, "title": "平行板电容器", "subtitle": "C = εS / d；电压一定时，电容越大储电荷越多", "badge": "高中物理 · 电磁", "equation": "C = ε₀ εᵣ S / d    Q = C U    E = U / d", "hint": "改正对面积和板间距离。电容跟面积成正比、跟距离成反比。勾选「接电源」看 Q 随 C 变。", "intro": "电容器用来储存电荷和电场能。平行板：正对面积越大、间距越小、电介质 εᵣ 越大，电容越大。接在电源上 U 不变，Q=CU；充电后断开则 Q 不变。", "controls": [{"id": "area", "label": "正对面积", "min": 20, "max": 200, "step": 10, "value": 100, "unit": " cm²"}, {"id": "d", "label": "板间距 d", "min": 1, "max": 20, "step": 1, "value": 5, "unit": " mm"}, {"id": "U", "label": "电压 U", "min": 1, "max": 24, "step": 1, "value": 12, "unit": " V"}], "toggles": [{"id": "onBatt", "label": "接在电源上（U 一定）", "on": true}], "quiz": {"q": "电容器始终接在电源上，把两板距离加倍，板间电场强度？", "options": [{"t": "变为 1/2（E=U/d，U 不变）", "ok": true}, {"t": "不变", "ok": false, "why": "接电源时 U 一定，d 变则 E 变。"}, {"t": "变为 2 倍", "ok": false, "why": "d 增大 E 减小。"}], "ok": "接电源：U 不变，C 减半，Q 减半，E=U/d 减半。", "explain": "若充电后断开，Q 不变，情况就不同了。"}}</script>
+  <script>/* PhET 风格物理仿真：拖动物体 / 滑条改参 / 仪表即时反馈。 */
+(function () {
+  var DATA = JSON.parse(document.getElementById("phy-data").textContent);
+  var NS = "http://www.w3.org/2000/svg";
+  var svg, playing = true, lastTs = 0, toastTimer = 0, simT = 0;
+  var S = {};
+  var drag = null;
+
+  function $(id) { return document.getElementById(id); }
+  function el(name, attrs, text) {
+    var n = document.createElementNS(NS, name);
+    Object.keys(attrs || {}).forEach(function (k) { n.setAttribute(k, attrs[k]); });
+    if (text != null) n.textContent = text;
+    return n;
+  }
+  function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); }
+  function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+  function lerp(a, b, t) { return a + (b - a) * t; }
+  function fmt(n, d) { return Number(n).toFixed(d == null ? 1 : d); }
+  function report(ok, q, a) {
+    try {
+      if (ok) window.CW && window.CW.correct && window.CW.correct(q, a);
+      else window.CW && window.CW.wrong && window.CW.wrong(q, a);
+    } catch (e) {}
+  }
+  function toast(msg, bad) {
+    var t = $("toast");
+    t.textContent = msg;
+    t.className = "toast " + (bad ? "bad" : "ok");
+    t.style.display = "block";
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { t.style.display = "none"; }, 2200);
+  }
+
+  function pt(ev) {
+    var ctm = svg.getScreenCTM();
+    if (!ctm) return { x: 0, y: 0 };
+    var p = svg.createSVGPoint();
+    p.x = ev.clientX; p.y = ev.clientY;
+    return p.matrixTransform(ctm.inverse());
+  }
+
+  function setMeters(rows) {
+    var box = $("meters");
+    box.innerHTML = rows.map(function (r) {
+      return '<div class="meter"><div class="k">' + r.k + '</div><div class="v">' + r.v + "</div></div>";
+    }).join("");
+  }
+
+  function setDetail(html) { $("detail").innerHTML = html; }
+
+  function showIntro() {
+    var qbtn = DATA.quiz
+      ? '<p style="margin-top:10px"><button class="btn" type="button" id="quiz-btn">检测一下</button></p>'
+      : "";
+    setDetail(
+      "<h2>" + (DATA.title || "") + "</h2>" +
+      "<p class='hint'>" + (DATA.hint || "拖动图中物体，或拉动下方滑条。") + "</p>" +
+      "<div>" + (DATA.intro || "") + "</div>" + qbtn
+    );
+    var b = $("quiz-btn");
+    if (b) b.onclick = showQuiz;
+  }
+
+  function showQuiz() {
+    var quiz = DATA.quiz;
+    if (!quiz) return;
+    $("detail").innerHTML = "<h2>" + quiz.q + "</h2>";
+    (quiz.options || []).forEach(function (opt) {
+      var btn = document.createElement("button");
+      btn.className = "choice"; btn.type = "button"; btn.textContent = opt.t;
+      btn.onclick = function () {
+        report(!!opt.ok, quiz.q, opt.t);
+        toast(opt.ok ? (quiz.ok || "正确") : (opt.why || "再调一调参数看看"), !opt.ok);
+        if (opt.ok) $("detail").innerHTML += "<p class='hint'>" + (quiz.explain || "") + "</p>";
+      };
+      $("detail").appendChild(btn);
+    });
+  }
+
+  function ctrl(id) {
+    var list = DATA.controls || [];
+    for (var i = 0; i < list.length; i++) if (list[i].id === id) return Number(S[id]);
+    return 0;
+  }
+  function tog(id) { return !!S["tog_" + id]; }
+  function ctrlMeta(id) {
+    var list = DATA.controls || [];
+    for (var i = 0; i < list.length; i++) if (list[i].id === id) return list[i];
+    return null;
+  }
+  function setCtrl(id, val) {
+    var c = ctrlMeta(id);
+    if (!c) return;
+    val = clamp(val, Number(c.min), Number(c.max));
+    S[id] = val;
+    var inp = $("c-" + id);
+    if (inp) inp.value = String(val);
+    var lab = $("lab-" + id);
+    if (lab) lab.textContent = fmt(val, Number(c.step) < 1 ? 1 : 0) + (c.unit || "");
+  }
+
+  function renderDock() {
+    var dock = $("dock");
+    var html = '<div class="sliders">';
+    (DATA.controls || []).forEach(function (c) {
+      html += '<div class="slider"><label><span>' + c.label + '</span><span id="lab-' + c.id + '">' +
+        c.value + (c.unit || "") + "</span></label>" +
+        '<input id="c-' + c.id + '" type="range" min="' + c.min + '" max="' + c.max +
+        '" step="' + (c.step || 1) + '" value="' + c.value + '"></div>';
+    });
+    html += '</div><div class="toggles">';
+    (DATA.toggles || []).forEach(function (t) {
+      html += '<label><input id="t-' + t.id + '" type="checkbox"' + (t.on ? " checked" : "") + "> " + t.label + "</label>";
+    });
+    html += "</div>";
+    if (DATA.needPlay !== false) html += '<button class="btn ghost" id="btn-play" type="button">暂停</button>';
+    html += '<button class="btn reset" id="btn-reset" type="button">全部重置</button>';
+    dock.innerHTML = html;
+    (DATA.controls || []).forEach(function (c) {
+      S[c.id] = c.value;
+      $("c-" + c.id).oninput = function () {
+        S[c.id] = Number(this.value);
+        $("lab-" + c.id).textContent = fmt(S[c.id], c.step < 1 ? 1 : 0) + (c.unit || "");
+        if (engine.onChange) engine.onChange();
+        engine.draw();
+      };
+    });
+    (DATA.toggles || []).forEach(function (t) {
+      S["tog_" + t.id] = !!t.on;
+      $("t-" + t.id).onchange = function () {
+        S["tog_" + t.id] = this.checked;
+        engine.draw();
+      };
+    });
+    if ($("btn-play")) $("btn-play").onclick = function () {
+      playing = !playing;
+      this.textContent = playing ? "暂停" : "播放";
+    };
+    $("btn-reset").onclick = function () { resetAll(); };
+  }
+
+  function resetAll() {
+    (DATA.controls || []).forEach(function (c) {
+      S[c.id] = c.value;
+      var inp = $("c-" + c.id);
+      if (inp) inp.value = c.value;
+      var lab = $("lab-" + c.id);
+      if (lab) lab.textContent = c.value + (c.unit || "");
+    });
+    (DATA.toggles || []).forEach(function (t) {
+      S["tog_" + t.id] = !!t.on;
+      var inp = $("t-" + t.id);
+      if (inp) inp.checked = !!t.on;
+    });
+    simT = 0; S.t = 0;
+    if (engine.reset) engine.reset();
+    engine.draw();
+    toast("已重置", false);
+  }
+
+  function startDrag(hit, ev) {
+    drag = hit;
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    ev.preventDefault();
+  }
+  function onMove(ev) {
+    if (!drag) return;
+    var p = pt(ev);
+    if (engine.drag) engine.drag(drag, p.x, p.y);
+    engine.draw();
+  }
+  function onUp() {
+    drag = null;
+    window.removeEventListener("pointermove", onMove);
+    window.removeEventListener("pointerup", onUp);
+  }
+
+  /* ── engines ─────────────────────────────────────────── */
+  var engine = { draw: function () {}, reset: function () {}, step: function () {}, hit: function () { return null; } };
+
+  function magnetSim() {
+    S.cx = 520; S.cy = 340;
+    return {
+      reset: function () { S.cx = 520; S.cy = 340; },
+      hit: function (p) {
+        if (Math.hypot(p.x - S.cx, p.y - S.cy) < 46) return "compass";
+        return null;
+      },
+      drag: function (id, x, y) {
+        if (id === "compass") { S.cx = clamp(x, 80, 820); S.cy = clamp(y, 70, 500); }
+      },
+      field: function (x, y) {
+        var mx = 360, my = 250, half = 70;
+        var nx = mx - half, ny = my, sx = mx + half, sy = my;
+        function pole(px, py, sign) {
+          var dx = x - px, dy = y - py, r2 = dx * dx + dy * dy + 90;
+          var r3 = Math.pow(r2, 1.5);
+          return { x: sign * dx / r3, y: sign * dy / r3 };
+        }
+        var n = pole(nx, ny, 1), s = pole(sx, sy, -1);
+        return { x: n.x + s.x, y: n.y + s.y };
+      },
+      draw: function () {
+        clear(svg);
+        svg.appendChild(el("rect", { width: 900, height: 560, fill: "transparent" }));
+        if (S["tog_lines"] !== false) {
+          var g = el("g", { fill: "none", stroke: "#64748b", "stroke-width": "1.7", opacity: ".9" });
+          for (var a = 0; a < 11; a++) {
+            var ang0 = Math.PI / 2 + a * Math.PI / 10;
+            var x = 292 + Math.cos(ang0) * 10, y = 250 + Math.sin(ang0) * 36;
+            var d = "M" + x + "," + y;
+            for (var s = 0; s < 36; s++) {
+              var B = this.field(x, y);
+              var m = Math.hypot(B.x, B.y) || 1;
+              x += 12 * B.x / m; y += 12 * B.y / m;
+              if (x < -20 || x > 920 || y < -20 || y > 580) break;
+              if (x > 358 && x < 432 && y > 214 && y < 286) break;
+              d += " L" + x + "," + y;
+            }
+            g.appendChild(el("path", { d: d }));
+          }
+          svg.appendChild(g);
+        }
+        svg.appendChild(el("rect", { x: 290, y: 215, width: 70, height: 70, rx: 8, fill: "#e11d48" }));
+        svg.appendChild(el("rect", { x: 360, y: 215, width: 70, height: 70, rx: 8, fill: "#2563eb" }));
+        svg.appendChild(el("text", { x: 325, y: 258, "text-anchor": "middle", fill: "#fff", "font-size": "28", "font-weight": "800" }, "N"));
+        svg.appendChild(el("text", { x: 395, y: 258, "text-anchor": "middle", fill: "#fff", "font-size": "28", "font-weight": "800" }, "S"));
+        var B = this.field(S.cx, S.cy);
+        var ang = Math.atan2(B.y, B.x) * 180 / Math.PI;
+        var g2 = el("g", { transform: "translate(" + S.cx + "," + S.cy + ")" });
+        g2.appendChild(el("circle", { r: 38, fill: "#fff", stroke: "#1e293b", "stroke-width": "3" }));
+        var needle = el("g", { transform: "rotate(" + ang + ")" });
+        needle.appendChild(el("polygon", { points: "0,-7 26,0 0,7", fill: "#e11d48" }));
+        needle.appendChild(el("polygon", { points: "0,-7 -26,0 0,7", fill: "#0f172a" }));
+        needle.appendChild(el("circle", { r: 4.5, fill: "#fff", stroke: "#111", "stroke-width": "1.5" }));
+        g2.appendChild(needle);
+        g2.appendChild(el("text", { y: 54, "text-anchor": "middle", "font-size": "12" }, "拖动小磁针"));
+        svg.appendChild(g2);
+        var mag = Math.hypot(B.x, B.y);
+        setMeters([
+          { k: "磁场方向", v: Math.round(ang) + "°" },
+          { k: "相对强弱", v: fmt(mag * 8000, 2) }
+        ]);
+      }
+    };
+  }
+
+  function faradaySim() {
+    S.mx = 180; S.my = 250; S.emf = 0; S.prevFlux = 0;
+    return {
+      reset: function () { S.mx = 180; S.my = 250; S.emf = 0; S.prevFlux = 0; },
+      hit: function (p) { return (p.x > S.mx - 90 && p.x < S.mx + 90 && p.y > S.my - 50 && p.y < S.my + 50) ? "mag" : null; },
+      drag: function (id, x, y) {
+        if (id === "mag") { S.mx = clamp(x, 90, 780); S.my = clamp(y, 140, 400); }
+      },
+      flux: function () {
+        var coilX = 520, overlap = 1 - clamp(Math.abs(S.mx - coilX) / 220, 0, 1);
+        return overlap * (1 - clamp(Math.abs(S.my - 250) / 160, 0, 1));
+      },
+      step: function (dt) {
+        var fl = this.flux();
+        var d = fl - (S.prevFlux || fl);
+        S.emf = S.emf * 0.86 + d * 90;
+        S.prevFlux = fl;
+      },
+      draw: function () {
+        clear(svg);
+        svg.appendChild(el("rect", { x: 430, y: 140, width: 180, height: 220, rx: 18, fill: "none", stroke: "#334155", "stroke-width": "10" }));
+        for (var i = 0; i < 6; i++) {
+          svg.appendChild(el("ellipse", { cx: 520, cy: 165 + i * 34, rx: 78, ry: 16, fill: "none", stroke: "#64748b", "stroke-width": "3" }));
+        }
+        svg.appendChild(el("circle", { cx: 740, cy: 250, r: 48, fill: "#fff", stroke: "#111", "stroke-width": "4" }));
+        var ang = clamp(S.emf * 40, -55, 55);
+        var needle = el("g", { transform: "translate(740,250) rotate(" + ang + ")" });
+        needle.appendChild(el("line", { x1: 0, y1: 0, x2: 0, y2: -36, stroke: "#e11d48", "stroke-width": "3" }));
+        svg.appendChild(needle);
+        svg.appendChild(el("text", { x: 740, y: 312, "text-anchor": "middle", "font-size": "12" }, "电流计 G"));
+        svg.appendChild(el("rect", { x: S.mx - 80, y: S.my - 32, width: 80, height: 64, rx: 6, fill: "#e11d48" }));
+        svg.appendChild(el("rect", { x: S.mx, y: S.my - 32, width: 80, height: 64, rx: 6, fill: "#2563eb" }));
+        svg.appendChild(el("text", { x: S.mx - 40, y: S.my + 8, "text-anchor": "middle", fill: "#fff", "font-size": "22", "font-weight": "800" }, "N"));
+        svg.appendChild(el("text", { x: S.mx + 40, y: S.my + 8, "text-anchor": "middle", fill: "#fff", "font-size": "22", "font-weight": "800" }, "S"));
+        svg.appendChild(el("text", { x: S.mx, y: S.my + 52, "text-anchor": "middle", "font-size": "12" }, "拖动磁铁进出线圈"));
+        var emfAbs = Math.abs(S.emf);
+        setMeters([
+          { k: "相对磁通量", v: fmt(this.flux(), 2) },
+          { k: "感应电动势", v: (S.emf >= 0 ? "+" : "−") + fmt(emfAbs, 2) },
+          { k: "电流", v: emfAbs < 0.04 ? "≈ 0" : (S.emf > 0 ? "正偏" : "反偏") }
+        ]);
+      }
+    };
+  }
+
+  function ohmSim() {
+    return {
+      draw: function () {
+        var U = ctrl("U") || 6, R = Math.max(ctrl("R") || 6, 0.5), I = U / R;
+        clear(svg);
+        var battH = 36 + U * 6;
+        svg.appendChild(el("rect", { x: 120, y: 280 - battH / 2, width: 54, height: battH, rx: 6, fill: "#f59e0b", stroke: "#b45309", "stroke-width": "3" }));
+        svg.appendChild(el("text", { x: 147, y: 286, "text-anchor": "middle", "font-size": "14", "font-weight": "800" }, fmt(U, 1) + "V"));
+        var zig = 10, d = "M240 250";
+        for (var i = 0; i < zig; i++) {
+          d += " L" + (240 + (i + 0.5) * (320 / zig)) + "," + (250 + (i % 2 ? 20 : -20));
+        }
+        d += " L560 250";
+        svg.appendChild(el("path", { d: d, fill: "none", stroke: "#334155", "stroke-width": "4" }));
+        svg.appendChild(el("text", { x: 400, y: 214, "text-anchor": "middle", "font-size": "14" }, "R = " + fmt(R, 1) + " Ω"));
+        svg.appendChild(el("circle", { cx: 620, cy: 250, r: 26, fill: "#fff", stroke: "#111", "stroke-width": "3" }));
+        svg.appendChild(el("text", { x: 620, y: 256, "text-anchor": "middle", "font-size": "14" }, "A"));
+        svg.appendChild(el("line", { x1: 147, y1: 280 + battH / 2, x2: 147, y2: 360, stroke: "#111", "stroke-width": "4" }));
+        svg.appendChild(el("line", { x1: 147, y1: 360, x2: 620, y2: 360, stroke: "#111", "stroke-width": "4" }));
+        svg.appendChild(el("line", { x1: 620, y1: 360, x2: 620, y2: 276, stroke: "#111", "stroke-width": "4" }));
+        svg.appendChild(el("line", { x1: 174, y1: 250, x2: 240, y2: 250, stroke: "#111", "stroke-width": "4" }));
+        svg.appendChild(el("line", { x1: 560, y1: 250, x2: 594, y2: 250, stroke: "#111", "stroke-width": "4" }));
+        var speed = clamp(I / 4, 0.15, 2.4);
+        if (S["tog_electrons"] !== false && I > 0.02) {
+          var t = ((S.t || 0) / 1000) * speed * 80;
+          for (var k = 0; k < 12; k++) {
+            var u = ((k / 12) + (t % 400) / 400) % 1;
+            var x, y;
+            if (u < 0.45) { x = 174 + u / 0.45 * 446; y = 250; }
+            else if (u < 0.55) { x = 620; y = 250 + (u - 0.45) / 0.1 * 110; }
+            else if (u < 0.95) { x = 620 - (u - 0.55) / 0.4 * 473; y = 360; }
+            else { x = 147; y = 360 - (u - 0.95) / 0.05 * 80; }
+            svg.appendChild(el("circle", { cx: x, cy: y, r: 5, fill: "#38bdf8" }));
+          }
+        }
+        var fs = 18 + I * 4;
+        svg.appendChild(el("text", { x: 400, y: 120, "text-anchor": "middle", "font-size": fs, fill: "#0171c3", "font-weight": "800" }, "I = U / R"));
+        setMeters([
+          { k: "电压 U", v: fmt(U, 1) + " V" },
+          { k: "电阻 R", v: fmt(R, 1) + " Ω" },
+          { k: "电流 I", v: fmt(I, 2) + " A" }
+        ]);
+      }
+    };
+  }
+
+  function circuitSim() {
+    S.openA = false; S.openB = false;
+    return {
+      reset: function () { S.openA = false; S.openB = false; },
+      click: function (p) {
+        var parallel = tog("parallel");
+        if (Math.hypot(p.x - 200, p.y - 244) < 40) { S.openA = !S.openA; return true; }
+        if (parallel && Math.hypot(p.x - 430, p.y - 180) < 40) { S.openB = !S.openB; return true; }
+        return false;
+      },
+      hit: function () { return null; },
+      drag: function () {},
+      draw: function () {
+        var parallel = tog("parallel");
+        clear(svg);
+        function wire(x1, y1, x2, y2) {
+          svg.appendChild(el("line", { x1: x1, y1: y1, x2: x2, y2: y2, stroke: "#111", "stroke-width": "4" }));
+        }
+        function bulb(x, y, on) {
+          svg.appendChild(el("circle", { cx: x, cy: y, r: 22, fill: on ? "#fde68a" : "#e2e8f0", stroke: "#334155", "stroke-width": "3" }));
+          svg.appendChild(el("line", { x1: x - 8, y1: y - 8, x2: x + 8, y2: y + 8, stroke: "#334155", "stroke-width": "2" }));
+        }
+        function sw(x, y, open, label) {
+          svg.appendChild(el("circle", { cx: x, cy: y, r: 7, fill: "#fff", stroke: "#111", "stroke-width": "2" }));
+          svg.appendChild(el("line", { x1: x, y1: y, x2: x + (open ? 28 : 34), y2: y - (open ? 22 : 0), stroke: "#111", "stroke-width": "3" }));
+          svg.appendChild(el("text", { x: x + 8, y: y + 28, "font-size": "12" }, label));
+        }
+        svg.appendChild(el("rect", { x: 80, y: 230, width: 50, height: 28, rx: 4, fill: "#f59e0b", stroke: "#b45309" }));
+        var aOn, bOn, I;
+        if (!parallel) {
+          wire(130, 244, 200, 244); sw(200, 244, S.openA, "开关");
+          wire(S.openA ? 200 : 234, 244, 320, 244); bulb(360, 244, !S.openA);
+          svg.appendChild(el("text", { x: 360, y: 284, "text-anchor": "middle", "font-size": "12" }, "L1"));
+          wire(382, 244, 500, 244); bulb(540, 244, !S.openA);
+          svg.appendChild(el("text", { x: 540, y: 284, "text-anchor": "middle", "font-size": "12" }, "L2"));
+          wire(562, 244, 720, 244); wire(720, 244, 720, 360); wire(80, 258, 80, 360); wire(80, 360, 720, 360);
+          aOn = bOn = !S.openA; I = aOn ? 1 : 0;
+        } else {
+          wire(130, 244, 200, 244); sw(200, 244, S.openA, "干路");
+          wire(S.openA ? 200 : 234, 244, 360, 244); wire(360, 180, 360, 310);
+          sw(430, 180, S.openB, "支路");
+          wire(S.openB ? 430 : 464, 180, 540, 180); bulb(580, 180, !S.openA && !S.openB);
+          svg.appendChild(el("text", { x: 580, y: 158, "text-anchor": "middle", "font-size": "12" }, "L1"));
+          wire(602, 180, 720, 180);
+          wire(360, 310, 540, 310); bulb(580, 310, !S.openA);
+          svg.appendChild(el("text", { x: 580, y: 348, "text-anchor": "middle", "font-size": "12" }, "L2"));
+          wire(602, 310, 720, 310); wire(720, 180, 720, 360);
+          wire(80, 258, 80, 360); wire(80, 360, 720, 360);
+          aOn = !S.openA && !S.openB; bOn = !S.openA; I = (aOn ? 1 : 0) + (bOn ? 1 : 0);
+        }
+        svg.appendChild(el("text", { x: 400, y: 80, "text-anchor": "middle", "font-size": "16", "font-weight": "800", fill: "#0171c3" },
+          parallel ? "并联：支路互不影响" : "串联：一处断开全灭"));
+        svg.appendChild(el("text", { x: 400, y: 430, "text-anchor": "middle", "font-size": "12", fill: "#475569" }, "点击开关试试"));
+        setMeters([
+          { k: "接法", v: parallel ? "并联" : "串联" },
+          { k: "L1", v: aOn ? "亮" : "灭" },
+          { k: "L2", v: bOn ? "亮" : "灭" }
+        ]);
+      }
+    };
+  }
+
+  function forceSim() {
+    S.a1 = 40; S.a2 = 0;
+    return {
+      reset: function () { S.a1 = 40; S.a2 = 0; },
+      hit: function (p) {
+        var o = { x: 280, y: 340 };
+        var p1 = { x: o.x + Math.cos(S.a1 * Math.PI / 180) * (ctrl("F1") || 8) * 18, y: o.y - Math.sin(S.a1 * Math.PI / 180) * (ctrl("F1") || 8) * 18 };
+        var p2 = { x: o.x + Math.cos(S.a2 * Math.PI / 180) * (ctrl("F2") || 6) * 18, y: o.y - Math.sin(S.a2 * Math.PI / 180) * (ctrl("F2") || 6) * 18 };
+        if (Math.hypot(p.x - p1.x, p.y - p1.y) < 28) return "a1";
+        if (Math.hypot(p.x - p2.x, p.y - p2.y) < 28) return "a2";
+        return null;
+      },
+      drag: function (id, x, y) {
+        var ang = Math.atan2(340 - y, x - 280) * 180 / Math.PI;
+        if (id === "a1") S.a1 = ang;
+        if (id === "a2") S.a2 = ang;
+      },
+      onChange: function () {},
+      draw: function () {
+        var F1 = ctrl("F1") || 8, F2 = ctrl("F2") || 6;
+        var o = { x: 280, y: 340 };
+        function vec(ang, mag) {
+          return { x: o.x + Math.cos(ang * Math.PI / 180) * mag * 18, y: o.y - Math.sin(ang * Math.PI / 180) * mag * 18 };
+        }
+        var p1 = vec(S.a1, F1), p2 = vec(S.a2, F2);
+        var rx = (p1.x - o.x) + (p2.x - o.x), ry = (p1.y - o.y) + (p2.y - o.y);
+        var pr = { x: o.x + rx, y: o.y + ry };
+        var F = Math.hypot(F1 * Math.cos(S.a1 * Math.PI / 180) + F2 * Math.cos(S.a2 * Math.PI / 180),
+          F1 * Math.sin(S.a1 * Math.PI / 180) + F2 * Math.sin(S.a2 * Math.PI / 180));
+        clear(svg);
+        function arrow(a, b, color, label) {
+          svg.appendChild(el("line", { x1: a.x, y1: a.y, x2: b.x, y2: b.y, stroke: color, "stroke-width": "7", "stroke-linecap": "round" }));
+          svg.appendChild(el("circle", { cx: b.x, cy: b.y, r: 8, fill: color }));
+          svg.appendChild(el("text", { x: (a.x + b.x) / 2 + 8, y: (a.y + b.y) / 2 - 8, fill: color, "font-size": "16", "font-weight": "800" }, label));
+        }
+        svg.appendChild(el("line", { x1: p1.x, y1: p1.y, x2: pr.x, y2: pr.y, stroke: "#94a3b8", "stroke-dasharray": "6 5", "stroke-width": "2" }));
+        svg.appendChild(el("line", { x1: p2.x, y1: p2.y, x2: pr.x, y2: pr.y, stroke: "#94a3b8", "stroke-dasharray": "6 5", "stroke-width": "2" }));
+        arrow(o, p1, "#e11d48", "F₁");
+        arrow(o, p2, "#2563eb", "F₂");
+        arrow(o, pr, "#15803d", "F");
+        svg.appendChild(el("circle", { cx: o.x, cy: o.y, r: 7, fill: "#111" }));
+        svg.appendChild(el("text", { x: 450, y: 80, "font-size": "14" }, "拖动箭头末端改变方向"));
+        setMeters([
+          { k: "F₁", v: fmt(F1, 1) + " N" },
+          { k: "F₂", v: fmt(F2, 1) + " N" },
+          { k: "合力 F", v: fmt(F, 1) + " N" }
+        ]);
+      }
+    };
+  }
+
+  function newtonSim() {
+    S.x = 120; S.v = 0;
+    return {
+      reset: function () { S.x = 120; S.v = 0; },
+      step: function (dt) {
+        var F = ctrl("F") || 0, m = Math.max(ctrl("m") || 2, 0.4);
+        var mu = tog("friction") ? 0.25 : 0;
+        var g = 10, N = m * g, ff = mu * N;
+        var a;
+        if (Math.abs(S.v) < 0.02 && Math.abs(F) <= ff) { S.v = 0; a = 0; }
+        else a = (F - ff * (S.v >= 0 ? 1 : -1)) / m;
+        S.v += a * dt * 0.06;
+        S.x += S.v * dt * 0.06;
+        if (S.x < 80) { S.x = 80; S.v = 0; }
+        if (S.x > 760) { S.x = 760; S.v = 0; }
+        this._a = a; this._ff = ff;
+      },
+      draw: function () {
+        var F = ctrl("F") || 0, m = ctrl("m") || 2;
+        clear(svg);
+        svg.appendChild(el("line", { x1: 60, y1: 340, x2: 840, y2: 340, stroke: "#64748b", "stroke-width": "8" }));
+        svg.appendChild(el("rect", { x: S.x - 50, y: 262, width: 100, height: 64, rx: 10, fill: "#fdba74", stroke: "#c2410c", "stroke-width": "3" }));
+        svg.appendChild(el("circle", { cx: S.x - 28, cy: 338, r: 12, fill: "#334155" }));
+        svg.appendChild(el("circle", { cx: S.x + 28, cy: 338, r: 12, fill: "#334155" }));
+        svg.appendChild(el("text", { x: S.x, y: 300, "text-anchor": "middle", "font-size": "14", "font-weight": "800" }, fmt(m, 1) + " kg"));
+        var dir = F === 0 ? 1 : (F > 0 ? 1 : -1);
+        var len = 36 + Math.abs(F) * 8;
+        svg.appendChild(el("line", { x1: S.x, y1: 240, x2: S.x + dir * len, y2: 240, stroke: F ? "#e11d48" : "#94a3b8", "stroke-width": "5", "stroke-dasharray": F ? "0" : "6 5" }));
+        svg.appendChild(el("polygon", { points: (S.x + dir * len) + ",240 " + (S.x + dir * (len - 12)) + ",232 " + (S.x + dir * (len - 12)) + ",248", fill: F ? "#e11d48" : "#94a3b8" }));
+        svg.appendChild(el("text", { x: 400, y: 80, "text-anchor": "middle", "font-size": "14", fill: "#475569" }, "拉动底部「推力」：F = ma"));
+        setMeters([
+          { k: "合力相关 a", v: fmt(this._a || 0, 2) + " m/s²" },
+          { k: "速度 v", v: fmt(S.v, 2) + " m/s" },
+          { k: "摩擦力", v: tog("friction") ? fmt(this._ff || 0, 1) + " N" : "0" }
+        ]);
+      }
+    };
+  }
+
+  function statesSim() {
+    S.parts = [];
+    function seed() {
+      S.parts = [];
+      for (var i = 0; i < 36; i++) S.parts.push({ x: 300 + (i % 6) * 40, y: 160 + Math.floor(i / 6) * 40, vx: 0, vy: 0 });
+    }
+    seed();
+    return {
+      reset: seed,
+      step: function (dt) {
+        var T = ctrl("T") || 20;
+        var jig = T < 0 ? 0.15 : T < 100 ? 0.7 + T / 80 : 2.2;
+        S.parts.forEach(function (p, i) {
+          if (T < 0) {
+            p.x = lerp(p.x, 300 + (i % 6) * 40, 0.08);
+            p.y = lerp(p.y, 160 + Math.floor(i / 6) * 40, 0.08);
+            p.x += (Math.random() - 0.5) * jig; p.y += (Math.random() - 0.5) * jig;
+          } else if (T < 100) {
+            p.vx += (Math.random() - 0.5) * 0.4; p.vy += (Math.random() - 0.5) * 0.4;
+            p.vx *= 0.9; p.vy *= 0.9;
+            p.x = clamp(p.x + p.vx * jig, 260, 560);
+            p.y = clamp(p.y + p.vy * jig, 140, 400);
+          } else {
+            p.vx += (Math.random() - 0.5) * 1.2; p.vy += (Math.random() - 0.5) * 1.2;
+            p.x = (p.x + p.vx + 900) % 900; p.y = (p.y + p.vy + 560) % 560;
+          }
+        });
+      },
+      draw: function () {
+        var T = ctrl("T") || 20;
+        var phase = T < 0 ? "固态（振动）" : T < 100 ? "液态（流动）" : "气态（飞散）";
+        clear(svg);
+        svg.appendChild(el("rect", { x: 240, y: 120, width: 340, height: 300, rx: 16, fill: "#e0f2fe", stroke: "#0369a1", "stroke-width": "4" }));
+        S.parts.forEach(function (p) {
+          svg.appendChild(el("circle", { cx: p.x, cy: p.y, r: 8, fill: T < 0 ? "#0369a1" : T < 100 ? "#0ea5e9" : "#7dd3fc", stroke: "#0f172a" }));
+        });
+        setMeters([{ k: "温度", v: fmt(T, 0) + " ℃" }, { k: "物态", v: phase }]);
+      }
+    };
+  }
+
+  function reflectSim() {
+    S.i = 40;
+    return {
+      reset: function () { S.i = 40; },
+      hit: function (p) {
+        var ix = 360 - Math.sin(S.i * Math.PI / 180) * 220;
+        var iy = 360 - Math.cos(S.i * Math.PI / 180) * 220;
+        return Math.hypot(p.x - ix, p.y - iy) < 36 ? "ray" : null;
+      },
+      drag: function (id, x, y) {
+        var ang = Math.atan2(360 - x, 360 - y) * 180 / Math.PI;
+        S.i = clamp(ang, 5, 80);
+        setCtrl("i", S.i);
+      },
+      onChange: function () { S.i = ctrl("i") || S.i; },
+      draw: function () {
+        var i = S.i, r = i;
+        clear(svg);
+        svg.appendChild(el("line", { x1: 80, y1: 360, x2: 640, y2: 360, stroke: "#334155", "stroke-width": "8" }));
+        svg.appendChild(el("line", { x1: 360, y1: 80, x2: 360, y2: 360, stroke: "#64748b", "stroke-dasharray": "8 6", "stroke-width": "2" }));
+        svg.appendChild(el("text", { x: 372, y: 100, "font-size": "12", fill: "#64748b" }, "法线"));
+        var ix = 360 - Math.sin(i * Math.PI / 180) * 240, iy = 360 - Math.cos(i * Math.PI / 180) * 240;
+        var rx = 360 + Math.sin(r * Math.PI / 180) * 240, ry = 360 - Math.cos(r * Math.PI / 180) * 240;
+        var ar = 54, ir = i * Math.PI / 180;
+        svg.appendChild(el("path", { d: "M360," + (360 - ar) + " A" + ar + " " + ar + " 0 0 0 " + (360 - Math.sin(ir) * ar) + "," + (360 - Math.cos(ir) * ar), fill: "none", stroke: "#ea580c", "stroke-width": "2" }));
+        svg.appendChild(el("path", { d: "M360," + (360 - ar) + " A" + ar + " " + ar + " 0 0 1 " + (360 + Math.sin(ir) * ar) + "," + (360 - Math.cos(ir) * ar), fill: "none", stroke: "#2563eb", "stroke-width": "2" }));
+        svg.appendChild(el("line", { x1: ix, y1: iy, x2: 360, y2: 360, stroke: "#ea580c", "stroke-width": "5" }));
+        svg.appendChild(el("circle", { cx: ix, cy: iy, r: 10, fill: "#ea580c" }));
+        svg.appendChild(el("line", { x1: 360, y1: 360, x2: rx, y2: ry, stroke: "#2563eb", "stroke-width": "5" }));
+        svg.appendChild(el("text", { x: 200, y: 140, fill: "#c2410c", "font-size": "14" }, "入射 i=" + Math.round(i) + "°"));
+        svg.appendChild(el("text", { x: 500, y: 140, fill: "#1d4ed8", "font-size": "14" }, "反射 r=" + Math.round(r) + "°"));
+        svg.appendChild(el("text", { x: 360, y: 420, "text-anchor": "middle", "font-size": "13" }, "拖动橙色端点 · 角从法线量起"));
+        setMeters([{ k: "入射角 i", v: Math.round(i) + "°" }, { k: "反射角 r", v: Math.round(r) + "°" }]);
+      }
+    };
+  }
+
+  function lensSim() {
+    S.u = 280;
+    return {
+      reset: function () { S.u = 280; },
+      hit: function (p) { return (p.x > 360 - S.u - 30 && p.x < 360 - S.u + 30 && p.y > 160 && p.y < 260) ? "obj" : null; },
+      drag: function (id, x) {
+        if (id === "obj") {
+          S.u = clamp(360 - x, 40, 330);
+          setCtrl("u", S.u);
+        }
+      },
+      onChange: function () { S.u = ctrl("u") || S.u; },
+      draw: function () {
+        var f = 90, u = S.u, h = 70;
+        var inv = 1 / f - 1 / u, v = inv !== 0 ? 1 / inv : 8000;
+        var m = -v / u, hi = h * m;
+        clear(svg);
+        svg.appendChild(el("line", { x1: 40, y1: 250, x2: 860, y2: 250, stroke: "#cbd5e1" }));
+        svg.appendChild(el("ellipse", { cx: 360, cy: 250, rx: 16, ry: 110, fill: "#e0f2fe", stroke: "#0369a1", "stroke-width": "3" }));
+        [[360 - 2 * f, "2f"], [360 - f, "f"], [360 + f, "f"], [360 + 2 * f, "2f"]].forEach(function (m2) {
+          svg.appendChild(el("circle", { cx: m2[0], cy: 250, r: 4, fill: "#111" }));
+          svg.appendChild(el("text", { x: m2[0], y: 272, "text-anchor": "middle", "font-size": "11" }, m2[1]));
+        });
+        var ox = 360 - u;
+        svg.appendChild(el("polygon", { points: ox + ",250 " + ox + "," + (250 - h) + " " + (ox + 16) + ",250", fill: "#ea580c" }));
+        svg.appendChild(el("text", { x: ox, y: 250 - h - 8, "text-anchor": "middle", "font-size": "12" }, "物"));
+        svg.appendChild(el("line", { x1: ox, y1: 250 - h, x2: 360, y2: 250 - h, stroke: "#ea580c", "stroke-width": "2" }));
+        svg.appendChild(el("line", { x1: 360, y1: 250 - h, x2: 360 + v, y2: 250 - hi, stroke: "#1d4ed8", "stroke-width": "2" }));
+        svg.appendChild(el("line", { x1: ox, y1: 250 - h, x2: 360, y2: 250, stroke: "#ea580c", "stroke-width": "2" }));
+        svg.appendChild(el("line", { x1: 360, y1: 250, x2: 360 + v, y2: 250 - hi, stroke: "#1d4ed8", "stroke-width": "2" }));
+        if (v > 0) svg.appendChild(el("polygon", { points: (360 + v) + ",250 " + (360 + v) + "," + (250 - hi) + " " + (360 + v - 14) + ",250", fill: "#1d4ed8" }));
+        else svg.appendChild(el("polygon", { points: (360 + v) + ",250 " + (360 + v) + "," + (250 - hi) + " " + (360 + v + 14) + ",250", fill: "none", stroke: "#1d4ed8", "stroke-dasharray": "5 4" }));
+        var kind = u > 2 * f + 4 ? "倒立缩小实像 · 照相机" : u > f + 4 ? "倒立放大实像 · 投影仪" : Math.abs(u - f) <= 4 ? "不成像" : "正立放大虚像 · 放大镜";
+        setMeters([
+          { k: "物距 u", v: fmt(u, 0) },
+          { k: "像距 v", v: Math.abs(v) > 2000 ? "∞" : fmt(v, 0) },
+          { k: "成像", v: kind }
+        ]);
+      }
+    };
+  }
+
+  function buoyancySim() {
+    S.y = 232; S.vy = 0;
+    return {
+      reset: function () {
+        S.vy = 0;
+        var ro = ctrl("rho") || 0.6, rl = Math.max(ctrl("liquid") || 1, 0.2);
+        var waterY = 260, boxH = 70;
+        if (ro >= rl) S.y = 320;
+        else S.y = waterY + clamp(ro / rl, 0.08, 0.95) * boxH - boxH;
+      },
+      step: function (dt) {
+        var ro = ctrl("rho") || 0.6, rl = Math.max(ctrl("liquid") || 1, 0.2);
+        var g = 10, V = 1, waterY = 260, boxH = 70;
+        var bottom = S.y + boxH;
+        var sub = clamp((bottom - waterY) / boxH, 0, 1);
+        var Fb = rl * g * V * sub, G = ro * g * V;
+        var a = (G - Fb);
+        S.vy = (S.vy || 0) + a * dt * 0.012;
+        S.vy *= 0.9;
+        S.y += S.vy;
+        S.y = clamp(S.y, 90, 390);
+        if (S.y <= 90 || S.y >= 390) S.vy = 0;
+        this._Fb = Fb; this._G = G; this._sub = sub;
+      },
+      draw: function () {
+        clear(svg);
+        svg.appendChild(el("rect", { x: 220, y: 120, width: 360, height: 300, fill: "none", stroke: "#0369a1", "stroke-width": "6" }));
+        svg.appendChild(el("rect", { x: 226, y: 260, width: 348, height: 154, fill: "#7dd3fc", opacity: ".7" }));
+        svg.appendChild(el("rect", { x: 340, y: S.y, width: 120, height: 70, rx: 8, fill: "#fdba74", stroke: "#c2410c", "stroke-width": "3" }));
+        svg.appendChild(el("line", { x1: 400, y1: S.y, x2: 400, y2: S.y - 50, stroke: "#15803d", "stroke-width": "5" }));
+        svg.appendChild(el("line", { x1: 400, y1: S.y + 70, x2: 400, y2: S.y + 120, stroke: "#b91c1c", "stroke-width": "5" }));
+        var st;
+        if (Math.abs((this._Fb || 0) - (this._G || 0)) < 0.12) st = (this._sub || 0) < 0.97 ? "漂浮" : "悬浮";
+        else st = (this._Fb || 0) > (this._G || 0) ? "上浮" : "下沉";
+        setMeters([
+          { k: "F浮", v: fmt(this._Fb || 0, 2) },
+          { k: "G", v: fmt(this._G || 0, 2) },
+          { k: "状态", v: st }
+        ]);
+      }
+    };
+  }
+
+  function projectileSim() {
+    var ox = 90, oy = 430, sc = 12;
+    function resetFlight() {
+      S.fly = false; S.px = 0; S.py = 0; S.pt = 0; S.trail = [];
+    }
+    resetFlight();
+    return {
+      reset: resetFlight,
+      click: function () {
+        if (S.fly) { resetFlight(); return true; }
+        S.fly = true; S.pt = 0; S.trail = [];
+        return true;
+      },
+      step: function (dt) {
+        if (!S.fly) return;
+        var v0 = ctrl("v0") || 16, th = (ctrl("ang") || 45) * Math.PI / 180, g = 10;
+        S.pt += dt * 0.018;
+        S.px = v0 * Math.cos(th) * S.pt;
+        S.py = v0 * Math.sin(th) * S.pt - 0.5 * g * S.pt * S.pt;
+        if (tog("trail") && S.pt * 20 % 1 < 0.35) S.trail.push({ x: S.px, y: S.py });
+        if (S.py < -0.05 && S.pt > 0.05) { S.py = 0; S.fly = false; }
+      },
+      draw: function () {
+        var v0 = ctrl("v0") || 16, ang = ctrl("ang") || 45, th = ang * Math.PI / 180, g = 10;
+        var R = v0 * v0 * Math.sin(2 * th) / g, H = v0 * v0 * Math.sin(th) * Math.sin(th) / (2 * g);
+        clear(svg);
+        svg.appendChild(el("line", { x1: 40, y1: oy, x2: 860, y2: oy, stroke: "#64748b", "stroke-width": "8" }));
+        var bx = ox + S.px * sc, by = oy - S.py * sc;
+        (S.trail || []).forEach(function (p) {
+          svg.appendChild(el("circle", { cx: ox + p.x * sc, cy: oy - p.y * sc, r: 3, fill: "#7dd3fc" }));
+        });
+        var cl = 46;
+        svg.appendChild(el("line", { x1: ox, y1: oy, x2: ox + cl * Math.cos(th), y2: oy - cl * Math.sin(th), stroke: "#334155", "stroke-width": "10", "stroke-linecap": "round" }));
+        svg.appendChild(el("circle", { cx: ox, cy: oy, r: 16, fill: "#1e293b" }));
+        svg.appendChild(el("circle", { cx: bx, cy: by, r: 12, fill: "#ea580c", stroke: "#9a3412", "stroke-width": "2" }));
+        svg.appendChild(el("text", { x: 450, y: 36, "text-anchor": "middle", "font-size": "13", fill: "#475569" }, S.fly ? "飞行中" : "点击画面发射 / 再点重置"));
+        setMeters([
+          { k: "射程", v: fmt(R, 1) + " m" },
+          { k: "最大高度", v: fmt(H, 1) + " m" },
+          { k: "时间 t", v: fmt(S.pt || 0, 2) + " s" }
+        ]);
+      }
+    };
+  }
+
+  function pendulumSim() {
+    var px = 450, py = 56;
+    S.th = 0.45; S.w = 0;
+    return {
+      reset: function () { S.th = 0.45; S.w = 0; },
+      hit: function (p) {
+        var L = (ctrl("L") || 1) * 210;
+        var bx = px + L * Math.sin(S.th), by = py + L * Math.cos(S.th);
+        return Math.hypot(p.x - bx, p.y - by) < 36 ? "bob" : null;
+      },
+      drag: function (id, x, y) {
+        if (id === "bob") { S.th = Math.atan2(x - px, y - py); S.w = 0; }
+      },
+      step: function (dt) {
+        var L = Math.max(ctrl("L") || 1, 0.3), g = 9.8;
+        var a = -(g / L) * Math.sin(S.th) - 0.08 * S.w;
+        S.w += a * dt * 0.018;
+        S.th += S.w * dt * 0.018;
+      },
+      draw: function () {
+        var L = ctrl("L") || 1, m = ctrl("m") || 0.5, g = 9.8;
+        var pxL = L * 210, bx = px + pxL * Math.sin(S.th), by = py + pxL * Math.cos(S.th);
+        var T = 2 * Math.PI * Math.sqrt(L / g);
+        clear(svg);
+        svg.appendChild(el("line", { x1: 80, y1: py, x2: 820, y2: py, stroke: "#64748b", "stroke-width": "8" }));
+        svg.appendChild(el("line", { x1: px, y1: py, x2: bx, y2: by, stroke: "#334155", "stroke-width": "3" }));
+        svg.appendChild(el("circle", { cx: bx, cy: by, r: 10 + m * 8, fill: "#0369a1", stroke: "#0f172a", "stroke-width": "2" }));
+        svg.appendChild(el("text", { x: bx, y: by + 5, "text-anchor": "middle", fill: "#fff", "font-size": "11" }, fmt(m, 1)));
+        setMeters([
+          { k: "摆角", v: fmt(S.th * 180 / Math.PI, 1) + "°" },
+          { k: "周期(小角)", v: fmt(T, 2) + " s" },
+          { k: "质量", v: fmt(m, 1) + " kg（不影响 T）" }
+        ]);
+      }
+    };
+  }
+
+  function collisionSim() {
+    S.x1 = 160; S.x2 = 520; S.v1 = 6; S.v2 = 0; S.hit = false;
+    return {
+      reset: function () {
+        S.x1 = 160; S.x2 = 520; S.v1 = ctrl("u1") || 6; S.v2 = 0; S.hit = false;
+      },
+      onChange: function () { if (!S.hit) S.v1 = ctrl("u1") || 6; },
+      step: function (dt) {
+        var m1 = ctrl("m1") || 2, m2 = ctrl("m2") || 2, w = 90;
+        S.x1 += S.v1 * dt * 0.08; S.x2 += S.v2 * dt * 0.08;
+        if (!S.hit && S.x1 + w >= S.x2) {
+          S.hit = true;
+          var u1 = S.v1, u2 = S.v2;
+          if (tog("elastic")) {
+            S.v1 = ((m1 - m2) * u1 + 2 * m2 * u2) / (m1 + m2);
+            S.v2 = ((m2 - m1) * u2 + 2 * m1 * u1) / (m1 + m2);
+          } else {
+            S.v1 = S.v2 = (m1 * u1 + m2 * u2) / (m1 + m2);
+          }
+          S.x1 = S.x2 - w;
+        }
+        S.x1 = clamp(S.x1, 40, 700); S.x2 = clamp(S.x2, 80, 780);
+      },
+      draw: function () {
+        var m1 = ctrl("m1") || 2, m2 = ctrl("m2") || 2;
+        var p = m1 * S.v1 + m2 * S.v2, k = 0.5 * m1 * S.v1 * S.v1 + 0.5 * m2 * S.v2 * S.v2;
+        clear(svg);
+        svg.appendChild(el("line", { x1: 40, y1: 340, x2: 860, y2: 340, stroke: "#64748b", "stroke-width": "8" }));
+        svg.appendChild(el("rect", { x: S.x1, y: 268, width: 90, height: 64, rx: 8, fill: "#fdba74", stroke: "#c2410c", "stroke-width": "3" }));
+        svg.appendChild(el("rect", { x: S.x2, y: 268, width: 90, height: 64, rx: 8, fill: "#93c5fd", stroke: "#1d4ed8", "stroke-width": "3" }));
+        svg.appendChild(el("text", { x: S.x1 + 45, y: 305, "text-anchor": "middle", "font-size": "13", "font-weight": "800" }, "m₁"));
+        svg.appendChild(el("text", { x: S.x2 + 45, y: 305, "text-anchor": "middle", "font-size": "13", "font-weight": "800" }, "m₂"));
+        setMeters([
+          { k: "v₁ / v₂", v: fmt(S.v1, 2) + " / " + fmt(S.v2, 2) + " m/s" },
+          { k: "总动量", v: fmt(p, 2) + " kg·m/s" },
+          { k: "总动能", v: fmt(k, 2) + " J" }
+        ]);
+      }
+    };
+  }
+
+  function circularSim() {
+    S.phi = 0;
+    return {
+      reset: function () { S.phi = 0; },
+      step: function (dt) {
+        var r = Math.max(ctrl("r") || 1.2, 0.3), v = ctrl("v") || 4;
+        S.phi += (v / r) * dt * 0.018;
+      },
+      draw: function () {
+        var r = ctrl("r") || 1.2, v = ctrl("v") || 4, m = ctrl("m") || 1;
+        var R = r * 120, cx = 450, cy = 260;
+        var x = cx + R * Math.cos(S.phi), y = cy + R * Math.sin(S.phi);
+        var Fc = m * v * v / r, T = 2 * Math.PI * r / v;
+        clear(svg);
+        svg.appendChild(el("circle", { cx: cx, cy: cy, r: R, fill: "none", stroke: "#94a3b8", "stroke-dasharray": "6 6" }));
+        svg.appendChild(el("line", { x1: cx, y1: cy, x2: x, y2: y, stroke: "#64748b", "stroke-width": "2" }));
+        svg.appendChild(el("circle", { cx: x, cy: y, r: 14, fill: "#ea580c", stroke: "#9a3412", "stroke-width": "2" }));
+        var ux = (cx - x) / (R || 1), uy = (cy - y) / (R || 1);
+        svg.appendChild(el("line", { x1: x, y1: y, x2: x + ux * 50, y2: y + uy * 50, stroke: "#dc2626", "stroke-width": "3" }));
+        var tx = -uy, ty = ux;
+        svg.appendChild(el("line", { x1: x, y1: y, x2: x + tx * 46, y2: y + ty * 46, stroke: "#2563eb", "stroke-width": "3" }));
+        svg.appendChild(el("text", { x: 70, y: 40, fill: "#dc2626", "font-size": "12" }, "红：向心力"));
+        svg.appendChild(el("text", { x: 70, y: 58, fill: "#2563eb", "font-size": "12" }, "蓝：速度"));
+        setMeters([
+          { k: "向心力", v: fmt(Fc, 1) + " N" },
+          { k: "向心加速度", v: fmt(v * v / r, 1) + " m/s²" },
+          { k: "周期", v: fmt(T, 2) + " s" }
+        ]);
+      }
+    };
+  }
+
+  function inclineSim() {
+    S.s = 40; S.vs = 0;
+    return {
+      reset: function () { S.s = 40; S.vs = 0; },
+      onChange: function () { S.s = 40; S.vs = 0; },
+      step: function (dt) {
+        var th = (ctrl("th") || 30) * Math.PI / 180, mu = ctrl("mu") || 0, g = 10;
+        var down = g * Math.sin(th), f = mu * g * Math.cos(th);
+        var a = down - f;
+        if (a < 0 && S.vs <= 0.02) { S.vs = 0; a = 0; }
+        S.vs += a * dt * 0.02;
+        S.s += S.vs * dt * 0.02;
+        if (S.s < 20) { S.s = 20; S.vs = 0; }
+        if (S.s > 340) { S.s = 340; S.vs = 0; }
+        this._a = a;
+      },
+      draw: function () {
+        var th = (ctrl("th") || 30) * Math.PI / 180, mu = ctrl("mu") || 0;
+        var L = 380, x0 = 80, y0 = 430;
+        var x1 = x0 + L * Math.cos(th), y1 = y0 - L * Math.sin(th);
+        var s = S.s, bx = x0 + s * Math.cos(th), by = y0 - s * Math.sin(th);
+        clear(svg);
+        svg.appendChild(el("polygon", { points: x0 + "," + y0 + " " + x1 + "," + y1 + " " + x1 + "," + y0, fill: "#e2e8f0", stroke: "#64748b", "stroke-width": "3" }));
+        svg.appendChild(el("rect", { x: bx - 22, y: by - 36, width: 44, height: 28, rx: 4, fill: "#fdba74", stroke: "#c2410c", "stroke-width": "2", transform: "rotate(" + (-ctrl("th")) + " " + bx + " " + by + ")" }));
+        var sliding = (this._a || 0) > 0.05;
+        setMeters([
+          { k: "下滑分力", v: fmt(10 * Math.sin(th), 2) + " N/kg" },
+          { k: "最大摩擦/kg", v: fmt(mu * 10 * Math.cos(th), 2) + " N/kg" },
+          { k: "状态", v: sliding ? "加速下滑" : "静止（自锁）" }
+        ]);
+      }
+    };
+  }
+
+  function refractSim() {
+    S.i = 35;
+    return {
+      reset: function () { S.i = ctrl("i") || 35; },
+      onChange: function () { S.i = ctrl("i") || 35; },
+      hit: function (p) { return (p.y < 260 && p.x < 500) ? "ray" : null; },
+      drag: function (id, x, y) {
+        if (id !== "ray") return;
+        S.i = clamp(Math.abs(Math.atan2(x - 450, 250 - y) * 180 / Math.PI), 0, 85);
+        setCtrl("i", S.i);
+      },
+      draw: function () {
+        var i = (ctrl("i") || S.i) * Math.PI / 180;
+        var fromW = tog("fromWater");
+        var n1 = fromW ? (ctrl("n2") || 1.33) : 1, n2 = fromW ? 1 : (ctrl("n2") || 1.33);
+        var s = n1 * Math.sin(i) / n2, tir = Math.abs(s) >= 1;
+        var r = tir ? 0 : Math.asin(clamp(s, -1, 1));
+        var crit = n1 > n2 ? Math.asin(n2 / n1) * 180 / Math.PI : 0;
+        clear(svg);
+        svg.appendChild(el("rect", { x: 40, y: 250, width: 820, height: 250, fill: fromW ? "#e0f2fe" : "#dbeafe" }));
+        svg.appendChild(el("rect", { x: 40, y: 40, width: 820, height: 210, fill: fromW ? "#dbeafe" : "#f8fafc" }));
+        svg.appendChild(el("line", { x1: 40, y1: 250, x2: 860, y2: 250, stroke: "#0369a1", "stroke-width": "3" }));
+        svg.appendChild(el("line", { x1: 450, y1: 50, x2: 450, y2: 470, stroke: "#94a3b8", "stroke-dasharray": "5 5" }));
+        var ix = 450 - 180 * Math.sin(i), iy = 250 - 180 * Math.cos(i);
+        svg.appendChild(el("line", { x1: ix, y1: iy, x2: 450, y2: 250, stroke: "#ea580c", "stroke-width": "3" }));
+        svg.appendChild(el("line", { x1: 450, y1: 250, x2: 450 + 140 * Math.sin(i), y2: 250 - 140 * Math.cos(i), stroke: "#fb923c", "stroke-width": "2", "stroke-dasharray": "6 4" }));
+        if (!tir) {
+          svg.appendChild(el("line", { x1: 450, y1: 250, x2: 450 + 200 * Math.sin(r), y2: 250 + 200 * Math.cos(r), stroke: "#1d4ed8", "stroke-width": "3" }));
+        }
+        svg.appendChild(el("text", { x: 70, y: fromW ? 430 : 80, "font-size": "13" }, fromW ? "水 n=" + fmt(n1, 2) : "空气 n=1.00"));
+        svg.appendChild(el("text", { x: 70, y: fromW ? 80 : 430, "font-size": "13" }, fromW ? "空气 n=1.00" : "水/玻璃 n=" + fmt(n2, 2)));
+        setMeters([
+          { k: "入射角 i", v: fmt(ctrl("i") || 0, 0) + "°" },
+          { k: "折射角 r", v: tir ? "全反射" : fmt(r * 180 / Math.PI, 1) + "°" },
+          { k: "临界角", v: crit ? fmt(crit, 1) + "°" : "—" }
+        ]);
+      }
+    };
+  }
+
+  function coulombSim() {
+    S.x2 = 620; S.y2 = 260;
+    return {
+      reset: function () { S.x2 = 620; S.y2 = 260; },
+      hit: function (p) { return Math.hypot(p.x - S.x2, p.y - S.y2) < 40 ? "q2" : null; },
+      drag: function (id, x, y) {
+        if (id === "q2") { S.x2 = clamp(x, 120, 820); S.y2 = clamp(y, 80, 480); }
+      },
+      draw: function () {
+        var q1 = ctrl("q1") || 2, q2 = ctrl("q2") || -2;
+        var x1 = 280, y1 = 260;
+        var dx = S.x2 - x1, dy = S.y2 - y1, rpx = Math.hypot(dx, dy) || 1;
+        var rm = rpx * 0.008;
+        var F = 9e9 * Math.abs(q1 * 1e-6 * q2 * 1e-6) / (rm * rm);
+        var attract = q1 * q2 < 0;
+        clear(svg);
+        function ball(x, y, q, label) {
+          svg.appendChild(el("circle", { cx: x, cy: y, r: 26, fill: q >= 0 ? "#ef4444" : "#2563eb", stroke: "#0f172a", "stroke-width": "2" }));
+          svg.appendChild(el("text", { x: x, y: y + 5, "text-anchor": "middle", fill: "#fff", "font-weight": "800" }, (q >= 0 ? "+" : "") + fmt(q, 1)));
+          svg.appendChild(el("text", { x: x, y: y + 44, "text-anchor": "middle", "font-size": "12" }, label));
+        }
+        ball(x1, y1, q1, "q₁（固定）");
+        ball(S.x2, S.y2, q2, "q₂（可拖）");
+        var ux = dx / rpx, uy = dy / rpx, len = 24 + Math.min(80, F * 8);
+        var s1 = attract ? 1 : -1;
+        svg.appendChild(el("line", { x1: x1 + ux * 30, y1: y1 + uy * 30, x2: x1 + ux * s1 * len, y2: y1 + uy * s1 * len, stroke: "#111", "stroke-width": "3" }));
+        setMeters([
+          { k: "距离 r", v: fmt(rm, 2) + " m" },
+          { k: "库仑力", v: fmt(F, 3) + " N" },
+          { k: "方向", v: attract ? "相互吸引" : "相互排斥" }
+        ]);
+      }
+    };
+  }
+
+  function leverSim() {
+    S.xf = 450;
+    return {
+      reset: function () { S.xf = 450; },
+      hit: function (p) { return Math.abs(p.y - 300) < 40 && Math.abs(p.x - S.xf) < 40 ? "ful" : null; },
+      drag: function (id, x) {
+        if (id === "ful") S.xf = clamp(x, 200, 700);
+      },
+      draw: function () {
+        var m1 = ctrl("m1") || 3, m2 = ctrl("m2") || 3, g = 10;
+        var x1 = 180, x2 = 720, xf = S.xf;
+        var L1 = Math.abs(x1 - xf) / 80, L2 = Math.abs(x2 - xf) / 80;
+        var t1 = m1 * g * L1, t2 = m2 * g * L2;
+        var tilt = clamp((t2 - t1) * 0.4, -12, 12);
+        clear(svg);
+        svg.appendChild(el("polygon", { points: (xf - 18) + ",340 " + (xf + 18) + ",340 " + xf + ",300", fill: "#334155" }));
+        svg.appendChild(el("line", { x1: 80, y1: 300 + tilt, x2: 820, y2: 300 - tilt, stroke: "#78716c", "stroke-width": "10", "stroke-linecap": "round" }));
+        svg.appendChild(el("rect", { x: x1 - 28, y: 232, width: 56, height: 40, rx: 4, fill: "#fdba74", stroke: "#c2410c" }));
+        svg.appendChild(el("rect", { x: x2 - 28, y: 232, width: 56, height: 40, rx: 4, fill: "#93c5fd", stroke: "#1d4ed8" }));
+        svg.appendChild(el("text", { x: x1, y: 258, "text-anchor": "middle", "font-size": "12" }, fmt(m1, 1) + "kg"));
+        svg.appendChild(el("text", { x: x2, y: 258, "text-anchor": "middle", "font-size": "12" }, fmt(m2, 1) + "kg"));
+        var ok = Math.abs(t1 - t2) < 2;
+        setMeters([
+          { k: "左力矩", v: fmt(t1, 1) + " N·m" },
+          { k: "右力矩", v: fmt(t2, 1) + " N·m" },
+          { k: "状态", v: ok ? "平衡" : (t1 > t2 ? "左沉" : "右沉") }
+        ]);
+      }
+    };
+  }
+
+  function pressureSim() {
+    return {
+      draw: function () {
+        var liquid = tog("liquid");
+        clear(svg);
+        if (!liquid) {
+          var F = ctrl("F") || 50, A = Math.max(ctrl("A") || 50, 1);
+          var p = F / (A * 1e-4);
+          var w = 40 + A * 1.2;
+          svg.appendChild(el("rect", { x: 450 - w / 2, y: 300, width: w, height: 16, fill: "#64748b" }));
+          svg.appendChild(el("rect", { x: 450 - w / 2 + 8, y: 160, width: w - 16, height: 140, fill: "#fdba74", stroke: "#c2410c", "stroke-width": "3" }));
+          svg.appendChild(el("text", { x: 450, y: 230, "text-anchor": "middle", "font-size": "14" }, fmt(F, 0) + " N"));
+          setMeters([
+            { k: "压强 p", v: fmt(p, 0) + " Pa" },
+            { k: "面积 S", v: fmt(A, 0) + " cm²" },
+            { k: "压力 F", v: fmt(F, 0) + " N" }
+          ]);
+        } else {
+          var h = ctrl("h") || 0.8, rho = 1e3, g = 10, p = rho * g * h;
+          var hy = 120 + (2 - h) * 80;
+          svg.appendChild(el("rect", { x: 280, y: 80, width: 340, height: 340, fill: "#e0f2fe", stroke: "#0369a1", "stroke-width": "4" }));
+          svg.appendChild(el("rect", { x: 284, y: hy, width: 332, height: 416 - hy, fill: "#38bdf8", opacity: "0.55" }));
+          svg.appendChild(el("line", { x1: 280, y1: 416, x2: 260, y2: 416, stroke: "#dc2626", "stroke-width": "2" }));
+          svg.appendChild(el("text", { x: 250, y: 412, "text-anchor": "end", fill: "#dc2626", "font-size": "12" }, "底部"));
+          setMeters([
+            { k: "深度 h", v: fmt(h, 1) + " m" },
+            { k: "底部压强", v: fmt(p, 0) + " Pa" },
+            { k: "公式", v: "ρgh（与容器粗细无关）" }
+          ]);
+        }
+      }
+    };
+  }
+
+  function energySim() {
+    S.s = 0; S.done = false;
+    return {
+      reset: function () { S.s = 0; S.done = false; },
+      onChange: function () { S.s = 0; S.done = false; },
+      step: function (dt) {
+        if (S.done) return;
+        S.s += dt * 0.00055;
+        if (S.s >= 1) { S.s = 1; S.done = true; }
+      },
+      draw: function () {
+        var m = ctrl("m") || 2, H = ctrl("H") || 5, g = 10;
+        var loss = tog("friction") ? 0.22 : 0;
+        var h = H * (1 - S.s);
+        var v2 = Math.max(0, 2 * g * (H - h) * (1 - loss));
+        var v = Math.sqrt(v2);
+        var Ep = m * g * h, Ek = 0.5 * m * v * v, E = Ep + Ek;
+        var x0 = 80, y0 = 80, x1 = 780, y1 = 400;
+        var bx = x0 + (x1 - x0) * S.s, by = y0 + (y1 - y0) * S.s;
+        clear(svg);
+        svg.appendChild(el("line", { x1: x0, y1: y0, x2: x1, y2: y1, stroke: "#64748b", "stroke-width": "8" }));
+        svg.appendChild(el("line", { x1: x1, y1: y1, x2: 860, y2: y1, stroke: "#64748b", "stroke-width": "8" }));
+        svg.appendChild(el("circle", { cx: bx, cy: by - 16, r: 16, fill: "#ea580c", stroke: "#9a3412", "stroke-width": "2" }));
+        var tot = m * g * H || 1;
+        svg.appendChild(el("rect", { x: 40, y: 460, width: 360 * (Ep / tot), height: 18, fill: "#2563eb" }));
+        svg.appendChild(el("rect", { x: 40 + 360 * (Ep / tot), y: 460, width: 360 * (Ek / tot), height: 18, fill: "#ea580c" }));
+        svg.appendChild(el("text", { x: 40, y: 450, "font-size": "12" }, "蓝势能  橙动能"));
+        setMeters([
+          { k: "重力势能", v: fmt(Ep, 1) + " J" },
+          { k: "动能", v: fmt(Ek, 1) + " J" },
+          { k: "机械能", v: fmt(E, 1) + " J" }
+        ]);
+      }
+    };
+  }
+
+  function springSim() {
+    S.t0 = 0;
+    return {
+      reset: function () { S.t0 = simT; },
+      step: function () {},
+      draw: function () {
+        var k = ctrl("k") || 16, m = Math.max(ctrl("m") || 1, 0.15), A = ctrl("A") || 0.8;
+        var w = Math.sqrt(k / m), T = 2 * Math.PI / w;
+        var t = (simT - (S.t0 || 0)) * 0.001;
+        var x = A * Math.cos(w * t);
+        var v = -A * w * Math.sin(w * t);
+        var Ep = 0.5 * k * x * x, Ek = 0.5 * m * v * v;
+        var x0 = 80, sc = 180, bx = x0 + 220 + x * sc, by = 230;
+        clear(svg);
+        svg.appendChild(el("line", { x1: 40, y1: 280, x2: 860, y2: 280, stroke: "#94a3b8", "stroke-width": "4" }));
+        svg.appendChild(el("rect", { x: 40, y: 160, width: 28, height: 140, fill: "#334155" }));
+        var coils = 10, xL = 68, xR = bx - 28, cy = by;
+        var d = "M" + xL + "," + cy;
+        for (var i = 0; i <= coils; i++) {
+          var xx = xL + (xR - xL) * i / coils;
+          d += " L" + xx + "," + (cy + ((i % 2) ? 22 : -22));
+        }
+        d += " L" + xR + "," + cy;
+        svg.appendChild(el("path", { d: d, fill: "none", stroke: "#64748b", "stroke-width": "3" }));
+        svg.appendChild(el("rect", { x: bx - 28, y: by - 28, width: 56, height: 56, rx: 8, fill: "#ea580c", stroke: "#9a3412", "stroke-width": "2" }));
+        svg.appendChild(el("line", { x1: x0 + 220, y1: 300, x2: x0 + 220, y2: 330, stroke: "#0369a1", "stroke-dasharray": "4 4" }));
+        svg.appendChild(el("text", { x: x0 + 220, y: 348, "text-anchor": "middle", "font-size": "12", fill: "#0369a1" }, "平衡位置"));
+        setMeters([
+          { k: "位移 x", v: fmt(x, 2) + " m" },
+          { k: "周期 T", v: fmt(T, 2) + " s" },
+          { k: "Ek / Ep", v: fmt(Ek, 2) + " / " + fmt(Ep, 2) + " J" }
+        ]);
+      }
+    };
+  }
+
+  function pulleySim() {
+    return {
+      draw: function () {
+        var n = Math.round(ctrl("n") || 2), G = ctrl("G") || 40, Gp = ctrl("Gp") || 4;
+        var F = (G + Gp) / n, eta = G / (F * n) * 100;
+        var cx = 450, top = 90;
+        clear(svg);
+        svg.appendChild(el("line", { x1: 200, y1: 50, x2: 700, y2: 50, stroke: "#334155", "stroke-width": "10" }));
+        svg.appendChild(el("circle", { cx: cx, cy: top + 24, r: 28, fill: "#cbd5e1", stroke: "#334155", "stroke-width": "4" }));
+        var moveY = 220;
+        svg.appendChild(el("circle", { cx: cx, cy: moveY, r: 24, fill: "#94a3b8", stroke: "#1e293b", "stroke-width": "4" }));
+        for (var i = 0; i < n; i++) {
+          var ox = -18 + i * 12;
+          svg.appendChild(el("line", { x1: cx + ox, y1: top + 24, x2: cx + ox, y2: moveY, stroke: "#78716c", "stroke-width": "3" }));
+        }
+        svg.appendChild(el("line", { x1: cx + 28, y1: top + 24, x2: 620, y2: top + 24, stroke: "#78716c", "stroke-width": "3" }));
+        svg.appendChild(el("line", { x1: 620, y1: top + 24, x2: 620, y2: 280, stroke: "#78716c", "stroke-width": "3" }));
+        svg.appendChild(el("circle", { cx: 620, cy: 300, r: 16, fill: "#0369a1" }));
+        svg.appendChild(el("text", { x: 620, y: 338, "text-anchor": "middle", "font-size": "12" }, "F=" + fmt(F, 1) + "N"));
+        svg.appendChild(el("rect", { x: cx - 36, y: moveY + 28, width: 72, height: 50, rx: 6, fill: "#fdba74", stroke: "#c2410c" }));
+        svg.appendChild(el("text", { x: cx, y: moveY + 58, "text-anchor": "middle", "font-size": "13" }, "G=" + fmt(G, 0)));
+        setMeters([
+          { k: "实际拉力 F", v: fmt(F, 2) + " N" },
+          { k: "理想 F=G/n", v: fmt(G / n, 2) + " N" },
+          { k: "机械效率", v: fmt(eta, 0) + " %" }
+        ]);
+      }
+    };
+  }
+
+  function ampereSim() {
+    S.x = 360;
+    return {
+      reset: function () { S.x = 360; },
+      onChange: function () { S.x = 360; },
+      step: function (dt) {
+        var B = ctrl("B") || 0.8, I = ctrl("I") || 3, L = ctrl("L") || 0.5;
+        var F = B * I * L, dir = tog("flipB") ? 1 : -1;
+        S.x += dir * F * dt * 0.025;
+        S.x = clamp(S.x, 160, 720);
+      },
+      draw: function () {
+        var B = ctrl("B") || 0.8, I = ctrl("I") || 3, L = ctrl("L") || 0.5;
+        var F = B * I * L, out = tog("flipB");
+        clear(svg);
+        for (var y = 80; y < 420; y += 28) {
+          for (var x = 140; x < 760; x += 36) {
+            if (out) {
+              svg.appendChild(el("circle", { cx: x, cy: y, r: 4, fill: "none", stroke: "#334155" }));
+              svg.appendChild(el("circle", { cx: x, cy: y, r: 1.6, fill: "#334155" }));
+            } else {
+              svg.appendChild(el("line", { x1: x - 5, y1: y - 5, x2: x + 5, y2: y + 5, stroke: "#334155" }));
+              svg.appendChild(el("line", { x1: x - 5, y1: y + 5, x2: x + 5, y2: y - 5, stroke: "#334155" }));
+            }
+          }
+        }
+        svg.appendChild(el("line", { x1: S.x, y1: 140, x2: S.x, y2: 360, stroke: "#ea580c", "stroke-width": "8", "stroke-linecap": "round" }));
+        svg.appendChild(el("polygon", { points: S.x + ",128 " + (S.x - 8) + ",148 " + (S.x + 8) + ",148", fill: "#ea580c" }));
+        svg.appendChild(el("text", { x: S.x + 18, y: 150, fill: "#9a3412", "font-size": "12" }, "I"));
+        var arr = out ? 70 : -70;
+        svg.appendChild(el("line", { x1: S.x, y1: 250, x2: S.x + arr, y2: 250, stroke: "#16a34a", "stroke-width": "4" }));
+        svg.appendChild(el("text", { x: 80, y: 40, "font-size": "12" }, out ? "× 磁场向外（·）  绿箭头：安培力" : "× 磁场向里  绿箭头：安培力"));
+        setMeters([
+          { k: "安培力 F", v: fmt(F, 2) + " N" },
+          { k: "方向", v: out ? "向右（左手定则）" : "向左" },
+          { k: "BIL", v: fmt(B, 1) + "×" + fmt(I, 1) + "×" + fmt(L, 1) }
+        ]);
+      }
+    };
+  }
+
+  function capacitorSim() {
+    return {
+      draw: function () {
+        var Sarea = ctrl("area") || 100, dmm = ctrl("d") || 5, U = ctrl("U") || 12;
+        var d = dmm * 1e-3, A = Sarea * 1e-4, eps = 8.85e-12;
+        var C = eps * A / d, Q = C * U, E = U / d;
+        var gap = 20 + dmm * 6, w = 80 + Sarea * 0.7;
+        var cx = 450, y1 = 220 - gap / 2, y2 = 220 + gap / 2;
+        clear(svg);
+        svg.appendChild(el("rect", { x: cx - w / 2, y: y1 - 8, width: w, height: 10, fill: "#64748b" }));
+        svg.appendChild(el("rect", { x: cx - w / 2, y: y2, width: w, height: 10, fill: "#64748b" }));
+        svg.appendChild(el("text", { x: cx - w / 2 - 8, y: y1, "text-anchor": "end", fill: "#dc2626", "font-size": "16" }, "+"));
+        svg.appendChild(el("text", { x: cx - w / 2 - 8, y: y2 + 12, "text-anchor": "end", fill: "#2563eb", "font-size": "18" }, "−"));
+        for (var i = 0; i < 5; i++) {
+          var xx = cx - w / 3 + i * w / 6;
+          svg.appendChild(el("line", { x1: xx, y1: y1 + 12, x2: xx, y2: y2 - 4, stroke: "#f59e0b", "stroke-width": "2" }));
+        }
+        if (tog("onBatt")) {
+          svg.appendChild(el("rect", { x: 80, y: 200, width: 36, height: 56, rx: 4, fill: "#fef3c7", stroke: "#b45309" }));
+          svg.appendChild(el("text", { x: 98, y: 232, "text-anchor": "middle", "font-size": "11" }, "电源"));
+        }
+        setMeters([
+          { k: "电容 C", v: fmt(C * 1e12, 1) + " pF" },
+          { k: "电荷量 Q", v: fmt(Q * 1e9, 2) + " nC" },
+          { k: "电场 E", v: fmt(E, 0) + " V/m" }
+        ]);
+      }
+    };
+  }
+
+  function transformerSim() {
+    return {
+      draw: function () {
+        var n1 = ctrl("n1") || 400, n2 = ctrl("n2") || 200, U1 = ctrl("U1") || 220;
+        var k = n2 / n1, U2 = U1 * k;
+        var I2 = 2, I1 = I2 * k;
+        clear(svg);
+        svg.appendChild(el("rect", { x: 340, y: 90, width: 80, height: 280, rx: 8, fill: "#57534e" }));
+        function coil(x, turns, col) {
+          for (var i = 0; i < Math.min(12, Math.round(turns / 50)); i++) {
+            svg.appendChild(el("ellipse", { cx: x, cy: 130 + i * 18, rx: 36, ry: 10, fill: "none", stroke: col, "stroke-width": "3" }));
+          }
+        }
+        coil(300, n1, "#ea580c");
+        coil(460, n2, "#2563eb");
+        svg.appendChild(el("text", { x: 300, y: 80, "text-anchor": "middle", fill: "#c2410c", "font-size": "13" }, "原 n₁=" + Math.round(n1)));
+        svg.appendChild(el("text", { x: 460, y: 80, "text-anchor": "middle", fill: "#1d4ed8", "font-size": "13" }, "副 n₂=" + Math.round(n2)));
+        var glow = clamp(U2 / 220, 0.15, 1);
+        svg.appendChild(el("circle", { cx: 640, cy: 220, r: 28, fill: "rgba(250,204,21," + glow + ")", stroke: "#b45309", "stroke-width": "3" }));
+        svg.appendChild(el("text", { x: 640, y: 268, "text-anchor": "middle", "font-size": "12" }, "副边负载"));
+        var kind = n2 > n1 ? "升压变压器" : n2 < n1 ? "降压变压器" : "1:1";
+        setMeters([
+          { k: "U₁ → U₂", v: fmt(U1, 0) + " → " + fmt(U2, 1) + " V" },
+          { k: "匝数比", v: "1 : " + fmt(k, 2) },
+          { k: "类型", v: kind }
+        ]);
+      }
+    };
+  }
+
+  function gasSim() {
+    if (!S.mols) {
+      S.mols = [];
+      for (var i = 0; i < 18; i++) S.mols.push({ x: 200 + Math.random() * 300, y: 120 + Math.random() * 200, vx: 0, vy: 0 });
+    }
+    return {
+      reset: function () {
+        S.mols.forEach(function (m, i) { m.x = 220 + (i % 6) * 50; m.y = 140 + Math.floor(i / 6) * 60; });
+      },
+      step: function (dt) {
+        var T = ctrl("T") || 300, V = ctrl("V") || 1;
+        var sp = 0.04 * Math.sqrt(T / 300);
+        var x0 = 180, x1 = 180 + 420 * Math.min(V, 2) / 2, y0 = 80, y1 = 420;
+        S.mols.forEach(function (m) {
+          if (!m.vx) { m.vx = (Math.random() - 0.5) * 8; m.vy = (Math.random() - 0.5) * 8; }
+          m.x += m.vx * sp * dt; m.y += m.vy * sp * dt;
+          if (m.x < x0 + 8 || m.x > x1 - 8) m.vx *= -1;
+          if (m.y < y0 + 8 || m.y > y1 - 8) m.vy *= -1;
+          m.x = clamp(m.x, x0 + 8, x1 - 8);
+          m.y = clamp(m.y, y0 + 8, y1 - 8);
+        });
+      },
+      draw: function () {
+        var T = ctrl("T") || 300, V = ctrl("V") || 1, n = 1, R = 8.31;
+        var p = n * R * T / (V * 1e-3) / 1e3;
+        var x0 = 180, w = 420 * Math.min(V, 2) / 2;
+        clear(svg);
+        svg.appendChild(el("rect", { x: x0, y: 80, width: w, height: 340, fill: "#e0f2fe", stroke: "#0369a1", "stroke-width": "5" }));
+        svg.appendChild(el("rect", { x: x0 + w, y: 80, width: 18, height: 340, fill: "#64748b" }));
+        (S.mols || []).forEach(function (m) {
+          svg.appendChild(el("circle", { cx: m.x, cy: m.y, r: 6, fill: T > 360 ? "#ea580c" : "#0284c7" }));
+        });
+        setMeters([
+          { k: "压强 p", v: fmt(p, 0) + " kPa" },
+          { k: "温度 T", v: fmt(T, 0) + " K" },
+          { k: "体积 V", v: fmt(V, 1) + " L" }
+        ]);
+      }
+    };
+  }
+
+  function waveSim() {
+    S.wt = 0;
+    return {
+      reset: function () { S.wt = 0; },
+      step: function (dt) { S.wt += dt * 0.001; },
+      draw: function () {
+        var lam = ctrl("lam") || 80, f = ctrl("f") || 0.8, longi = tog("longi");
+        var k = 2 * Math.PI / lam, w = 2 * Math.PI * f, v = lam * f;
+        clear(svg);
+        svg.appendChild(el("line", { x1: 40, y1: 260, x2: 860, y2: 260, stroke: "#cbd5e1", "stroke-dasharray": "6 4" }));
+        for (var i = 0; i < 28; i++) {
+          var x = 50 + i * 28;
+          var phase = k * x - w * S.wt;
+          if (longi) {
+            var dx = 16 * Math.sin(phase);
+            svg.appendChild(el("circle", { cx: x + dx, cy: 260, r: 8, fill: "#0369a1" }));
+          } else {
+            var y = 260 - 70 * Math.sin(phase);
+            svg.appendChild(el("circle", { cx: x, cy: y, r: 8, fill: "#ea580c" }));
+            if (i === 8) svg.appendChild(el("line", { x1: x, y1: 260, x2: x, y2: y, stroke: "#9a3412", "stroke-width": "2" }));
+          }
+        }
+        svg.appendChild(el("text", { x: 450, y: 40, "text-anchor": "middle", "font-size": "13" }, longi ? "纵波：质点沿传播方向振动（疏密）" : "横波：质点垂直于传播方向振动"));
+        setMeters([
+          { k: "波长 λ", v: fmt(lam, 0) + " px" },
+          { k: "频率 f", v: fmt(f, 1) + " Hz" },
+          { k: "波速 v=λf", v: fmt(v, 0) + " px/s" }
+        ]);
+      }
+    };
+  }
+
+  function dopplerSim() {
+    S.rings = []; S.sx = 200; S.acc = 0;
+    return {
+      reset: function () { S.rings = []; S.sx = 200; S.acc = 0; },
+      step: function (dt) {
+        var vs = ctrl("vs") || 3, f0 = ctrl("f0") || 3;
+        S.sx += vs * dt * 0.04;
+        if (S.sx > 780) S.sx = 120;
+        S.acc += dt * 0.001 * f0;
+        if (S.acc >= 1) {
+          S.acc = 0;
+          S.rings.push({ x: S.sx, y: 260, r: 6 });
+        }
+        S.rings.forEach(function (rg) { rg.r += dt * 0.12; });
+        S.rings = S.rings.filter(function (rg) { return rg.r < 420; });
+      },
+      draw: function () {
+        var vs = ctrl("vs") || 3, f0 = ctrl("f0") || 3, v = 12;
+        var fp = f0 * v / Math.max(0.4, v - vs), fm = f0 * v / (v + vs);
+        clear(svg);
+        (S.rings || []).forEach(function (rg) {
+          svg.appendChild(el("circle", { cx: rg.x, cy: rg.y, r: rg.r, fill: "none", stroke: "#0369a1", opacity: "0.55" }));
+        });
+        svg.appendChild(el("circle", { cx: S.sx, cy: 260, r: 16, fill: "#ea580c" }));
+        svg.appendChild(el("polygon", { points: "760,240 800,260 760,280", fill: "#1d4ed8" }));
+        svg.appendChild(el("text", { x: 780, y: 310, "text-anchor": "middle", "font-size": "12" }, "观察者"));
+        svg.appendChild(el("text", { x: S.sx, y: 230, "text-anchor": "middle", "font-size": "12" }, "波源 →"));
+        setMeters([
+          { k: "迎面频率", v: fmt(fp, 2) + " Hz" },
+          { k: "远离频率", v: fmt(fm, 2) + " Hz" },
+          { k: "固有 f", v: fmt(f0, 1) + " Hz" }
+        ]);
+      }
+    };
+  }
+
+  function gravitySim() {
+    S.ang = 0;
+    return {
+      reset: function () { S.ang = 0; },
+      step: function (dt) {
+        var rr = Math.max(ctrl("r") || 2, 1.05);
+        var w = 0.9 / Math.pow(rr, 1.5);
+        S.ang += w * dt * 0.02;
+      },
+      draw: function () {
+        var rr = ctrl("r") || 2;
+        var GM = 3.986e14, R = 6.37e6, r = rr * R;
+        var v = Math.sqrt(GM / r) / 1000, T = 2 * Math.PI * Math.sqrt(r * r * r / GM) / 3600;
+        var cx = 450, cy = 260, Re = 54, Rs = Re * Math.min(rr, 4.2);
+        var sx = cx + Rs * Math.cos(S.ang), sy = cy + Rs * Math.sin(S.ang);
+        clear(svg);
+        svg.appendChild(el("circle", { cx: cx, cy: cy, r: Rs, fill: "none", stroke: "#94a3b8", "stroke-dasharray": "5 5" }));
+        svg.appendChild(el("circle", { cx: cx, cy: cy, r: Re, fill: "#1d4ed8" }));
+        svg.appendChild(el("text", { x: cx, y: cy + 5, "text-anchor": "middle", fill: "#fff", "font-size": "12" }, "地球"));
+        svg.appendChild(el("circle", { cx: sx, cy: sy, r: 9, fill: "#f8fafc", stroke: "#ea580c", "stroke-width": "2" }));
+        setMeters([
+          { k: "线速度", v: fmt(v, 2) + " km/s" },
+          { k: "周期", v: fmt(T, 2) + " h" },
+          { k: "轨道半径", v: fmt(rr, 2) + " R地" }
+        ]);
+      }
+    };
+  }
+
+  function photoSim() {
+    S.ph = []; S.el = []; S.acc = 0;
+    return {
+      reset: function () { S.ph = []; S.el = []; S.acc = 0; },
+      step: function (dt) {
+        var nu = ctrl("nu") || 8, I = ctrl("I") || 3, W = ctrl("W") || 2.3;
+        var E = 0.414 * nu, ok = E > W;
+        S.acc += dt * 0.004 * I;
+        while (S.acc >= 1) {
+          S.acc -= 1;
+          S.ph.push({ x: 40, y: 120 + Math.random() * 220 });
+        }
+        S.ph.forEach(function (p) { p.x += dt * 0.22; });
+        var left = [];
+        S.ph.forEach(function (p) {
+          if (p.x >= 520) {
+            if (ok) S.el.push({ x: 520, y: p.y, vx: -0.18 - (E - W) * 0.04 });
+          } else left.push(p);
+        });
+        S.ph = left;
+        S.el.forEach(function (e) { e.x += e.vx * dt; });
+        S.el = S.el.filter(function (e) { return e.x > 80; });
+      },
+      draw: function () {
+        var nu = ctrl("nu") || 8, W = ctrl("W") || 2.3, I = ctrl("I") || 3;
+        var E = 0.414 * nu, KE = Math.max(0, E - W), nu0 = W / 0.414;
+        var hue = clamp(280 - nu * 12, 0, 260);
+        clear(svg);
+        svg.appendChild(el("rect", { x: 520, y: 90, width: 28, height: 300, fill: "#a8a29e" }));
+        svg.appendChild(el("text", { x: 534, y: 80, "text-anchor": "middle", "font-size": "12" }, "金属"));
+        (S.ph || []).forEach(function (p) {
+          svg.appendChild(el("circle", { cx: p.x, cy: p.y, r: 5, fill: "hsl(" + hue + ",80%,55%)" }));
+        });
+        (S.el || []).forEach(function (e) {
+          svg.appendChild(el("circle", { cx: e.x, cy: e.y, r: 4, fill: "#22c55e" }));
+        });
+        svg.appendChild(el("text", { x: 70, y: 40, "font-size": "13" }, E > W ? "光子打出电子（绿）" : "频率不足，电子打不出来"));
+        setMeters([
+          { k: "光子能量", v: fmt(E, 2) + " eV" },
+          { k: "最大动能", v: E > W ? fmt(KE, 2) + " eV" : "0（未逸出）" },
+          { k: "截止频率", v: fmt(nu0, 2) + "×10¹⁴ Hz  · 光强=" + fmt(I, 0) }
+        ]);
+      }
+    };
+  }
+
+  var ENGINES = {
+    magnet: magnetSim, faraday: faradaySim, ohm: ohmSim, circuit: circuitSim,
+    forces: forceSim, newton: newtonSim, states: statesSim, reflect: reflectSim,
+    lens: lensSim, buoyancy: buoyancySim,
+    projectile: projectileSim, pendulum: pendulumSim, collision: collisionSim,
+    circular: circularSim, incline: inclineSim, refract: refractSim,
+    coulomb: coulombSim, lever: leverSim, pressure: pressureSim, energy: energySim,
+    spring: springSim, pulley: pulleySim, ampere: ampereSim, capacitor: capacitorSim,
+    transformer: transformerSim, gas: gasSim, wave: waveSim, doppler: dopplerSim,
+    gravity: gravitySim, photo: photoSim
+  };
+
+  function tick(ts) {
+    if (!lastTs) lastTs = ts;
+    var dt = Math.min(32, ts - lastTs);
+    lastTs = ts;
+    if (playing) {
+      simT += dt;
+      S.t = simT;
+      if (engine.step) engine.step(dt);
+    }
+    engine.draw();
+    requestAnimationFrame(tick);
+  }
+
+  function init() {
+    $("badge").textContent = DATA.badge || "物理探究";
+    $("title").textContent = DATA.title || "物理探究";
+    $("subtitle").textContent = DATA.subtitle || "";
+    $("equation").textContent = DATA.equation || "";
+    $("equation").style.display = DATA.equation ? "" : "none";
+    svg = el("svg", { viewBox: "0 0 900 560", xmlns: NS });
+    $("view").innerHTML = "";
+    $("view").appendChild(svg);
+    var make = ENGINES[DATA.sim] || magnetSim;
+    engine = make();
+    renderDock();
+    if (engine.reset) engine.reset();
+    showIntro();
+    svg.style.touchAction = "none";
+    svg.addEventListener("pointerdown", function (ev) {
+      var p = pt(ev);
+      if (engine.click && engine.click(p)) { engine.draw(); return; }
+      var hit = engine.hit && engine.hit(p);
+      if (hit) startDrag(hit, ev);
+    });
+    engine.draw();
+    requestAnimationFrame(tick);
+  }
+
+  init();
+})();
+</script>
+  <!-- edu-sim:3 -->
+</body>
+</html>

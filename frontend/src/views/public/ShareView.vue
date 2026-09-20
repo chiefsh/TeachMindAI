@@ -5,6 +5,12 @@
         <p class="font-bold text-slate-800 truncate">{{ title || '分享内容' }}</p>
         <p v-if="expiresAt" class="text-xs text-slate-400">有效期至 {{ expiresAt }}</p>
       </div>
+      <el-button
+        v-if="kind === 'animation' && frameUrl"
+        size="small"
+        type="primary"
+        @click="enterPresent"
+      >全屏演示</el-button>
       <el-tag size="small" type="info">免登录预览</el-tag>
     </div>
 
@@ -35,6 +41,15 @@
         v-if="(kind === 'courseware' || kind === 'courseware_version') && frameUrl"
         :src="frameUrl"
         sandbox="allow-scripts allow-same-origin allow-popups allow-modals"
+        class="w-full border-0 bg-white"
+        :style="{ height: 'calc(100vh - 56px)' }"
+      />
+
+      <iframe
+        v-else-if="kind === 'animation' && frameUrl"
+        :src="frameUrl"
+        sandbox="allow-scripts allow-same-origin"
+        allow="fullscreen"
         class="w-full border-0 bg-white"
         :style="{ height: 'calc(100vh - 56px)' }"
       />
@@ -103,10 +118,30 @@
       </div>
     </template>
   </div>
+
+  <Teleport to="body">
+    <div
+      v-if="presenting && kind === 'animation' && frameUrl"
+      ref="presentRoot"
+      class="fixed inset-0 z-[4000] bg-black flex flex-col"
+    >
+      <div class="h-11 shrink-0 flex items-center gap-3 px-4 bg-black/80 text-white">
+        <span class="truncate flex-1 text-sm">{{ title }}</span>
+        <span class="text-xs text-white/50">Esc 退出全屏</span>
+        <el-button size="small" @click="exitPresent">退出</el-button>
+      </div>
+      <iframe
+        class="flex-1 w-full border-0 bg-black"
+        :src="frameUrl"
+        sandbox="allow-scripts allow-same-origin"
+        allow="fullscreen"
+      />
+    </div>
+  </Teleport>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, reactive, computed, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute } from 'vue-router'
 import { Loading, CircleClose } from '@element-plus/icons-vue'
 import dayjs from 'dayjs'
@@ -130,6 +165,8 @@ const expiresAt = ref('')
 const kind = ref('')
 const payload = ref<Record<string, any> | null>(null)
 const frameUrl = ref('')
+const presenting = ref(false)
+const presentRoot = ref<HTMLElement | null>(null)
 const revealed = reactive(new Set<number>())
 const blobUrls = reactive<Record<number, string>>({})
 
@@ -166,11 +203,38 @@ function applyPayload(data: { title: string; expires_at: string; resource_type: 
       : buildRevealDeck(p.content, p.images || {}, { theme: p.theme, subject: p.subject_name || '' })
     if (frameUrl.value) URL.revokeObjectURL(frameUrl.value)
     frameUrl.value = URL.createObjectURL(new Blob([html], { type: 'text/html;charset=utf-8' }))
+  } else if (data.resource_type === 'animation') {
+    if (frameUrl.value) URL.revokeObjectURL(frameUrl.value)
+    frameUrl.value = createIframeBlob(data.payload?.html || '')
   } else {
     for (const q of data.payload.questions || []) {
       if (q.analysis_html) blobUrls[q.id] = createIframeBlob(q.analysis_html)
     }
   }
+}
+
+async function enterPresent() {
+  if (!frameUrl.value) return
+  presenting.value = true
+  await nextTick()
+  const el = presentRoot.value as any
+  const req = el?.requestFullscreen || el?.webkitRequestFullscreen || el?.msRequestFullscreen
+  if (req) {
+    try { await req.call(el) } catch { /* 铺满遮罩即可 */ }
+  }
+}
+
+function exitPresent() {
+  presenting.value = false
+  const doc = document as any
+  if (document.fullscreenElement || doc.webkitFullscreenElement) {
+    const exit = document.exitFullscreen || doc.webkitExitFullscreen
+    if (exit) exit.call(document)
+  }
+}
+
+function onPresentKey(e: KeyboardEvent) {
+  if (e.key === 'Escape' && presenting.value) exitPresent()
 }
 
 async function unlock(pwd?: string) {
@@ -189,6 +253,7 @@ async function unlock(pwd?: string) {
 }
 
 onMounted(async () => {
+  window.addEventListener('keydown', onPresentKey)
   loading.value = true
   try {
     const meta = await publicApi.shareMeta(token)
@@ -214,6 +279,8 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onPresentKey)
+  exitPresent()
   if (frameUrl.value) URL.revokeObjectURL(frameUrl.value)
   for (const u of Object.values(blobUrls)) URL.revokeObjectURL(u)
 })

@@ -190,7 +190,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, nextTick, onMounted } from 'vue'
+import { ref, reactive, computed, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { watchDebounced } from '@vueuse/core'
 import { knowledgeApi, textbookApi } from '@/api/modules'
 import { useEducationStore } from '@/stores/education'
@@ -528,6 +528,8 @@ function highlightNode(id: string) {
 }
 
 function onChartFinished() {
+  const chart = chartInst()
+  try { chart?.setOption?.({ series: [{ layout: 'none' }] }, { lazyUpdate: true }) } catch { /* ignore */ }
   if (pendingHighlight.value) {
     highlightNode(pendingHighlight.value)
     pendingHighlight.value = null
@@ -703,5 +705,8 @@ onMounted(() => {
   filter.subject_id = edu.selectedSubjectId || null
   load()
   loadTextbooks()
+})
+onBeforeUnmount(() => {
+  try { chartInst()?.dispose?.() } catch { /* ignore */ }
 })
 </script>

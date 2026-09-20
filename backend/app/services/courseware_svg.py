@@ -616,7 +616,7 @@ def _paint_overview(p: Page, slide: dict) -> None:
     th = p.th
     p.loose.append(p.rect(0, 0, W, H, th["bg"], role="background"))
     _deco(p)
-    _header(p, "课程概览", 0, {"title": slide.get("title") or "课程概览"})
+    _header(p, "备课备忘", 0, {"title": slide.get("title") or "备课备忘"})
     blocks: list[tuple[str, list[str]]] = slide.get("blocks") or []
     n = max(1, min(3, len(blocks)))
     gap = 24
@@ -1102,17 +1102,12 @@ def collect_pages(content: dict, title: str) -> tuple[list[dict], str]:
         blocks.append(("教学重点", [str(x) for x in meta["key_points"]]))
     if meta.get("difficulties"):
         blocks.append(("教学难点", [str(x) for x in meta["difficulties"]]))
-    overview = {"type": "_overview", "title": "课程概览", "blocks": blocks} if blocks else None
+    overview = {"type": "_overview", "title": "备课备忘", "blocks": blocks} if blocks else None
 
-    inserted = False
     for s in slides:
         pages.append(s)
-        if overview and not inserted and page_kind(s.get("type")) == "cover":
-            pages.append(overview)
-            inserted = True
-    if overview and not inserted:
-        insert_at = 1 if pages else 0
-        pages.insert(insert_at, overview)
+    if overview:
+        pages.append(overview)
     if not pages:
         pages.append({"type": "cover", "title": title or "教学课件"})
     return pages, subject

@@ -1,0 +1,359 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><style>
+:root{--c-primary:#0F766E;--c-accent:#14B8A6;--c-ok:#16a34a;--c-bad:#dc2626;
+--c-line:#C8EDE8;--c-bg:#E4F4F2;--c-text:#134E4A;--c-muted:#5F8A86;--c-card:#F2FAF9;--shadow:0 3px 10px rgba(15,118,110,.08);}
+*{box-sizing:border-box}html,body{margin:0;padding:0}
+body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;color:var(--c-text);background:var(--c-bg);line-height:1.6;font-size:15px}
+.title{font-size:20px;font-weight:700;margin:0 0 4px}
+.subtitle{font-size:14px;color:var(--c-muted);margin:0 0 14px}
+.muted{color:var(--c-muted)}
+.card{background:var(--c-card);border:1px solid var(--c-line);border-radius:14px;padding:16px;box-shadow:var(--shadow)}
+.badge{display:inline-block;padding:2px 10px;border-radius:999px;background:#e6fffa;color:var(--c-primary);font-size:12px;font-weight:600}
+.btn{appearance:none;border:1px solid var(--c-line);background:var(--c-card);color:var(--c-text);padding:8px 16px;border-radius:10px;font-size:14px;cursor:pointer}
+.hint{padding:10px 14px;border-radius:10px;background:#fffbeb;border:1px solid #fde68a;color:#92400e;font-size:14px}
+.correct{border-color:var(--c-ok)!important;background:#f0fdf4!important;color:var(--c-ok)!important}
+.wrong{border-color:var(--c-bad)!important;background:#fef2f2!important;color:var(--c-bad)!important}
+</style></head><body><div class="stage">
+  <style>
+    .stage{padding:16px 16px 12px}
+    .lab-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap}
+    .eyebrow{color:var(--c-primary);font-weight:700;letter-spacing:.04em;font-size:12px}
+    .lead{margin:8px 0 0;line-height:1.65;font-size:14px}
+    .samples{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+    .sample{border:1px solid var(--c-line);background:#fff;border-radius:999px;padding:6px 12px;cursor:pointer;font-size:13px}
+    .sample.selected{border-color:var(--c-primary);background:color-mix(in srgb,var(--c-primary) 10%,#fff);color:var(--c-primary);font-weight:700}
+    .lab-grid{display:grid;grid-template-columns:minmax(200px,0.9fr) minmax(260px,1.2fr);gap:14px;margin-top:12px}
+    .beaker-wrap{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:220px;position:relative}
+    .beaker{width:128px;height:148px;border:4px solid #7c8aa5;border-top:0;border-radius:8px 8px 28px 28px;position:relative;overflow:hidden;background:linear-gradient(#f8fafc,#eef3f8)}
+    .beaker:before{content:"";position:absolute;top:0;left:-8px;width:140px;height:12px;border:4px solid #7c8aa5;border-radius:50%;background:#fff;z-index:2}
+    .liquid{position:absolute;inset:52px 0 0;background:#eaf4fb;transition:background .35s ease}
+    .liquid.colorless{background:repeating-linear-gradient(-45deg,rgba(148,163,184,.16) 0 8px,rgba(148,163,184,.05) 8px 16px)}
+    .paper-strip{position:absolute;right:18px;top:28px;width:16px;height:78px;border-radius:3px;border:1px solid #94a3b8;background:#f8fafc;display:none;z-index:3;box-shadow:0 2px 6px rgba(15,23,42,.12)}
+    .paper-strip.on{display:block}
+    .observe{margin-top:10px;text-align:center;font-size:14px;line-height:1.5}
+    .swatch{display:inline-block;width:14px;height:14px;border-radius:4px;border:1px solid #cbd5e1;vertical-align:-2px;margin-right:4px}
+    .control{padding:10px 0;border-top:1px solid var(--c-line)}
+    .control:first-child{border-top:0;padding-top:0}
+    .control label{display:block;font-weight:700;margin-bottom:8px;font-size:14px}
+    .choice-row{display:flex;gap:8px;flex-wrap:wrap}
+    .choice{border:1px solid var(--c-line);background:#fff;color:inherit;border-radius:8px;padding:8px 12px;cursor:pointer;font-size:13px}
+    .choice.selected{border-color:var(--c-primary);box-shadow:0 0 0 2px color-mix(in srgb,var(--c-primary) 18%,transparent);background:#f1f7ff}
+    .choice.correct{border-color:var(--c-ok)!important;background:#edf9f0!important}
+    .choice.wrong{border-color:var(--c-bad)!important;background:#fff0f0!important}
+    .ph-wrap{display:none}
+    .ph-wrap.show{display:block}
+    input[type=range]{width:100%;accent-color:var(--c-primary)}
+    .ph-scale{display:grid;grid-template-columns:repeat(14,1fr);gap:2px;margin:8px 0 4px}
+    .ph-cell{height:16px;border-radius:3px}
+    .ph-cell.active{outline:2px solid #111;outline-offset:1px}
+    .ph-labels{display:flex;justify-content:space-between;font-size:12px;color:var(--c-muted)}
+    .feedback{min-height:44px;margin-top:10px;line-height:1.55;font-size:14px}
+    .quiz-q{font-weight:700;margin:0 0 8px}
+    .quiz-nav{display:flex;justify-content:space-between;align-items:center;margin-top:8px;font-size:12px;color:var(--c-muted)}
+    @media(max-width:720px){.lab-grid{grid-template-columns:1fr}}
+  </style>
+
+  <div class="lab-head">
+    <div>
+      <div class="eyebrow">先预测，再滴加，后解释</div>
+      <div class="title">酸碱体检站</div>
+      <div class="subtitle">颜色必须跟所选试剂走 · 先观察再下结论</div>
+    </div>
+    <span class="badge">互动实验室</span>
+  </div>
+  <p class="lead">三杯无色液体看起来差不多。先选样品，再滴指示剂或用 pH 试纸，最后根据<strong>颜色</strong>判断酸碱性。没做实验前，不要急着看 pH 数字。</p>
+
+  <div class="samples" id="samples"></div>
+
+  <div class="lab-grid">
+    <div class="card">
+      <div class="beaker-wrap">
+        <div class="beaker">
+          <div id="liquid" class="liquid colorless"></div>
+          <div id="paper" class="paper-strip" title="pH 试纸"></div>
+        </div>
+        <div id="sampleName" class="title" style="font-size:18px;margin-top:10px">白醋</div>
+        <div id="observe" class="observe muted">还没滴指示剂，溶液看起来都是无色的。</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="control">
+        <label>① 滴入哪种试剂？</label>
+        <div class="choice-row" id="indicators">
+          <button class="choice selected" data-ind="">先不滴</button>
+          <button class="choice" data-ind="litmus">紫色石蕊</button>
+          <button class="choice" data-ind="phph">无色酚酞</button>
+          <button class="choice" data-ind="paper">pH 试纸</button>
+        </div>
+      </div>
+      <div class="control ph-wrap" id="unknownBox">
+        <label>配制未知溶液的酸碱程度（数字先藏着）</label>
+        <input id="phRange" type="range" min="1" max="14" value="7">
+        <div class="ph-scale" id="phScale"></div>
+        <div class="ph-labels"><span>强酸</span><span>中性</span><span>强碱</span></div>
+      </div>
+      <div class="control">
+        <label>② 根据颜色，你的诊断是？</label>
+        <div class="choice-row" id="diagnosis">
+          <button class="choice" data-answer="acid">酸性</button>
+          <button class="choice" data-answer="neutral">中性</button>
+          <button class="choice" data-answer="base">碱性</button>
+        </div>
+        <div id="feedback" class="feedback hint">选样品、滴试剂，观察颜色后再判断。</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:12px">
+    <div class="title" style="font-size:18px">当堂快问</div>
+    <p id="quizStem" class="quiz-q"></p>
+    <div class="choice-row" id="quizOpts"></div>
+    <div id="quizFeedback" class="feedback hint">先自己选，再看依据。</div>
+    <div class="quiz-nav">
+      <span id="quizProgress"></span>
+      <button class="btn" id="quizNext" type="button">下一题</button>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      var PAPER = ['#d92855','#e04446','#ec6650','#f28b55','#f4ae56','#f2c45d','#d7d66b','#8dcc75','#56b883','#43a99a','#4b9bc1','#557bc1','#655ab7','#7049a3'];
+      var SAMPLES = [
+        {id:'vinegar', name:'白醋', ph:3},
+        {id:'soda', name:'汽水', ph:4},
+        {id:'water', name:'蒸馏水', ph:7},
+        {id:'saline', name:'食盐水', ph:7},
+        {id:'soap', name:'肥皂水', ph:10},
+        {id:'lime', name:'石灰水', ph:11},
+        {id:'unknown', name:'未知溶液', ph:7}
+      ];
+      var QUIZ = [
+        {
+          stem:'无色酚酞滴入 pH=3 的溶液，最可能看到什么？',
+          opts:['变红','通常仍为无色','变蓝'],
+          answer:1,
+          why:'pH=3 显酸性。酚酞在酸性、中性都无色，不是“变成”无色，它本来就是无色。'
+        },
+        {
+          stem:'紫色石蕊滴入蒸馏水，颜色会怎样？',
+          opts:['变红','仍为紫色','变蓝'],
+          answer:1,
+          why:'蒸馏水接近中性。石蕊在中性里仍是紫色，不是“没反应所以没用”。'
+        },
+        {
+          stem:'pH=5 和 pH=3 的溶液，酸性更强的是？',
+          opts:['pH=5','一样强','pH=3'],
+          answer:2,
+          why:'pH 越小酸性越强。3 比 5 更靠向强酸一端。指示剂只能告诉你“是酸”，比强弱要看 pH。'
+        },
+        {
+          stem:'测汽水的酸碱性，正确操作是？',
+          opts:['把 pH 试纸伸进瓶口','玻璃棒蘸取，点在干燥试纸上再比色','先用水把试纸润湿再测'],
+          answer:1,
+          why:'试纸伸进瓶口会污染整瓶试剂；先润湿会稀释，读数偏中性。规范是：蘸取 → 点纸 → 比色 → 读数。'
+        }
+      ];
+
+      var sampleId = 'vinegar';
+      var indicator = '';
+      var unknownPh = 7;
+      var revealed = false;
+      var quizI = 0;
+      var quizLocked = false;
+
+      var liquid = document.getElementById('liquid');
+      var paper = document.getElementById('paper');
+      var sampleName = document.getElementById('sampleName');
+      var observe = document.getElementById('observe');
+      var feedback = document.getElementById('feedback');
+      var unknownBox = document.getElementById('unknownBox');
+      var phRange = document.getElementById('phRange');
+      var scale = document.getElementById('phScale');
+
+      PAPER.forEach(function (color, i) {
+        var cell = document.createElement('div');
+        cell.className = 'ph-cell';
+        cell.style.background = color;
+        cell.title = 'pH ' + (i + 1);
+        scale.appendChild(cell);
+      });
+
+      var sampleBox = document.getElementById('samples');
+      SAMPLES.forEach(function (s) {
+        var btn = document.createElement('button');
+        btn.className = 'sample' + (s.id === sampleId ? ' selected' : '');
+        btn.type = 'button';
+        btn.textContent = s.name;
+        btn.dataset.id = s.id;
+        btn.addEventListener('click', function () {
+          sampleId = s.id;
+          revealed = false;
+          sampleBox.querySelectorAll('.sample').forEach(function (b) { b.classList.toggle('selected', b.dataset.id === sampleId); });
+          resetDiag();
+          update();
+        });
+        sampleBox.appendChild(btn);
+      });
+
+      document.querySelectorAll('#indicators .choice').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          indicator = btn.dataset.ind;
+          revealed = false;
+          document.querySelectorAll('#indicators .choice').forEach(function (b) { b.classList.toggle('selected', b === btn); });
+          resetDiag();
+          update();
+        });
+      });
+
+      phRange.addEventListener('input', function () {
+        unknownPh = Number(phRange.value);
+        revealed = false;
+        resetDiag();
+        update();
+      });
+
+      function currentPh() {
+        if (sampleId === 'unknown') return unknownPh;
+        return SAMPLES.filter(function (s) { return s.id === sampleId; })[0].ph;
+      }
+      function kind(ph) { return ph < 7 ? 'acid' : (ph > 7 ? 'base' : 'neutral'); }
+      function kindName(k) { return k === 'acid' ? '酸性' : (k === 'base' ? '碱性' : '中性'); }
+      function sample() { return SAMPLES.filter(function (s) { return s.id === sampleId; })[0]; }
+
+      function resetDiag() {
+        document.querySelectorAll('#diagnosis .choice').forEach(function (b) { b.classList.remove('correct', 'wrong', 'selected'); });
+      }
+
+      function paintScale(ph, showActive) {
+        document.querySelectorAll('#phScale .ph-cell').forEach(function (cell, i) {
+          cell.classList.toggle('active', !!showActive && i === ph - 1);
+        });
+      }
+
+      function update() {
+        var s = sample();
+        var ph = currentPh();
+        sampleName.textContent = s.name;
+        unknownBox.classList.toggle('show', sampleId === 'unknown');
+        paper.classList.toggle('on', indicator === 'paper');
+        paintScale(ph, indicator === 'paper' || revealed);
+
+        var color = '#eaf4fb';
+        var text = '还没滴指示剂，溶液看起来都是无色的。请先选试剂。';
+        var colorless = true;
+        if (indicator === 'litmus') {
+          if (ph < 7) { color = '#d23c54'; text = '观察到：紫色石蕊变为红色。'; }
+          else if (ph > 7) { color = '#2d5bb8'; text = '观察到：紫色石蕊变为蓝色。'; }
+          else { color = '#7b46b0'; text = '观察到：紫色石蕊仍为紫色。'; }
+          colorless = false;
+        } else if (indicator === 'phph') {
+          if (ph >= 8) { color = '#e23b6b'; text = '观察到：无色酚酞变为红色。'; colorless = false; }
+          else { color = '#eaf4fb'; text = '观察到：无色酚酞仍为无色（酸性、中性都这样）。'; colorless = true; }
+        } else if (indicator === 'paper') {
+          color = '#eaf4fb';
+          colorless = true;
+          paper.style.background = PAPER[ph - 1];
+          text = revealed
+            ? '试纸颜色已对照比色卡，pH ≈ ' + ph + '。'
+            : '观察到：试纸变色了。请对照上方比色卡估读，不要先看数字。';
+        }
+        liquid.style.background = color;
+        liquid.classList.toggle('colorless', colorless && indicator !== 'litmus');
+        if (!indicator || (colorless && indicator !== 'paper')) {
+          observe.textContent = text;
+        } else {
+          var swatchColor = indicator === 'paper' ? PAPER[ph - 1] : color;
+          observe.innerHTML = '<span class="swatch" style="background:' + swatchColor + '"></span>' + text;
+        }
+
+        if (!revealed) {
+          feedback.className = 'feedback hint';
+          feedback.textContent = indicator
+            ? '数字先不公布。请只根据颜色判断：酸性、中性还是碱性？'
+            : '三种试剂还没滴，单靠眼睛看不出酸碱性。';
+        }
+      }
+
+      document.querySelectorAll('#diagnosis .choice').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var ph = currentPh();
+          var expected = kind(ph);
+          var answer = btn.dataset.answer;
+          var s = sample();
+          resetDiag();
+          btn.classList.add('selected');
+          if (!indicator) {
+            btn.classList.add('wrong');
+            feedback.className = 'feedback wrong';
+            feedback.textContent = (s.id === 'vinegar' || s.id === 'soap' || s.id === 'lime')
+              ? '生活经验可以猜，但化学课要用实验证据。请先滴石蕊、酚酞，或用 pH 试纸。'
+              : '还没滴指示剂，溶液都是无色的，无法判断。请先做实验。';
+            if (window.CW && window.CW.wrong) window.CW.wrong('未滴试剂就判断', answer);
+            return;
+          }
+          var ok = answer === expected;
+          revealed = true;
+          btn.classList.add(ok ? 'correct' : 'wrong');
+          feedback.className = 'feedback ' + (ok ? 'correct' : 'wrong');
+          var why = s.name + ' 的 pH ≈ ' + ph + '，' + (ph < 7 ? '小于 7' : ph > 7 ? '大于 7' : '等于 7') + '，所以显' + kindName(expected) + '。';
+          if (indicator === 'phph' && expected !== 'base') why += ' 酚酞在酸性和中性都无色，不能据此说“一定是酸”。';
+          if (indicator === 'litmus') why += expected === 'neutral' ? ' 中性时石蕊仍为紫色。' : (expected === 'acid' ? ' 石蕊遇酸变红。' : ' 石蕊遇碱变蓝。');
+          if (indicator === 'paper') why += ' pH 越小酸性越强，越大碱性越强。';
+          feedback.textContent = (ok ? '判断正确。' : '再看颜色和 pH。') + why;
+          update();
+          if (window.CW) {
+            if (ok && window.CW.correct) window.CW.correct('判断' + s.name + '的酸碱性', answer);
+            if (!ok && window.CW.wrong) window.CW.wrong('判断' + s.name + '的酸碱性', answer);
+          }
+        });
+      });
+
+      var quizStem = document.getElementById('quizStem');
+      var quizOpts = document.getElementById('quizOpts');
+      var quizFeedback = document.getElementById('quizFeedback');
+      var quizProgress = document.getElementById('quizProgress');
+      var quizNext = document.getElementById('quizNext');
+
+      function renderQuiz() {
+        var q = QUIZ[quizI];
+        quizLocked = false;
+        quizStem.textContent = q.stem;
+        quizOpts.innerHTML = '';
+        q.opts.forEach(function (t, i) {
+          var b = document.createElement('button');
+          b.className = 'choice';
+          b.type = 'button';
+          b.textContent = t;
+          b.addEventListener('click', function () {
+            if (quizLocked) return;
+            quizLocked = true;
+            var ok = i === q.answer;
+            quizOpts.querySelectorAll('.choice').forEach(function (x) { x.classList.remove('correct', 'wrong'); });
+            b.classList.add(ok ? 'correct' : 'wrong');
+            quizFeedback.className = 'feedback ' + (ok ? 'correct' : 'wrong');
+            quizFeedback.textContent = (ok ? '对了。' : '还差一步。') + q.why;
+            if (window.CW) {
+              if (ok && window.CW.correct) window.CW.correct(q.stem, t);
+              if (!ok && window.CW.wrong) window.CW.wrong(q.stem, t);
+            }
+          });
+          quizOpts.appendChild(b);
+        });
+        quizFeedback.className = 'feedback hint';
+        quizFeedback.textContent = '先自己选，再看依据。';
+        quizProgress.textContent = '第 ' + (quizI + 1) + ' / ' + QUIZ.length + ' 题';
+        quizNext.textContent = quizI === QUIZ.length - 1 ? '再看一遍' : '下一题';
+      }
+      quizNext.addEventListener('click', function () {
+        quizI = quizI === QUIZ.length - 1 ? 0 : quizI + 1;
+        renderQuiz();
+      });
+      renderQuiz();
+      update();
+    })();
+  </script>
+</div>
+<script>
+document.querySelector('[data-id=lime]').click();
+document.querySelector('[data-ind=phph]').click();
+document.querySelector('#diagnosis [data-answer=base]').click();
+</script></body></html>

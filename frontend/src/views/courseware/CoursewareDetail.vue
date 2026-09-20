@@ -76,7 +76,7 @@
     </div>
 
     <template v-else-if="slides.length">
-      <!-- 课程概览 -->
+      <!-- 备课备忘（仅教师端） -->
       <div v-if="hasMeta" class="card mb-4 grid grid-cols-1 md:grid-cols-3 gap-4">
         <div v-if="meta.objectives?.length">
           <p class="text-xs font-semibold text-primary-600 mb-1.5">教学目标</p>
@@ -1127,6 +1127,10 @@ async function moveSlide(delta: number) {
 watch(
   () => [currentSlide.value?.html, cw.value?.theme] as const,
   ([html]) => {
+    const frame = previewFrame.value
+    if (frame) {
+      try { frame.src = 'about:blank' } catch { /* ignore */ }
+    }
     if (currentBlobUrl.value) { URL.revokeObjectURL(currentBlobUrl.value); currentBlobUrl.value = '' }
     if (html) currentBlobUrl.value = createIframeBlob(html, cw.value?.theme)
   },
@@ -1361,7 +1365,17 @@ onMounted(load)
 onUnmounted(() => {
   stopStatusPoll()
   stopOptPoll()
-  // 释放所有 Blob URL，防止内存泄漏
+  showFs.value = false
+  showPage.value = false
+  showPresent.value = false
+  showInteraction.value = false
+  showVersions.value = false
+  showVersionView.value = false
+  shotProgress.value = ''
+  const frames = [previewFrame.value, shotFrame.value]
+  for (const f of frames) {
+    if (f) { try { f.src = 'about:blank' } catch { /* ignore */ } }
+  }
   ;[currentBlobUrl, fsBlobUrl, deckBlobUrl, pageBlobUrl, versionViewUrl].forEach(r => {
     if (r.value) { URL.revokeObjectURL(r.value); r.value = '' }
   })

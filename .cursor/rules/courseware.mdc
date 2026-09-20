@@ -6,12 +6,13 @@ alwaysApply: false
 
 # 课件与课堂互动
 
-生成：`POST /coursewares` → Celery `generate_courseware_task` → `ai_service.do_generate_courseware`。内容是幻灯片 JSON（`Courseware.content`），状态 `gen_status`。
+生成：`POST /coursewares` → Celery `generate_courseware_task` → `ai_service.do_generate_courseware`。
+先 `_extract_lesson_blueprint` 抽出课时名/可检测目标/具体导入·例题·练习·作业，缺字段会补抽再验收；再 `_assemble_lesson_from_blueprint` 拼课，禁止用「理解：点名」「自拟题」盖空壳。课序：**封面 → 导入 → 概念互动 → 实验/动画 → 新知命名 → 易错对照 → 例题 → 小结 → 练习 → 作业**（先探究再命名）。可检测目标只进 `meta.objectives`，不给学生单独放学习目标页。例题解析与练习答案写在 `notes`（学生页折叠「想好后再看解析」）。作业含小作品。封面用蓝图 `topic`（大单元名只当来源）。互动页默认最多 2 个（1 个概念互动 + 至多 1 个自动匹配动画）；教师手动勾选的 `animation_keys` 全保留。内容是幻灯片 JSON（`Courseware.content`），状态 `gen_status`。
 重新生成：`POST /coursewares/{id}/regenerate` 可改标题/课本范围/样式/主题/类型/教师想法后重出，会清空旧内容。重出前若已有内容会先写入 `courseware_versions`；生成成功也会存一版。
 
 历史版本：`GET/DELETE /coursewares/{id}/versions`、`GET /coursewares/{id}/versions/{vid}`、`POST /coursewares/{id}/versions/{vid}/apply`（覆盖当前前先快照）。详情页可查看、分享（`resource_type=courseware_version`）、应用为当前版本、删除。公开页按该版 content/render_style/theme 渲染。
 
-互动页：`_generate_lesson_content` 先 `skill_service.maybe_generate_skill`；命中则模板出整页 HTML，失败必须回退 LLM。科目提示词来自 `SubjectPrompt`。化学勾选「互动动画」时引用动画库 HTML（`animation_keys` / 自动匹配），至少一页实验台；不要每次重跑 `generate.py`。
+互动页：概念互动先 `skill_service.maybe_generate_skill`，失败回退 LLM；HTML 须符合试剂颜色、先观察后揭晓、一屏一主操作、诠释型反馈等学科硬约束。勾选「互动动画」时引用动画库 HTML（`animation_keys` / 按知识点**强匹配**），不要每次重跑 CLI。自动匹配要求标签打中知识点名或至少两个区分性关键词；对不上本课核心点就不要塞实验台，化学不再兜底制氧。
 
 skill 题型分两类，都登记在 `SKILL_CAPABILITIES`：解题型（固定题面）与通用兜底型 `solid_explore` / `curve_explore`（概念课用的 3D 教具与曲线画板，spec 带几何体/曲线与尺寸，经 `_normalize_spec` 收敛到合法取值）。数学两个 skill 统一走 `skill_runners/{solid,analytic}_geometry_runner.py` 子进程，化学仍走 skill 自带 CLI。新增可视化题型时只在 runner 里构造数据，不要改 skill 的 `template/*.html`。
 

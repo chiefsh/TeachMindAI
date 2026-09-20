@@ -3,7 +3,7 @@
 `generate.py` 的 `build_*` 返回一份 JSON，注入 `template/lab.html` 的 `__LAB_DATA__`。
 生成时内联 `lab2d.js`，页面自包含。
 
-必填：`id`、`scene`（`oxygen` | `neutralization` | `electrolysis` | `filtration` | `evaporation`）、`title`、`inventory`、`required_apparatus`、`required_reagents`、`steps`、`complete`。
+必填：`id`、`scene`（`oxygen` | `gas_wet` | `gas_air` | `burn` | `neutralization` | `electrolysis` | `filtration` | `evaporation` | `oxide`）、`title`、`inventory`、`required_apparatus`、`required_reagents`、`steps`、`complete`。
 
 可选 `scene_init`：进入实验台时的场景开关。
 

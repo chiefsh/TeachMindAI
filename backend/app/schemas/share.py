@@ -3,7 +3,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-ShareResourceType = Literal["courseware", "courseware_version", "question_analysis"]
+ShareResourceType = Literal["courseware", "courseware_version", "question_analysis", "animation"]
 
 
 class ShareCreateIn(BaseModel):

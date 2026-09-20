@@ -15,6 +15,7 @@ from pathlib import Path
 SKILL_DIR = Path(__file__).resolve().parent.parent
 TEMPLATE = SKILL_DIR / "template" / "lab.html"
 LAB2D_JS = SKILL_DIR / "template" / "lab2d.js"
+LAB3D_JS = SKILL_DIR / "template" / "lab3d.js"
 PLACEHOLDER = "__LAB_DATA__"
 
 
@@ -29,8 +30,8 @@ def with_slots(data: dict) -> dict:
     for step in data.get("steps") or []:
         if step.get("need") == "select":
             step["hint"] = (
-                "从左侧把器材拖到画布上形状相同的虚线工位；药品拖到「药品」虚线。"
-                "工位按真实装置摆放（酒精灯在试管下方、漏斗对准烧杯）。放对卡住，放错弹回。"
+                "点击试剂架「+ 加入」，或把器材拖到画布上形状相同的虚线工位。"
+                "酒精灯在受热部位下方。放对卡住，放错弹回。"
             )
     return data
 
@@ -41,11 +42,16 @@ def _inline_js(src: str) -> str:
 
 def render_html(data: dict, out_path: Path) -> Path:
     template = TEMPLATE.read_text(encoding="utf-8")
-    if PLACEHOLDER not in template or "__LAB2D_JS__" not in template:
-        raise RuntimeError("模板缺少 __LAB_DATA__ / __LAB2D_JS__")
+    if PLACEHOLDER not in template or "__LAB2D_JS__" not in template or "__LAB3D_JS__" not in template:
+        raise RuntimeError("模板缺少 __LAB_DATA__ / __LAB2D_JS__ / __LAB3D_JS__")
     lab2d = _inline_js(LAB2D_JS.read_text(encoding="utf-8"))
+    lab3d = _inline_js(LAB3D_JS.read_text(encoding="utf-8"))
     payload = json.dumps(with_slots(data), ensure_ascii=False)
-    html = template.replace("__LAB2D_JS__", lab2d).replace(PLACEHOLDER, payload)
+    html = (
+        template.replace("__LAB2D_JS__", lab2d)
+        .replace("__LAB3D_JS__", lab3d)
+        .replace(PLACEHOLDER, payload)
+    )
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(html, encoding="utf-8")
     return out_path
@@ -292,14 +298,14 @@ def build_prep_hydrogen() -> dict:
                 {"id": "kmno4", "name": "高锰酸钾", "color": "#6b21a8"},
             ],
         },
-        "required_apparatus": ["tube", "delivery", "trough", "bottle", "splint"],
+        "required_apparatus": ["stand", "tube", "delivery", "trough", "bottle", "splint"],
         "required_reagents": ["zn", "hcl"],
         "steps": [
             {
                 "id": "pick",
                 "need": "select",
                 "title": "选取仪器与药品",
-                "hint": "固液不加热制氢气：试管、导管、水槽、集气瓶、燃着的木条；药品为锌粒和稀盐酸。不要选酒精灯。",
+                "hint": "固液不加热制氢气：铁架台、试管、导管、水槽、集气瓶、燃着的木条；药品为锌粒和稀盐酸。不要选酒精灯。",
             },
             {
                 "id": "add_zn",
@@ -386,6 +392,7 @@ def build_prep_co2() -> dict:
         "badge": "初中化学 · 制取气体",
         "inventory": {
             "apparatus": [
+                {"id": "stand", "name": "铁架台", "icon": "支架"},
                 {"id": "tube", "name": "试管 / 锥形瓶", "icon": "瓶"},
                 {"id": "delivery", "name": "导管", "icon": "管"},
                 {"id": "bottle", "name": "集气瓶", "icon": "瓶"},
@@ -401,14 +408,14 @@ def build_prep_co2() -> dict:
                 {"id": "h2so4", "name": "稀硫酸", "color": "#facc15"},
             ],
         },
-        "required_apparatus": ["tube", "delivery", "bottle", "lime_beaker", "splint"],
+        "required_apparatus": ["stand", "tube", "delivery", "bottle", "lime_beaker", "splint"],
         "required_reagents": ["caco3", "hcl", "lime"],
         "steps": [
             {
                 "id": "pick",
                 "need": "select",
                 "title": "选取仪器与药品",
-                "hint": "大理石、稀盐酸、导管、集气瓶、澄清石灰水、燃着的木条。不要用水槽（二氧化碳能溶于水）。不要用稀硫酸（与大理石生成微溶硫酸钙覆盖表面）。",
+                "hint": "铁架台、试管、导管、集气瓶、澄清石灰水、燃着的木条；药品为大理石和稀盐酸。不要用水槽（二氧化碳能溶于水）。不要用稀硫酸。",
             },
             {
                 "id": "add",
@@ -626,6 +633,103 @@ def build_metal_acid() -> dict:
         "complete": {
             "title": "实验完成",
             "summary": "你观察了锌与稀盐酸放氢，并比较了锌、铜的活动性，同时落实了护目与开口操作。",
+        },
+    }
+
+
+def build_metal_oxide_acid() -> dict:
+    return {
+        "id": "metal_oxide_acid",
+        "scene": "oxide",
+        "title": "氧化铜与稀硫酸反应",
+        "subtitle": "点击或拖拽试剂入管，加热后观察黑色粉末变成蓝色溶液",
+        "equation": "CuO + H₂SO₄ → CuSO₄ + H₂O",
+        "goal": "观察黑色氧化铜溶于稀硫酸生成蓝色硫酸铜溶液，认识金属氧化物与酸的反应。",
+        "badge": "初中化学 · 金属氧化物",
+        "inventory": {
+            "apparatus": [
+                {"id": "tube", "name": "试管"},
+                {"id": "lamp", "name": "酒精灯"},
+                {"id": "rod", "name": "试管夹"},
+                {"id": "beaker", "name": "烧杯"},
+            ],
+            "reagents": [
+                {"id": "cuo", "name": "氧化铜", "color": "#1e293b"},
+                {"id": "h2so4", "name": "稀硫酸", "color": "#38bdf8"},
+                {"id": "naoh", "name": "氢氧化钠", "color": "#a3e635"},
+            ],
+        },
+        "required_apparatus": ["tube", "lamp", "rod"],
+        "required_reagents": ["cuo", "h2so4"],
+        "steps": [
+            {
+                "id": "pick",
+                "need": "select",
+                "guide": "准备",
+                "title": "取用仪器与药品",
+                "hint": "试管、酒精灯、试管夹；氧化铜和稀硫酸。不要用氢氧化钠。",
+            },
+            {
+                "id": "oxide",
+                "need": "action",
+                "guide": "准备",
+                "title": "取用氧化铜",
+                "action_label": "向试管中加入氧化铜粉末",
+                "hint": "氧化铜是黑色粉末，用药匙沿试管内壁送入。",
+                "phenomenon": "试管底部出现黑色氧化铜粉末。",
+                "scene": {"oxide": True, "upright": True},
+            },
+            {
+                "id": "acid",
+                "need": "action",
+                "guide": "准备",
+                "title": "取用稀硫酸",
+                "action_label": "加入稀硫酸",
+                "hint": "酸沿玻璃棒或试管内壁缓缓倒入，不要洒到管外。",
+                "phenomenon": "黑色粉末沉在酸液中，常温下溶解很慢。",
+                "scene": {"oxide": True, "oxide_acid": True, "upright": True},
+            },
+            {
+                "id": "mix",
+                "need": "action",
+                "guide": "操作",
+                "title": "混合反应",
+                "action_label": "振荡混合",
+                "hint": "也可点下方「混合反应」。常温变化不明显，需要加热。",
+                "phenomenon": "粉末与酸混合，溶液仍接近无色，黑色固体还在。",
+                "scene": {"oxide": True, "oxide_acid": True, "upright": True},
+            },
+            {
+                "id": "heat",
+                "need": "choice",
+                "guide": "操作",
+                "title": "加热",
+                "hint": "用酒精灯加热或把加热温度调到 60℃ 以上。试管口不要对着人。",
+                "choices": [
+                    {"id": "lamp", "label": "用试管夹夹持，酒精灯外焰加热", "correct": True,
+                     "ok": "黑色氧化铜逐渐溶解，溶液变成蓝色。",
+                     "scene": {"oxide": True, "oxide_acid": True, "heat": True, "flame": True,
+                               "liquid": "blue", "upright": True}},
+                    {"id": "seal", "label": "塞紧橡皮塞再加热，防止酸液蒸发", "correct": False,
+                     "hazard": "密闭加热会使压强骤增，试管可能爆裂。"},
+                    {"id": "mouth", "label": "凑近试管口闻一下，确认是不是硫酸味", "correct": False,
+                     "hazard": "酸雾有腐蚀性，禁止对着管口去闻。"},
+                ],
+            },
+            {
+                "id": "see",
+                "need": "action",
+                "guide": "现象",
+                "title": "观察现象",
+                "action_label": "记录溶液颜色",
+                "hint": "蓝色来自 Cu²⁺，不是硫酸本身的颜色。",
+                "phenomenon": "黑色粉末消失，得到蓝色硫酸铜溶液。",
+                "scene": {"oxide_acid": True, "liquid": "blue", "heat": True, "upright": True},
+            },
+        ],
+        "complete": {
+            "title": "实验完成",
+            "summary": "金属氧化物与酸反应生成盐和水：CuO + H₂SO₄ → CuSO₄ + H₂O。蓝色是硫酸铜溶液的特征。",
         },
     }
 
@@ -1025,6 +1129,7 @@ REGISTRY = {
     "electrolysis": build_electrolysis_water,
     "neutralization": build_neutralization,
     "metal_acid": build_metal_acid,
+    "metal_oxide_acid": build_metal_oxide_acid,
     "filtration": build_filtration,
     "evaporation": build_evaporation,
     "nh4hco3_decomp": build_nh4hco3_decomp,

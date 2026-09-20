@@ -16,6 +16,8 @@ const instance = axios.create({
   timeout: 30000,
 })
 
+let authRedirecting = false
+
 instance.interceptors.request.use((config) => {
   const token = localStorage.getItem('token')
   if (token) config.headers.Authorization = `Bearer ${token}`
@@ -42,8 +44,12 @@ instance.interceptors.response.use(
     const url = String(err.config?.url || '')
     if (status === 401 && !url.includes('/public/')) {
       localStorage.removeItem('token')
-      router.push('/login')
-      ElMessage.error('登录已过期，请重新登录')
+      const onLogin = router.currentRoute.value.path === '/login'
+      if (!authRedirecting && !onLogin) {
+        authRedirecting = true
+        router.replace('/login').finally(() => { authRedirecting = false })
+        ElMessage.error('登录已过期，请重新登录')
+      }
     } else if (status === 413) {
       ElMessage.error('文件过大，最大支持 500MB')
     } else {

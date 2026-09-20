@@ -1,4 +1,4 @@
-"""课件 / 试题分析免登录分享。"""
+"""课件 / 试题分析 / 互动动画免登录分享。"""
 from datetime import datetime, timedelta
 from math import ceil
 import secrets
@@ -14,11 +14,14 @@ from app.core.database import get_db
 from app.core.access import require_resource
 from app.core.minio_client import get_presigned_url
 from app.core.security import get_password_hash, verify_password
+from app.models.animation import InteractiveAsset
 from app.models.courseware import Courseware, CoursewareVersion
 from app.models.education import Grade, Subject
 from app.models.question_analysis import AnalysisSet
 from app.models.share import ShareLink
 from app.models.teacher import Teacher
+from app.services import animation_service as anim_svc
+from app.services.rbac_service import is_admin
 from app.models.textbook import ParseStatus, Textbook, TextbookImage
 from app.schemas.share import ShareAccessIn, ShareCreateIn, ShareMetaOut, ShareOut, SharePayloadOut
 
@@ -88,6 +91,18 @@ async def _owned_title(
         if require_ready and (aset.parse_status != ParseStatus.done or not aset.questions):
             raise HTTPException(status_code=400, detail="试题尚未解析完成，无法分享")
         return aset.name
+    if resource_type == "animation":
+        row = await db.get(InteractiveAsset, resource_id)
+        if not row:
+            raise HTTPException(status_code=404, detail="动画不存在")
+        can_view = row.origin == "system" or is_admin(teacher) or row.teacher_id == teacher_id
+        if not can_view:
+            raise HTTPException(status_code=404, detail="动画不存在")
+        if require_ready:
+            html = await anim_svc.html_for_row(db, row)
+            if not html:
+                raise HTTPException(status_code=400, detail="动画尚未生成，无法分享")
+        return row.title
     raise HTTPException(status_code=400, detail="不支持的分享类型")
 
 
@@ -190,6 +205,9 @@ async def _resource_title(link: ShareLink, db: AsyncSession) -> str:
     if link.resource_type == "question_analysis":
         aset = (await db.execute(select(AnalysisSet).where(AnalysisSet.id == link.resource_id))).scalar_one_or_none()
         return aset.name if aset else ""
+    if link.resource_type == "animation":
+        row = await db.get(InteractiveAsset, link.resource_id)
+        return row.title if row else ""
     return ""
 
 
@@ -324,6 +342,19 @@ async def _build_payload(link: ShareLink, db: AsyncSession) -> dict:
         if not aset or aset.parse_status != ParseStatus.done:
             raise HTTPException(status_code=404, detail="分享内容已不可用")
         return await _analysis_payload(aset, db)
+    if link.resource_type == "animation":
+        row = await db.get(InteractiveAsset, link.resource_id)
+        if not row:
+            raise HTTPException(status_code=404, detail="分享内容已不可用")
+        html = await anim_svc.html_for_row(db, row)
+        if not html:
+            raise HTTPException(status_code=404, detail="分享内容已不可用")
+        return {
+            "html": html,
+            "title": row.title,
+            "subject": row.subject,
+            "kind": row.kind,
+        }
     raise HTTPException(status_code=404, detail="分享内容已不可用")
 
 

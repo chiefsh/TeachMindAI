@@ -26,7 +26,7 @@
       </div>
     </div>
 
-    <!-- 筛选 + 图例 -->
+    <!-- 筛选 -->
     <div class="card mb-4 flex flex-wrap items-center gap-3 !py-3">
       <el-select v-model="filter.subject_id" placeholder="全部学科" clearable size="small"
         style="width:140px" @change="load">
@@ -40,32 +40,38 @@
         <el-radio-button value="all">显示全部</el-radio-button>
       </el-radio-group>
       <el-button v-if="focusedId" size="small" @click="exitFocus">退出聚焦</el-button>
-      <span class="text-xs text-slate-400">
+      <span class="text-xs" style="color: var(--ink-muted)">
         展示 {{ visibleGraph.nodes.length }} / {{ graph.nodes.length }}
         <template v-if="focusedId"> · 邻域</template>
       </span>
-      <div class="flex-1" />
-      <div class="flex flex-wrap items-center gap-3 text-xs text-slate-500">
-        <span><i class="inline-block w-4 h-0.5 align-middle" style="background:#4f46e5" /> 前置</span>
-        <span><i class="inline-block w-4 h-1 align-middle rounded-sm" style="background:#0284c7" /> 组成</span>
-        <span><i class="inline-block w-4 border-t border-dashed align-middle" style="border-color:#94a3b8" /> 相关</span>
-        <span><i class="inline-block w-4 h-0.5 align-middle" style="background:#d97706" /> 应用</span>
-        <span><i class="inline-block w-4 border-t border-dashed align-middle" style="border-color:#be185d" /> 跨学科</span>
-        <span class="text-slate-400">点越大 = 关联越多</span>
-      </div>
     </div>
 
     <!-- 图 -->
     <div class="card kg-stage !p-0 overflow-hidden">
-      <div v-if="!graph.nodes.length && !loading"
-        class="h-full flex flex-col items-center justify-center text-slate-400 gap-2">
-        <el-icon class="text-4xl"><Share /></el-icon>
-        <p>暂无知识点。生成课件或点击「从课本抽取」即可自动构建图谱。</p>
+      <div v-if="!graph.nodes.length && !loading" class="kg-empty">
+        <div class="kg-empty-mark">
+          <el-icon class="text-3xl"><Share /></el-icon>
+        </div>
+        <p class="kg-empty-title">还没有知识点</p>
+        <p class="kg-empty-hint">生成课件，或从课本抽取，图谱会自动长出来。</p>
       </div>
-      <div v-else class="relative w-full h-full">
-        <p class="absolute top-2.5 left-3 z-10 text-[11px] text-slate-400 pointer-events-none">
-          {{ chartHint }}
-        </p>
+      <div v-else class="relative w-full h-full kg-canvas">
+        <div class="kg-overlay kg-overlay-top">
+          <span class="kg-chip">{{ chartHint }}</span>
+        </div>
+        <div class="kg-overlay kg-overlay-legend">
+          <span class="kg-leg"><i class="kg-leg-line kg-leg-pre" />前置</span>
+          <span class="kg-leg"><i class="kg-leg-line kg-leg-part" />组成</span>
+          <span class="kg-leg"><i class="kg-leg-line kg-leg-rel" />相关</span>
+          <span class="kg-leg"><i class="kg-leg-line kg-leg-app" />应用</span>
+          <span class="kg-leg"><i class="kg-leg-line kg-leg-cross" />跨学科</span>
+          <span class="kg-leg kg-leg-note">点越大越核心</span>
+        </div>
+        <div v-if="graphIndex.subjects.length > 1" class="kg-overlay kg-overlay-subjects">
+          <span v-for="(s, i) in graphIndex.subjects" :key="s" class="kg-sub">
+            <i :style="{ background: subjectSwatch(i) }" />{{ s }}
+          </span>
+        </div>
         <VChart ref="chartRef" class="kg-chart" :option="chartOption" :update-options="{ notMerge: true }"
           autoresize v-loading="loading"
           @click="onChartClick" @finished="onChartFinished" @graphroam="onGraphRoam" />
@@ -190,10 +196,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, nextTick, onMounted, onBeforeUnmount } from 'vue'
+import { ref, reactive, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { watchDebounced } from '@vueuse/core'
 import { knowledgeApi, textbookApi } from '@/api/modules'
 import { useEducationStore } from '@/stores/education'
+import { useAppearanceStore } from '@/stores/appearance'
 import { ElMessage } from 'element-plus'
 import { Plus, MagicStick, Connection, Share, Delete, ArrowDown, Right } from '@element-plus/icons-vue'
 import type { KgGraph, KgNode, KgEdge, KgNeighbor, Textbook } from '@/types'
@@ -208,16 +215,72 @@ use([GraphChart, TooltipComponent, CanvasRenderer])
 
 const CORE_MAX = 96
 const CORE_EXPAND_CAP = 120
-const LABEL_CORE_COUNT = 28
+const LABEL_CORE_COUNT = 36
 const FOCUS_HOPS = 2
 
-const CLUSTER_COLORS = [
-  '#4f46e5', '#0284c7', '#059669', '#d97706',
-  '#7c3aed', '#be185d', '#0f766e', '#b45309',
-]
-const SUBJECT_COLORS = ['#4f46e5', '#0284c7', '#059669', '#d97706', '#7c3aed', '#be185d', '#0f766e', '#b45309']
+/** 多学科时的区分色（首色运行时用主题主色替换）。单学科不走彩虹，只用主色深浅。 */
+const SUBJECT_HUES = ['#4f46e5', '#0f766e', '#b45309', '#9f1239', '#0369a1', '#57534e']
+
+type ThemeTokens = {
+  primary: string
+  surface: string
+  ink: string
+  inkSecondary: string
+  inkMuted: string
+  border: string
+  pill: string
+}
+
+function cssVar(name: string, fallback: string) {
+  if (typeof document === 'undefined') return fallback
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback
+}
+
+function readTheme(): ThemeTokens {
+  return {
+    primary: cssVar('--color-primary', '#4f46e5'),
+    surface: cssVar('--surface', '#fffcf7'),
+    ink: cssVar('--ink', '#1c1917'),
+    inkSecondary: cssVar('--ink-secondary', '#57534e'),
+    inkMuted: cssVar('--ink-muted', '#78716c'),
+    border: cssVar('--border', '#e4e0d6'),
+    pill: cssVar('--pill-bg', '#f3efe6'),
+  }
+}
+
+function hexToRgb(hex: string): [number, number, number] {
+  const h = hex.replace('#', '').trim()
+  const full = h.length === 3 ? h.split('').map(c => c + c).join('') : h
+  const n = parseInt(full.slice(0, 6), 16)
+  if (Number.isNaN(n)) return [79, 70, 229]
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255]
+}
+
+function rgbToHex(r: number, g: number, b: number) {
+  const c = (n: number) => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, '0')
+  return `#${c(r)}${c(g)}${c(b)}`
+}
+
+function mixHex(a: string, b: string, t: number) {
+  const [ar, ag, ab] = hexToRgb(a)
+  const [br, bg, bb] = hexToRgb(b)
+  return rgbToHex(ar + (br - ar) * t, ag + (bg - ag) * t, ab + (bb - ab) * t)
+}
+
+function hexAlpha(hex: string, a: number) {
+  const [r, g, b] = hexToRgb(hex)
+  return `rgba(${r}, ${g}, ${b}, ${a})`
+}
 
 const edu = useEducationStore()
+const appearance = useAppearanceStore()
+const themeTokens = ref<ThemeTokens>(readTheme())
+watch(() => appearance.theme, () => { themeTokens.value = readTheme() })
+
+function subjectSwatch(i: number) {
+  if (i === 0) return themeTokens.value.primary
+  return SUBJECT_HUES[i % SUBJECT_HUES.length]
+}
 const loading = ref(false)
 const submitting = ref(false)
 const graph = ref<KgGraph>({ nodes: [], edges: [] })
@@ -246,7 +309,7 @@ const REL_META: Record<string, { label: string; color: string; dashed: boolean; 
 const relLabel = (t: string) => REL_META[t]?.label || t
 const relTagType = (t: string) => REL_META[t]?.tag || 'info'
 
-function shortName(name: string, max = 8) {
+function shortName(name: string, max = 14) {
   const s = (name || '').replace(/\s+/g, '')
   return s.length > max ? `${s.slice(0, max)}…` : s
 }
@@ -267,33 +330,6 @@ function buildAdj(nodes: KgNode[], edges: KgEdge[]) {
     adj.get(e.target)!.add(e.source)
   }
   return { degree, adj }
-}
-
-function communities(nodeIds: string[], adj: Map<string, Set<string>>) {
-  const parent = new Map<string, string>()
-  const find = (x: string): string => {
-    const p = parent.get(x) ?? x
-    if (p !== x) parent.set(x, find(p))
-    return parent.get(x) ?? x
-  }
-  for (const id of nodeIds) parent.set(id, id)
-  for (const [u, vs] of adj) {
-    for (const v of vs) {
-      const a = find(u), b = find(v)
-      if (a !== b) parent.set(a, b)
-    }
-  }
-  const buckets = new Map<string, string[]>()
-  for (const id of nodeIds) {
-    const r = find(id)
-    const list = buckets.get(r)
-    if (list) list.push(id)
-    else buckets.set(r, [id])
-  }
-  const ranked = [...buckets.values()].sort((a, b) => b.length - a.length)
-  const out = new Map<string, number>()
-  ranked.forEach((members, i) => { for (const id of members) out.set(id, i) })
-  return out
 }
 
 function neighborhood(start: string, adj: Map<string, Set<string>>, hops: number) {
@@ -338,9 +374,8 @@ function pickCore(nodes: KgNode[], degree: Map<string, number>, adj: Map<string,
 
 const graphIndex = computed(() => {
   const { degree, adj } = buildAdj(graph.value.nodes, graph.value.edges)
-  const community = communities(graph.value.nodes.map(n => n.id), adj)
   const subjects = Array.from(new Set(graph.value.nodes.map(n => n.subject_name || '未分类')))
-  return { degree, adj, community, subjects }
+  return { degree, adj, subjects }
 })
 
 const visibleGraph = computed(() => {
@@ -363,17 +398,57 @@ const chartHint = computed(() => {
   return '核心主干 · 点击节点展开邻域'
 })
 
-function nodeColor(n: KgNode, communityId: number, subjects: string[]) {
-  const multiSubject = subjects.length > 1
+function nodeFill(n: KgNode, degree: number, subjects: string[], tokens: ThemeTokens) {
+  const multi = subjects.length > 1
   const subIdx = Math.max(0, subjects.indexOf(n.subject_name || '未分类'))
-  const base = multiSubject
-    ? SUBJECT_COLORS[subIdx % SUBJECT_COLORS.length]
-    : CLUSTER_COLORS[communityId % CLUSTER_COLORS.length]
-  return base
+  const base = multi ? subjectSwatch(subIdx) : tokens.primary
+  const pale = (multi ? 0.14 : 0.1) + (1 - Math.min(degree, 8) / 8) * (multi ? 0.28 : 0.5)
+  return mixHex(base, tokens.surface, pale)
+}
+
+function nodeLabelStyle(
+  show: boolean,
+  opts: { isFocus: boolean; hub: boolean; focusing: boolean; tokens: ThemeTokens; name: string },
+) {
+  const { isFocus, hub, focusing, tokens, name } = opts
+  return {
+    show,
+    position: 'bottom',
+    distance: 6,
+    fontSize: isFocus ? 12 : hub ? 11 : 10,
+    fontWeight: isFocus || hub ? 600 : 500,
+    color: tokens.ink,
+    backgroundColor: hexAlpha(tokens.surface, isFocus ? 0.96 : 0.88),
+    borderColor: isFocus ? tokens.primary : hexAlpha(tokens.border, 0.9),
+    borderWidth: isFocus ? 1 : 0.5,
+    borderRadius: 6,
+    padding: [3, 7],
+    formatter: shortName(name, focusing ? 16 : 14),
+  }
+}
+
+function edgeLook(e: KgEdge, tokens: ThemeTokens) {
+  const meta = REL_META[e.type] || REL_META.related
+  if (e.cross_subject) {
+    return { color: '#9f3860', dashed: true, width: 1.8, directed: true }
+  }
+  switch (e.type) {
+    case 'prerequisite':
+      return { color: tokens.primary, dashed: false, width: 2.2, directed: true }
+    case 'part_of':
+      return { color: '#3d6b8a', dashed: false, width: 1.8, directed: true }
+    case 'application':
+      return { color: '#b45309', dashed: false, width: 1.9, directed: true }
+    case 'contrast':
+      return { color: '#b91c1c', dashed: true, width: 1.4, directed: false }
+    default:
+      return { color: tokens.inkMuted, dashed: meta.dashed, width: 1, directed: false }
+  }
 }
 
 const chartOption = computed(() => {
-  const { degree, community, subjects } = graphIndex.value
+  const tokens = themeTokens.value
+  const { degree, subjects } = graphIndex.value
   const rankedVisible = [...visibleGraph.value.nodes]
     .sort((a, b) => (degree.get(b.id) || 0) - (degree.get(a.id) || 0))
   const labelIds = new Set(rankedVisible.slice(0, LABEL_CORE_COUNT).map(n => n.id))
@@ -382,69 +457,76 @@ const chartOption = computed(() => {
 
   const nodes = visibleGraph.value.nodes.map(n => {
     const d = degree.get(n.id) || 0
-    const comm = community.get(n.id) || 0
     const isFocus = n.id === focusedId.value
-    const color = nodeColor(n, comm, subjects)
+    const hub = d >= 4
+    const color = nodeFill(n, d, subjects, tokens)
     const sizeBase = overview ? 7 : focusing ? 16 : 12
-    const symbolSize = sizeBase + Math.min(d, 12) * (overview ? 1.8 : 2.6) + (isFocus ? 8 : 0)
-    const showLabel = focusing || (!overview && (labelIds.has(n.id) || d >= 3))
+    const symbolSize = sizeBase + Math.min(d, 12) * (overview ? 1.5 : 2.1) + (isFocus ? 8 : 0)
+    const showLabel = focusing || (!overview && (labelIds.has(n.id) || hub || isFocus))
     return {
       id: n.id,
       name: n.name,
       shortName: shortName(n.name),
       degree: d,
-      category: comm,
       symbolSize,
       value: n.subject_name || '',
       z: d + (isFocus ? 50 : 0),
       itemStyle: {
         color,
-        opacity: overview ? (d >= 2 ? 0.85 : 0.35) : (d >= 2 || isFocus ? 0.95 : 0.62),
-        borderColor: isFocus ? '#312e81' : '#fff',
-        borderWidth: isFocus ? 3 : 1,
+        opacity: overview ? (d >= 2 ? 0.92 : 0.42) : (d >= 2 || isFocus ? 1 : 0.78),
+        borderColor: isFocus ? tokens.primary : tokens.surface,
+        borderWidth: isFocus ? 2.5 : 1.6,
+        shadowBlur: isFocus ? 14 : hub ? 8 : 0,
+        shadowColor: hexAlpha(color, isFocus ? 0.32 : 0.18),
       },
-      label: {
-        show: showLabel,
-        position: 'right',
-        fontSize: isFocus ? 12 : 10,
-        color: '#44403c',
-        formatter: shortName(n.name, focusing ? 12 : 8),
-      },
+      label: nodeLabelStyle(showLabel, { isFocus, hub, focusing, tokens, name: n.name }),
     }
   })
 
   const links = visibleGraph.value.edges.map(e => {
-    const meta = REL_META[e.type] || REL_META.related
-    const color = e.cross_subject ? '#be185d' : meta.color
+    const look = edgeLook(e, tokens)
     const pending = e.status === 'pending'
     const hub = Math.min(degree.get(e.source) || 0, degree.get(e.target) || 0)
-    const width = (e.cross_subject ? 2.6 : meta.width) + (e.weight || 0.5) * 0.6
+    const width = look.width + (e.weight || 0.5) * 0.45
     return {
       source: e.source, target: e.target,
-      value: 40 + hub * 12,
+      value: 48 + hub * 10,
       lineStyle: {
-        color,
-        width: overview ? Math.max(0.6, width * 0.55) : width,
-        type: (e.cross_subject || meta.dashed) ? 'dashed' : 'solid',
-        opacity: pending ? 0.35 : (overview ? 0.22 : 0.72),
-        curveness: 0.12,
+        color: look.color,
+        width: overview ? Math.max(0.7, width * 0.55) : width,
+        type: look.dashed ? 'dashed' as const : 'solid' as const,
+        opacity: pending ? 0.28 : (overview ? 0.28 : (look.dashed ? 0.45 : 0.62)),
+        curveness: look.dashed ? 0.18 : 0.1,
+        cap: 'round' as const,
       },
+      symbol: look.directed ? ['none', 'arrow'] : ['none', 'none'],
+      symbolSize: look.directed ? (overview ? 6 : 8) : 0,
     }
   })
 
   const force = focusing
-    ? { repulsion: 520, edgeLength: [90, 170], gravity: 0.06, friction: 0.55 }
+    ? { repulsion: 360, edgeLength: [88, 150], gravity: 0.1, friction: 0.58, layoutAnimation: true }
     : overview
-      ? { repulsion: 160, edgeLength: [36, 90], gravity: 0.16, friction: 0.72 }
-      : { repulsion: 430, edgeLength: [70, 190], gravity: 0.1, friction: 0.58 }
+      ? { repulsion: 140, edgeLength: [32, 78], gravity: 0.2, friction: 0.74, layoutAnimation: true }
+      : { repulsion: 280, edgeLength: [56, 128], gravity: 0.16, friction: 0.62, layoutAnimation: true }
 
   return {
+    backgroundColor: 'transparent',
+    animationDuration: 600,
+    animationEasingUpdate: 'cubicOut' as const,
     tooltip: {
       confine: true,
+      backgroundColor: tokens.surface,
+      borderColor: tokens.border,
+      borderWidth: 1,
+      padding: [10, 12],
+      textStyle: { color: tokens.ink, fontSize: 12 },
+      extraCssText: 'border-radius:10px;box-shadow:var(--shadow-card);',
       formatter: (p: any) => {
         if (p.dataType !== 'node') return ''
         const d = p.data
-        return `${d.name}<br/>${d.value || '未分类'} · 关联 ${d.degree || 0} 个`
+        return `<div style="font-weight:600;margin-bottom:4px">${d.name}</div>`
+          + `<div style="color:${tokens.inkMuted};font-size:11px">${d.value || '未分类'} · 关联 ${d.degree || 0} 个</div>`
       },
     },
     series: [{
@@ -454,21 +536,36 @@ const chartOption = computed(() => {
       draggable: true,
       data: nodes,
       links,
+      top: 52,
+      bottom: 68,
+      left: 28,
+      right: subjects.length > 1 ? 132 : 28,
       scaleLimit: { min: 0.35, max: 4 },
-      edgeSymbol: ['none', 'arrow'],
-      edgeSymbolSize: overview ? 5 : 8,
+      edgeSymbol: ['none', 'none'],
+      labelLayout: { hideOverlap: true },
       force,
       emphasis: {
         focus: 'adjacency',
         scale: true,
-        label: { show: true, fontSize: 12, formatter: (p: any) => p.data?.name || p.name },
-        itemStyle: { borderColor: '#312e81', borderWidth: 2 },
-        lineStyle: { width: 3.2, opacity: 1 },
+        label: {
+          show: true,
+          fontSize: 12,
+          fontWeight: 600,
+          formatter: (p: any) => p.data?.name || p.name,
+          backgroundColor: hexAlpha(tokens.surface, 0.96),
+          borderColor: tokens.primary,
+          borderWidth: 1,
+          borderRadius: 6,
+          padding: [3, 7],
+          color: tokens.ink,
+        },
+        itemStyle: { borderColor: tokens.primary, borderWidth: 2 },
+        lineStyle: { width: 2.8, opacity: 1 },
       },
       blur: {
-        itemStyle: { opacity: 0.12 },
-        lineStyle: { opacity: 0.08 },
-        label: { opacity: 0.15 },
+        itemStyle: { opacity: 0.14 },
+        lineStyle: { opacity: 0.06 },
+        label: { opacity: 0.12 },
       },
     }],
   }
@@ -569,7 +666,10 @@ function onGraphRoam(ev: any) {
   if (!series?.data) return
   const data = series.data.map((d: any) => ({
     ...d,
-    label: { ...(typeof d.label === 'object' ? d.label : {}), show: want && (d.degree || 0) >= 2 },
+    label: {
+      ...(typeof d.label === 'object' ? d.label : {}),
+      show: want && (d.degree || 0) >= 2,
+    },
   }))
   chart.setOption({ series: [{ layout: 'none', data }] })
 }
@@ -723,6 +823,7 @@ async function removeNode() {
 }
 
 onMounted(() => {
+  themeTokens.value = readTheme()
   filter.subject_id = edu.selectedSubjectId || null
   load()
   loadTextbooks()
@@ -734,14 +835,150 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .kg-stage {
-  height: min(62vh, calc(100vh - 260px));
-  min-height: 360px;
+  height: min(68vh, calc(100vh - 220px));
+  min-height: 420px;
+  background: var(--surface);
+}
+.kg-stage:hover {
+  box-shadow: var(--shadow-card), inset 0 1px 0 rgba(255, 255, 255, 0.72);
+}
+.kg-canvas {
+  background:
+    radial-gradient(ellipse 70% 60% at 50% 42%, var(--login-orb-a), transparent 62%),
+    var(--surface);
 }
 .kg-chart,
 .kg-stage :deep(x-vue-echarts) {
   display: block;
   width: 100%;
   height: 100%;
-  min-height: 360px;
+  min-height: 420px;
+  background: transparent;
+}
+.kg-overlay {
+  position: absolute;
+  z-index: 2;
+  pointer-events: none;
+}
+.kg-overlay-top {
+  top: 12px;
+  left: 12px;
+}
+.kg-chip {
+  display: inline-block;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface) 86%, transparent);
+  border: 1px solid var(--border-subtle);
+  color: var(--ink-muted);
+  font-size: 11px;
+  letter-spacing: 0.01em;
+}
+.kg-overlay-legend {
+  left: 12px;
+  bottom: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  max-width: min(92%, 520px);
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  border: 1px solid var(--border-subtle);
+}
+.kg-overlay-subjects {
+  top: 12px;
+  right: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  max-width: 46%;
+}
+.kg-leg {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--ink-secondary);
+}
+.kg-leg-note {
+  color: var(--ink-muted);
+}
+.kg-leg-line {
+  display: inline-block;
+  width: 16px;
+  height: 0;
+  border-top-width: 2px;
+  border-top-style: solid;
+}
+.kg-leg-pre { border-color: var(--color-primary); }
+.kg-leg-part { border-color: #3d6b8a; border-top-width: 3px; }
+.kg-leg-rel { border-color: var(--ink-muted); border-top-style: dashed; }
+.kg-leg-app { border-color: #b45309; }
+.kg-leg-cross { border-color: #9f3860; border-top-style: dashed; }
+.kg-sub {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  border: 1px solid var(--border-subtle);
+  font-size: 11px;
+  color: var(--ink-secondary);
+}
+.kg-sub i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.kg-empty {
+  height: 100%;
+  min-height: 420px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background:
+    radial-gradient(ellipse 60% 50% at 50% 48%, var(--login-orb-a), transparent 64%),
+    var(--surface);
+}
+.kg-empty-mark {
+  width: 52px;
+  height: 52px;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--pill-bg);
+  color: var(--color-primary);
+}
+.kg-empty-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.kg-empty-hint {
+  font-size: 13px;
+  color: var(--ink-muted);
+}
+@media (prefers-reduced-transparency: reduce) {
+  .kg-chip,
+  .kg-overlay-legend,
+  .kg-sub {
+    background: var(--surface);
+  }
+}
+@media (max-width: 767px) {
+  .kg-overlay-subjects {
+    max-width: 58%;
+  }
+  .kg-stage {
+    min-height: 360px;
+    height: min(58vh, calc(100vh - 200px));
+  }
 }
 </style>

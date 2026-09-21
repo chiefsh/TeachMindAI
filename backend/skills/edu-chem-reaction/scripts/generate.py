@@ -104,6 +104,59 @@ def build_combustion_h2():
     }
 
 
+def build_combustion_c():
+    return {
+        "meta": {"title": "碳在氧气中燃烧", "subtitle": "C + O₂ 点燃生成二氧化碳",
+                 "language": "zh-CN", "category": "junior", "accent": "amber", "engine": "morph"},
+        "conditions": {"text": "点燃", "exothermic": True, "flame": True},
+        "reactants": [{"species": "C", "count": 1}, {"species": "O2", "count": 1}],
+        "products": [{"species": "CO2", "count": 1}],
+        "atom_map": [
+            ["C#1.X", "CO2#1.Y"],
+            ["O2#1.Oa", "CO2#1.Xa"], ["O2#1.Ob", "CO2#1.Xb"],
+        ],
+        "energy": {"activation": 0.5, "deltaH": -0.72, "reactantLabel": "C+O₂", "productLabel": "CO₂"},
+        "steps": [
+            {"title": "反应物",
+             "html": "一个 <span class='text-slate-200 font-semibold'>碳原子 (C)</span> 靠近一个 "
+                     "<span class='text-red-400 font-semibold'>氧分子 (O₂)</span>。"
+                     "常温下碳很稳定，需要<span class='text-amber-400 font-semibold'>点燃</span>提供活化能。"},
+            {"title": "点燃燃烧",
+             "html": "达到着火点后 <span class='border-b border-dashed border-amber-500'>O=O 键断裂</span>，"
+                     "碳与氧重新结合，放出大量热。这就是木炭在氧气中发出白光的微观过程。"},
+            {"title": "生成二氧化碳",
+             "html": "碳原子与两个氧原子结合，生成线形的 "
+                     "<span class='text-slate-200 font-semibold'>二氧化碳 (CO₂)</span>。原子守恒：1C、2O。"},
+        ],
+    }
+
+
+def build_combustion_s():
+    return {
+        "meta": {"title": "硫在氧气中燃烧", "subtitle": "S + O₂ 点燃生成二氧化硫",
+                 "language": "zh-CN", "category": "junior", "accent": "yellow", "engine": "morph"},
+        "conditions": {"text": "点燃", "exothermic": True, "flame": True},
+        "reactants": [{"species": "S", "count": 1}, {"species": "O2", "count": 1}],
+        "products": [{"species": "SO2", "count": 1}],
+        "atom_map": [
+            ["S#1.X", "SO2#1.A"],
+            ["O2#1.Oa", "SO2#1.Ha"], ["O2#1.Ob", "SO2#1.Hb"],
+        ],
+        "energy": {"activation": 0.45, "deltaH": -0.6, "reactantLabel": "S+O₂", "productLabel": "SO₂"},
+        "steps": [
+            {"title": "反应物",
+             "html": "一个 <span class='text-amber-300 font-semibold'>硫原子 (S)</span> 靠近一个 "
+                     "<span class='text-red-400 font-semibold'>氧分子 (O₂)</span>。"},
+            {"title": "点燃燃烧",
+             "html": "点燃后 <span class='border-b border-dashed border-amber-400'>O=O 键断裂</span>，"
+                     "硫与氧结合，放出热量。宏观上看到蓝紫色火焰和刺激性气体。"},
+            {"title": "生成二氧化硫",
+             "html": "硫原子与两个氧原子结合，生成弯曲形的 "
+                     "<span class='text-amber-200 font-semibold'>二氧化硫 (SO₂)</span>。原子守恒：1S、2O。"},
+        ],
+    }
+
+
 # =====================================================================
 # 3) 电解水（初中·morph·分解·吸热/通电）
 # =====================================================================
@@ -365,6 +418,8 @@ def build_glucose_combustion():
 REGISTRY = {
     "combustion_ch4": build_combustion_ch4,
     "combustion_h2": build_combustion_h2,
+    "combustion_c": build_combustion_c,
+    "combustion_s": build_combustion_s,
     "electrolysis_water": build_electrolysis_water,
     "redox_na_cl2": build_redox_na_cl2,
     "esterification": build_esterification,

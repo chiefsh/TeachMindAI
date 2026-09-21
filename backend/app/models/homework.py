@@ -24,6 +24,11 @@ class QuestionSource(str, enum.Enum):
     mixed = "mixed"   # 题库优先，缺口用 AI 补
 
 
+class ReviewStatus(str, enum.Enum):
+    unreviewed = "unreviewed"  # 生成后待教师校对
+    verified = "verified"      # 教师确认题与答案可用
+
+
 class HomeworkPaper(Base, TimestampMixin):
     __tablename__ = "homework_papers"
 
@@ -47,6 +52,9 @@ class HomeworkPaper(Base, TimestampMixin):
     question_config: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     # 旧 {"single_choice":5}；新 {"difficulty_mode","items":[{"type","count","ratios"}]}
     gen_status: Mapped[ParseStatus] = mapped_column(SAEnum(ParseStatus), default=ParseStatus.pending)
+    review_status: Mapped[str] = mapped_column(
+        String(16), default=ReviewStatus.unreviewed.value, server_default="unreviewed",
+    )
     task_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     content: Mapped[str | None] = mapped_column(Text, nullable=True)   # 生成的完整试卷内容
 
@@ -66,9 +74,11 @@ class HomeworkQuestion(Base):
     content: Mapped[str] = mapped_column(Text, nullable=False)   # 题目内容（题库题或AI生成题）
     options: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     answer: Mapped[str | None] = mapped_column(Text, nullable=True)
+    explanation: Mapped[str | None] = mapped_column(Text, nullable=True)
     question_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
     score: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 考试有分；作业为 null
     source: Mapped[str | None] = mapped_column(String(16), nullable=True)  # ai | bank
+    check_status: Mapped[str | None] = mapped_column(String(16), nullable=True)  # passed | unchecked | bank
 
     paper = relationship("HomeworkPaper", back_populates="questions")
     question = relationship("Question")

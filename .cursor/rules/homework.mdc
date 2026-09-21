@@ -7,7 +7,9 @@ alwaysApply: false
 # 作业 / 试卷
 
 - 模型：`HomeworkPaper` + `HomeworkQuestion`。范围 `source_type`：课件 / 整本课本 / 指定章节；题目来源 `question_source`：ai / bank / mixed。
-- 生成：Celery `generate_homework_task` → `homework_service.generate_homework`（解析知识点 → 题库筛选 → AI 补缺）。作业不记分，考试才赋分。
+- 生成：Celery `generate_homework_task` → `homework_service.generate_homework`（解析知识点 → 题库筛选 → AI 补缺 → 选择题/判断/填空/计算独立校验，对不上则丢弃）。作业不记分，考试才赋分。
+- AI 新题只进卷面，不立刻写入题库；`POST /homework/{id}/review` 教师标记已校对后才入库。`review_status`：unreviewed / verified。
+- 导出参考答案、批改布置要求 `review_status=verified`。
 - `question_config`：`difficulty_mode=overall` 用卷面总难度；`per_type` 按各题型 `ratios` 拆难度。`items` 顺序即卷面大题顺序。旧版 `{题型:数量}` 仍可解析。
 - 重新生成：`POST /homework/{id}/regenerate`，可改配置；组卷前会清掉旧题及依赖的批改记录。
 - 导出：`export_service.build_homework_docx/pdf`（作业不展示满分）。Word / PDF / 打印默认不含参考答案，`include_answers` 为真才附上。

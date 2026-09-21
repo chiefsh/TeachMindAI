@@ -206,13 +206,13 @@
             <template v-else>
               <ul v-if="currentSlide.bullets?.length" class="mb-4 space-y-1.5">
                 <li v-for="(b, i) in currentSlide.bullets" :key="i" class="flex gap-2 text-slate-700">
-                  <span class="text-primary-500 mt-0.5">▸</span><span>{{ b }}</span>
+                  <span class="text-primary-500 mt-0.5">▸</span><span>{{ normalizeChemText(b) }}</span>
                 </li>
               </ul>
               <div
                 v-if="currentSlide.content"
                 class="prose prose-sm max-w-none text-slate-700 leading-relaxed cw-content"
-                v-html="renderMarkdown(currentSlide.content)"
+                v-html="renderMarkdown(normalizeChemText(currentSlide.content))"
               ></div>
               <div v-if="slideImages(currentSlide).length" class="mt-4 flex flex-wrap gap-3">
                 <img
@@ -252,16 +252,26 @@
       </div>
     </template>
 
-    <!-- 互动全屏预览 -->
-    <el-dialog v-model="showFs" title="互动预览" width="92%" top="4vh" :destroy-on-close="true">
-      <iframe
-        v-if="fsBlobUrl"
-        :src="fsBlobUrl"
-        sandbox="allow-scripts"
-        class="w-full rounded-lg border border-slate-200 bg-white"
-        style="height:78vh"
-      ></iframe>
-    </el-dialog>
+    <!-- 互动全屏预览：与互动动画库「全屏演示」同一套铺满遮罩 -->
+    <Teleport to="body">
+      <div
+        v-if="presentingInteractive && presentUrl"
+        ref="presentRoot"
+        class="fixed inset-0 z-[4000] bg-black flex flex-col"
+      >
+        <div class="h-11 shrink-0 flex items-center gap-3 px-4 bg-black/80 text-white">
+          <span class="truncate flex-1 text-sm">{{ presentTitle }}</span>
+          <span class="text-xs text-white/50">Esc 退出全屏</span>
+          <el-button size="small" @click="exitInteractivePresent">退出</el-button>
+        </div>
+        <iframe
+          class="flex-1 w-full border-0 bg-black"
+          :src="presentUrl"
+          sandbox="allow-scripts allow-same-origin allow-popups allow-modals"
+          allow="fullscreen"
+        />
+      </div>
+    </Teleport>
 
     <!-- 网页课件预览 -->
     <el-dialog v-model="showPage" width="94%" top="2vh" :destroy-on-close="true">
@@ -274,8 +284,11 @@
       </template>
       <iframe
         v-if="pageBlobUrl"
+        ref="pageIframe"
         :src="pageBlobUrl"
-        sandbox="allow-scripts allow-popups allow-modals"
+        sandbox="allow-scripts allow-same-origin allow-popups allow-modals"
+        allow="fullscreen *"
+        allowfullscreen
         class="w-full rounded-lg border border-slate-200 bg-white"
         style="height:86vh"
       ></iframe>
@@ -295,6 +308,8 @@
         ref="deckIframe"
         :src="deckBlobUrl"
         sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+        allow="fullscreen *"
+        allowfullscreen
         class="w-full rounded-lg border border-slate-200 bg-white"
         style="height:90vh"
       ></iframe>
@@ -477,10 +492,13 @@
       </template>
       <iframe
         v-if="versionViewUrl"
+        ref="versionViewIframe"
         :src="versionViewUrl"
         :sandbox="versionViewIsWeb
-          ? 'allow-scripts allow-popups allow-modals'
+          ? 'allow-scripts allow-same-origin allow-popups allow-modals'
           : 'allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox'"
+        allow="fullscreen *"
+        allowfullscreen
         class="w-full rounded-lg border border-slate-200 bg-white"
         :style="{ height: versionViewIsWeb ? '86vh' : '90vh' }"
       ></iframe>
@@ -527,7 +545,7 @@ import {
   Monitor, Link, MagicStick, Share, RefreshRight, Clock,
 } from '@element-plus/icons-vue'
 import QRCode from 'qrcode'
-import { createIframeBlob, isAppInteractiveHtml } from '@/utils/coursewareFrame'
+import { createIframeBlob, isAppInteractiveHtml, wrapInteractiveHtml } from '@/utils/coursewareFrame'
 import { armIframeLoad, captureIframe, createCaptureBlob, waitMs, waitScene } from '@/utils/interactiveShot'
 import { buildRevealDeck } from '@/utils/revealDeck'
 import { buildLessonPage } from '@/utils/lessonPage'
@@ -536,6 +554,7 @@ import { pageTypeLabel, PAGE_KINDS, normalizePageKind } from '@/utils/courseware
 import { useEducationStore } from '@/stores/education'
 import { useAuthStore } from '@/stores/auth'
 import { renderMarkdown } from '@/utils/markdown'
+import { normalizeChemText } from '@/utils/chemText'
 import { copyToClipboard } from '@/utils/clipboard'
 import ShareDialog from '@/components/ShareDialog.vue'
 import type { Courseware, CoursewareSession, CoursewareVersion, SessionBoard } from '@/types'
@@ -553,7 +572,10 @@ const copyTitle = ref('')
 const copyLoading = ref(false)
 const copyInputRef = ref<{ focus?: () => void } | null>(null)
 const imageMap = ref<Record<string, string>>({})
-const showFs = ref(false)
+const presentingInteractive = ref(false)
+const presentRoot = ref<HTMLElement | null>(null)
+const presentTitle = ref('实验台')
+const presentUrl = ref('')
 let pollTimer: ReturnType<typeof setInterval> | null = null
 let optTimer: ReturnType<typeof setInterval> | null = null
 
@@ -592,9 +614,6 @@ function makeBlobUrl(html: string): string {
 // 当前 slide 的互动 iframe blob url（由 watch 维护，见下方）
 const currentBlobUrl = ref('')
 
-// 全屏预览
-const fsBlobUrl = ref('')
-
 // 演示模式
 const showPresent = ref(false)
 const deckBlobUrl = ref('')
@@ -615,6 +634,56 @@ function fullscreenDeck() {
   if (!el) return
   const req = el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen
   if (req) req.call(el)
+}
+
+const pageIframe = ref<HTMLIFrameElement | null>(null)
+const versionViewIframe = ref<HTMLIFrameElement | null>(null)
+
+function revokePresentUrl() {
+  if (presentUrl.value) {
+    URL.revokeObjectURL(presentUrl.value)
+    presentUrl.value = ''
+  }
+}
+
+async function openInteractivePresent(html: string, title?: string) {
+  if (!html) return
+  revokePresentUrl()
+  presentTitle.value = title || '实验台'
+  presentUrl.value = URL.createObjectURL(new Blob([html], { type: 'text/html;charset=utf-8' }))
+  presentingInteractive.value = true
+  await nextTick()
+  const el = presentRoot.value as any
+  const req = el?.requestFullscreen || el?.webkitRequestFullscreen || el?.msRequestFullscreen
+  if (req) {
+    try { await req.call(el) } catch { /* 浏览器拒绝时仍用铺满遮罩 */ }
+  }
+}
+
+function exitInteractivePresent() {
+  presentingInteractive.value = false
+  const doc = document as any
+  if (document.fullscreenElement || doc.webkitFullscreenElement) {
+    const exit = document.exitFullscreen || doc.webkitExitFullscreen
+    if (exit) exit.call(document)
+  }
+  revokePresentUrl()
+}
+
+function onPresentKey(e: KeyboardEvent) {
+  if (e.key === 'Escape' && presentingInteractive.value) exitInteractivePresent()
+}
+
+function onCwFullscreenMessage(e: MessageEvent) {
+  const d: any = e.data
+  if (!d || d.__cw !== true || d.type !== 'fullscreen') return
+  const frames = [pageIframe.value, deckIframe.value, versionViewIframe.value]
+  if (!frames.some(f => f && f.contentWindow === e.source)) return
+  if (d.action === 'exit') {
+    exitInteractivePresent()
+    return
+  }
+  void openInteractivePresent(d.srcdoc || '', d.title)
 }
 
 // 网页样式课件：单页滚动网页，可预览也可下载为独立 HTML
@@ -903,9 +972,8 @@ function rateColor(rate: number) {
 }
 
 function openFullscreen(html: string) {
-  if (fsBlobUrl.value) { URL.revokeObjectURL(fsBlobUrl.value) }
-  fsBlobUrl.value = createIframeBlob(html, cw.value?.theme)
-  showFs.value = true
+  const wrapped = wrapInteractiveHtml(html, cw.value?.theme)
+  void openInteractivePresent(wrapped, isAppInteractiveHtml(html) ? '实验台' : '互动动画')
 }
 
 // 兜底：旧数据可能把整段 JSON 当成单页正文存了下来，这里尝试还原为结构化内容
@@ -1361,11 +1429,17 @@ function statusLabel(s?: string) {
   return ({ pending: '待生成', processing: '生成中', done: '已完成', failed: '生成失败' } as Record<string, string>)[s || ''] || s
 }
 
-onMounted(load)
+onMounted(() => {
+  window.addEventListener('message', onCwFullscreenMessage)
+  window.addEventListener('keydown', onPresentKey)
+  load()
+})
 onUnmounted(() => {
+  window.removeEventListener('message', onCwFullscreenMessage)
+  window.removeEventListener('keydown', onPresentKey)
   stopStatusPoll()
   stopOptPoll()
-  showFs.value = false
+  exitInteractivePresent()
   showPage.value = false
   showPresent.value = false
   showInteraction.value = false
@@ -1376,7 +1450,7 @@ onUnmounted(() => {
   for (const f of frames) {
     if (f) { try { f.src = 'about:blank' } catch { /* ignore */ } }
   }
-  ;[currentBlobUrl, fsBlobUrl, deckBlobUrl, pageBlobUrl, versionViewUrl].forEach(r => {
+  ;[currentBlobUrl, deckBlobUrl, pageBlobUrl, versionViewUrl].forEach(r => {
     if (r.value) { URL.revokeObjectURL(r.value); r.value = '' }
   })
   _blobUrls.forEach(u => URL.revokeObjectURL(u))

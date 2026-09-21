@@ -13,7 +13,7 @@ from app.models.teacher import Teacher
 from app.models.homework import HomeworkPaper, HomeworkSourceType
 from app.models.courseware import Courseware
 from app.models.textbook import ParseStatus, Textbook
-from app.schemas.homework import HomeworkCreate, HomeworkOut, HomeworkDetail
+from app.schemas.homework import HomeworkCreate, HomeworkOut, HomeworkDetail, HomeworkReviewIn
 from app.api.deps import get_current_teacher, require_perm
 from app.core.access import (
     apply_private_scope, require_resource, require_org_asset,
@@ -149,6 +149,7 @@ async def regenerate_homework(
     _apply_paper_fields(paper, fields)
     paper.content = None
     paper.gen_status = ParseStatus.pending
+    paper.review_status = "unreviewed"
     paper.task_id = None
     await db.commit()
     return await _enqueue_generate(paper, db)
@@ -180,6 +181,9 @@ async def export_homework(
     paper = await _get_or_404(paper_id, teacher, db)
     if paper.gen_status != ParseStatus.done:
         raise HTTPException(status_code=400, detail="作业尚未生成完成，无法导出")
+    from app.services.homework_service import is_paper_verified
+    if include_answers and not is_paper_verified(paper):
+        raise HTTPException(status_code=400, detail="请先校对卷面后再导出参考答案")
 
     questions = [
         {
@@ -202,6 +206,29 @@ async def export_homework(
         media_type=media_type,
         headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"},
     )
+
+
+@router.post("/{paper_id}/review", response_model=HomeworkDetail)
+async def review_homework(
+    paper_id: int,
+    data: HomeworkReviewIn,
+    teacher: Teacher = Depends(require_perm("homework.edit")),
+    db: AsyncSession = Depends(get_db),
+):
+    """教师确认题干与答案可用。通过后 AI 题才写入题库。"""
+    paper = await _get_or_404(paper_id, teacher, db, edit=True)
+    if paper.gen_status != ParseStatus.done or not paper.questions:
+        raise HTTPException(status_code=400, detail="请先生成完成后再校对")
+    from app.services.homework_service import commit_verified_to_bank
+    if data.verified:
+        await commit_verified_to_bank(db, paper)
+        paper.review_status = "verified"
+    else:
+        paper.review_status = "unreviewed"
+    await db.commit()
+    paper = await _get_or_404(paper_id, teacher, db)
+    await stamp_access_many(db, teacher, [paper], "homework")
+    return paper
 
 
 @router.delete("/{paper_id}", status_code=204)

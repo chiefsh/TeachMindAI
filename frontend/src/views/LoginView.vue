@@ -181,6 +181,8 @@ async function handleRegister() {
 }
 
 onMounted(async () => {
+  void import('@/components/layout/MainLayout.vue')
+  void import('@/views/dashboard/DashboardView.vue')
   try {
     const cfg = await authApi.getConfig()
     enableRegist.value = cfg.enable_regist !== false

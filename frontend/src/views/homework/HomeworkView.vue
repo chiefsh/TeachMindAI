@@ -3,7 +3,7 @@
     <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between mb-4 sm:mb-6">
       <div>
         <h1 class="page-title">作业 / 考试生成</h1>
-        <p class="page-subtitle">按课件、课本或章节组卷；可从题库筛选或 AI 出题，知识点不超出所选范围</p>
+        <p class="page-subtitle">按课件、课本或章节组卷；AI 题经答案校验后入卷，教师校对通过才入库并布置</p>
       </div>
       <div class="flex flex-wrap gap-2">
         <el-button @click="openBatchCollab">批量设置协作者</el-button>
@@ -52,6 +52,14 @@
             <span :class="`badge badge-${row.gen_status}`">{{ statusLabel(row.gen_status) }}</span>
           </template>
         </el-table-column>
+        <el-table-column label="校对" width="90">
+          <template #default="{ row }">
+            <span v-if="row.gen_status === 'done'" :class="`badge badge-${isVerified(row) ? 'verified' : 'unreviewed'}`">
+              {{ isVerified(row) ? '已校对' : '待校对' }}
+            </span>
+            <span v-else class="text-xs text-slate-400">—</span>
+          </template>
+        </el-table-column>
         <el-table-column label="创建人" width="90">
           <template #default="{ row }">
             <span class="text-xs text-slate-500">{{ row.creator_name || '—' }}</span>
@@ -71,7 +79,7 @@
               @click="openRegenerate(row)"
             >重新生成</el-button>
             <el-button
-              v-if="row.gen_status === 'done'"
+              v-if="row.gen_status === 'done' && isVerified(row)"
               size="small" link type="success"
               @click="$router.push({ path: '/grading', query: { paper_id: row.id } })"
             >批改</el-button>
@@ -201,7 +209,7 @@
             <el-radio value="bank">题库筛选</el-radio>
             <el-radio value="mixed">题库优先，不足补 AI</el-radio>
           </el-radio-group>
-          <p class="text-xs text-slate-400 mt-1">题库按范围内知识点匹配；不够的题型会用 AI 补齐，仍不超出所选范围</p>
+          <p class="text-xs text-slate-400 mt-1">题库按范围内知识点匹配；AI 题会独立验算，对不上的丢掉。新题校对通过后才写入题库</p>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -223,6 +231,18 @@
               v-model="includeAnswers"
               size="small"
             >包括参考答案</el-checkbox>
+            <el-button
+              v-if="detailPaper?.gen_status === 'done' && questions.length && detailPaper.can_edit !== false && !isVerified(detailPaper)"
+              size="small"
+              type="warning"
+              :loading="reviewing"
+              @click="markReviewed(true)"
+            >标记已校对</el-button>
+            <el-button
+              v-else-if="detailPaper?.gen_status === 'done' && isVerified(detailPaper) && detailPaper.can_edit !== false"
+              size="small"
+              @click="markReviewed(false)"
+            >取消校对</el-button>
             <el-button-group>
               <el-button
                 v-if="detailPaper && canRegenerate(detailPaper)"
@@ -240,7 +260,13 @@
         </div>
       </template>
 
-      <!-- Word 文档样式 -->
+      <p
+        v-if="detailPaper?.gen_status === 'done' && questions.length && !isVerified(detailPaper)"
+        class="text-xs text-amber-700 bg-amber-50 rounded-md px-3 py-2 mb-3"
+      >
+        请核对照面上的题干与参考答案。选择题、判断、填空、计算已做过独立验算，不一致的已丢弃；简答/作文仍需人工确认。校对通过后才能导出答案或布置批改。
+        <span v-if="droppedCount">本次另丢弃 {{ droppedCount }} 道未通过校验的 AI 题。</span>
+      </p>
       <div v-if="detailPaper?.gen_status === 'done' && questions.length"
            class="max-h-[72vh] overflow-y-auto bg-slate-100 p-6">
         <div class="paper-doc bg-white mx-auto px-12 py-10 shadow-sm" style="max-width:720px">
@@ -269,6 +295,14 @@
                 <el-tag v-if="q.source" size="small" class="ml-2" :type="q.source === 'bank' ? 'success' : 'info'">
                   {{ q.source === 'bank' ? '题库' : 'AI' }}
                 </el-tag>
+                <el-tag
+                  v-if="q.source === 'ai' && q.check_status === 'passed'"
+                  size="small" type="success" class="ml-1"
+                >已核验</el-tag>
+                <el-tag
+                  v-else-if="q.source === 'ai'"
+                  size="small" type="warning" class="ml-1"
+                >待人工</el-tag>
               </p>
               <div v-if="q.options" class="mt-2 ml-5 space-y-1">
                 <p v-for="(val, key) in q.options" :key="key" class="text-slate-700 text-sm">
@@ -286,6 +320,7 @@
             <div class="space-y-1.5">
               <p v-for="(q, i) in questions" :key="q.id" class="text-sm text-slate-700">
                 <span class="font-medium">{{ i + 1 }}.</span> {{ q.answer || '—' }}
+                <span v-if="q.explanation" class="text-slate-400"> — {{ q.explanation }}</span>
               </p>
             </div>
           </div>
@@ -349,6 +384,7 @@ const regenId = ref<number | null>(null)
 const showDetail = ref(false)
 const detailPaper = ref<HomeworkPaper | null>(null)
 const exporting = ref<string>('')
+const reviewing = ref(false)
 const includeAnswers = ref(false)
 const formRef = ref()
 const chapterTreeRef = ref()
@@ -378,6 +414,16 @@ function defaultTypeRows(): TypeRow[] {
 
 const questions = computed<HomeworkQuestion[]>(() => detailPaper.value?.questions || [])
 const isExam = computed(() => detailPaper.value?.paper_type === 'exam')
+const droppedCount = computed(() => {
+  const raw = detailPaper.value?.content
+  if (!raw || !raw.trim().startsWith('{')) return 0
+  try {
+    const n = Number(JSON.parse(raw).ai_dropped || 0)
+    return Number.isFinite(n) && n > 0 ? n : 0
+  } catch {
+    return 0
+  }
+})
 const totalScore = computed(() => questions.value.reduce((s, q) => s + (q.score || 0), 0))
 const questionGroups = computed(() => {
   const groups: { type: string; title: string; questions: (HomeworkQuestion & { _no: number })[] }[] = []
@@ -575,6 +621,10 @@ function canRegenerate(row: HomeworkPaper) {
   return row.gen_status === 'done' || row.gen_status === 'failed'
 }
 
+function isVerified(row?: HomeworkPaper | null) {
+  return (row?.review_status || '') === 'verified'
+}
+
 function openCreate() {
   resetForm()
   showCreate.value = true
@@ -702,13 +752,17 @@ async function handleCreate() {
 }
 
 async function viewDetail(paper: HomeworkPaper) {
-  includeAnswers.value = false
+  includeAnswers.value = paper.review_status !== 'verified'
   detailPaper.value = (await homeworkApi.get(paper.id)) as any
   showDetail.value = true
 }
 
 function goGrade() {
   if (!detailPaper.value) return
+  if (!isVerified(detailPaper.value)) {
+    ElMessage.warning('请先校对卷面后再布置批改')
+    return
+  }
   showDetail.value = false
   router.push({ path: '/grading', query: { paper_id: detailPaper.value.id } })
 }
@@ -773,6 +827,10 @@ ${answers}
 
 function openPrint() {
   if (!detailPaper.value || !questions.value.length) return
+  if (includeAnswers.value && !isVerified(detailPaper.value)) {
+    ElMessage.warning('请先校对卷面后再打印参考答案')
+    return
+  }
   const w = window.open('', '_blank')
   if (!w) {
     ElMessage.warning('浏览器拦截了弹窗，请允许后重试')
@@ -795,6 +853,10 @@ function openPrint() {
 
 async function doExport(fmt: 'docx' | 'pdf') {
   if (!detailPaper.value) return
+  if (includeAnswers.value && !isVerified(detailPaper.value)) {
+    ElMessage.warning('请先校对卷面后再导出参考答案')
+    return
+  }
   exporting.value = fmt
   try {
     const blob = (await homeworkApi.exportFile(
@@ -810,6 +872,20 @@ async function doExport(fmt: 'docx' | 'pdf') {
     ElMessage.error('导出失败，请稍后重试')
   } finally {
     exporting.value = ''
+  }
+}
+
+async function markReviewed(verified: boolean) {
+  if (!detailPaper.value) return
+  reviewing.value = true
+  try {
+    detailPaper.value = await homeworkApi.review(detailPaper.value.id, verified) as any
+    ElMessage.success(verified ? '已标记为已校对，AI 题已写入题库' : '已取消校对')
+    await load(true)
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.detail || '校对失败')
+  } finally {
+    reviewing.value = false
   }
 }
 

@@ -22,12 +22,13 @@ _SYNC_FIELDS = (
 _LAB_TAGS: dict[str, list[str]] = {
     "prep_oxygen_kmno4": ["制取氧气", "氧气"],
     "prep_hydrogen": ["制取氢气", "氢气"],
-    "prep_co2": ["制取二氧化碳", "二氧化碳"],
+    "prep_co2": ["制取二氧化碳"],
+    "co2_candles": ["灭火原理", "倾倒二氧化碳", "二氧化碳密度"],
     "electrolysis": ["电解水"],
     "neutralization": ["中和反应", "酸碱中和"],
-    "metal_acid": ["金属活动性", "金属与酸"],
-    "nh4hco3_decomp": ["碳酸氢铵分解", "铵盐"],
-    "iron_in_oxygen": ["铁丝燃烧"],
+    "metal_acid": ["金属活动性", "金属与酸", "金属与稀盐酸"],
+    "nh4hco3_decomp": ["碳酸氢铵分解", "碳酸氢铵受热分解", "铵盐"],
+    "iron_in_oxygen": ["铁丝燃烧", "铁丝在氧气中燃烧"],
     "filtration": ["过滤"],
     "evaporation": ["蒸发结晶"],
     "solution_prep": ["配制溶液", "溶质质量分数"],
@@ -150,7 +151,7 @@ _EXTRA_ASSETS: list[dict] = [
         "group": "分子反应",
         "kind": "chem_reaction",
         "keywords": ["甲烷燃烧", "甲烷", "CH4"],
-        "knowledge_tags": ["甲烷燃烧", "燃烧"],
+        "knowledge_tags": ["甲烷燃烧"],
         "skill": "edu-chem-reaction",
         "problem_type": "combustion_ch4",
         "spec": {},
@@ -162,9 +163,33 @@ _EXTRA_ASSETS: list[dict] = [
         "group": "分子反应",
         "kind": "chem_reaction",
         "keywords": ["氢气燃烧", "氢氧燃烧"],
-        "knowledge_tags": ["氢气燃烧", "燃烧"],
+        "knowledge_tags": ["氢气燃烧"],
         "skill": "edu-chem-reaction",
         "problem_type": "combustion_h2",
+        "spec": {},
+    },
+    {
+        "key": "combustion_c",
+        "title": "碳在氧气中燃烧（分子 3D）",
+        "subject": "化学",
+        "group": "分子反应",
+        "kind": "chem_reaction",
+        "keywords": ["碳分子", "碳和氧气分子", "微观碳燃烧"],
+        "knowledge_tags": ["碳分子", "碳分子氧化"],
+        "skill": "edu-chem-reaction",
+        "problem_type": "combustion_c",
+        "spec": {},
+    },
+    {
+        "key": "combustion_s",
+        "title": "硫在氧气中燃烧（分子 3D）",
+        "subject": "化学",
+        "group": "分子反应",
+        "kind": "chem_reaction",
+        "keywords": ["硫分子", "二氧化硫分子", "微观硫燃烧"],
+        "knowledge_tags": ["硫分子", "硫分子氧化"],
+        "skill": "edu-chem-reaction",
+        "problem_type": "combustion_s",
         "spec": {},
     },
     {
@@ -173,8 +198,8 @@ _EXTRA_ASSETS: list[dict] = [
         "subject": "化学",
         "group": "分子反应",
         "kind": "chem_reaction",
-        "keywords": ["电解水", "正氧负氢", "水的电解"],
-        "knowledge_tags": ["电解水"],
+        "keywords": ["电解水分子", "水分子分解", "微观电解"],
+        "knowledge_tags": ["水分子分解"],
         "skill": "edu-chem-reaction",
         "problem_type": "electrolysis_water",
         "spec": {},
@@ -218,12 +243,12 @@ _EXTRA_ASSETS: list[dict] = [
 ]
 
 KIND_SUBTITLE = {
-    "chem_lab": "动画库 · 选仪器 · 加药品 · 观察现象",
-    "solid_explore": "动画库 · 可旋转 3D 探究",
-    "curve_explore": "动画库 · 可拖动画板",
-    "chem_reaction": "动画库 · 分子 3D 反应",
-    "bio_explore": "动画库 · 点击结构 · 看功能",
-    "physics_explore": "动画库 · 拖动物体 · 调参看规律",
+    "chem_lab": "实验台 · 选仪器 · 加药品 · 观察现象",
+    "solid_explore": "动画 · 可旋转 3D 探究",
+    "curve_explore": "动画 · 可拖动画板",
+    "chem_reaction": "动画 · 分子 3D 反应",
+    "bio_explore": "动画 · 点击结构 · 看功能",
+    "physics_explore": "动画 · 拖动物体 · 调参看规律",
 }
 
 
@@ -239,7 +264,7 @@ def _lab_rows() -> list[dict]:
             "kind": "chem_lab",
             "origin": "system",
             "keywords": list(LAB_KEYWORDS.get(e["key"], ())),
-            "knowledge_tags": list(_LAB_TAGS.get(e["key"], [])),
+            "knowledge_tags": list(e.get("knowledge_tags") or _LAB_TAGS.get(e["key"], [])),
             "skill": "edu-chem-lab",
             "problem_type": e["key"],
             "spec": {},
@@ -453,7 +478,7 @@ async def html_for_row(db: AsyncSession, row: InteractiveAsset) -> str:
     elif row.kind == "physics_explore":
         stale = not row.html or "edu-sim:3" not in row.html
     elif row.kind == "chem_lab":
-        stale = not row.html or "edu-lab:7" not in row.html
+        stale = not row.html or "edu-lab:11" not in row.html
     if row.html and not stale:
         return row.html
     return await render_and_store(db, row)
@@ -551,11 +576,9 @@ def _term_in_names(term: str, names: list[str]) -> bool:
 
 
 def pick_catalog_keys(points: list[dict], title: str, subject_name: str, limit: int = 2) -> list[str]:
-    """按知识点名称 / 关键词给本章挑动画，同分时保留目录顺序。
+    """按知识点给本章挑实验台或动画。宏观课不贴分子动画，微观课不贴实验台。"""
+    from app.services.skill_service import demo_preference
 
-    只认够强的匹配：标签打中知识点名称，或至少两个区分性关键词。
-    避免「酚酞/指示剂」把中和实验台贴到溶液酸碱性课时上。
-    """
     point_names = [str(p.get("name") or "") for p in (points or [])]
     name_blob = " ".join([title or "", *point_names])
     explain_parts = []
@@ -563,10 +586,21 @@ def pick_catalog_keys(points: list[dict], title: str, subject_name: str, limit: 
         explain_parts.append(str(p.get("plain_explanation") or ""))
         explain_parts.append(str(p.get("activity_goal") or ""))
     explain_blob = " ".join(explain_parts)
+    pref = demo_preference(name_blob + " " + explain_blob)
+    lab_kinds = {"chem_lab"}
+    anim_kinds = {
+        "chem_reaction", "solid_explore", "curve_explore",
+        "bio_explore", "physics_explore",
+    }
 
     scored: list[tuple[int, int, str]] = []
     for i, row in enumerate(system_catalog()):
         if not _subject_compatible(subject_name, row):
+            continue
+        kind = row.get("kind") or ""
+        if pref == "lab" and kind in anim_kinds:
+            continue
+        if pref == "anim" and kind in lab_kinds:
             continue
         score = 0
         for t in row.get("knowledge_tags") or []:
@@ -579,7 +613,6 @@ def pick_catalog_keys(points: list[dict], title: str, subject_name: str, limit: 
                 score += 3
             elif _term_in_text(w, explain_blob):
                 score += 1
-        # 至少一次标签命中（5）或名称里两个关键词（6）才收下
         if score >= 5:
             scored.append((score, -i, row["key"]))
     scored.sort(reverse=True)
@@ -593,7 +626,7 @@ def pick_catalog_keys(points: list[dict], title: str, subject_name: str, limit: 
 
 
 def resolve_keys(cw, points: list[dict], title: str, subject_name: str) -> list[str]:
-    """出课用：手动选择 > 旧字段 virtual_lab_key > 目录匹配 > 化学实验台兜底。"""
+    """出课用：手动选择 > 旧字段 virtual_lab_key > 目录匹配。对不上不硬塞。"""
     raw = getattr(cw, "animation_keys", None) or []
     keys = [str(k).strip() for k in raw if str(k).strip()]
     if keys:

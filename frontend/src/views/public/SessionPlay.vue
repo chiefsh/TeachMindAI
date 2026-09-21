@@ -29,7 +29,10 @@
         <template v-else>
           <div class="flex items-center justify-between mb-3">
             <span class="text-sm text-slate-500">互动 {{ current + 1 }} / {{ interactiveSlides.length }}</span>
-            <span class="text-xs text-slate-400">{{ activeSlide?.title }}</span>
+            <div class="flex items-center gap-2">
+              <span class="text-xs text-slate-400">{{ activeSlide?.title }}</span>
+              <el-button size="small" text @click="enterPresent">全屏</el-button>
+            </div>
           </div>
 
           <div class="bg-white rounded-xl overflow-hidden shadow-sm border border-slate-200">
@@ -38,7 +41,9 @@
               :key="activeSlide.pos"
               ref="frameEl"
               :srcdoc="wrapInteractiveHtml(activeSlide.html, session?.theme || undefined)"
-              sandbox="allow-scripts"
+              sandbox="allow-scripts allow-modals"
+              allow="fullscreen"
+              allowfullscreen
               class="w-full bg-white"
               :style="{ height: frameHeight, border: 0 }"
             ></iframe>
@@ -74,10 +79,30 @@
       </template>
     </el-dialog>
   </div>
+
+  <Teleport to="body">
+    <div
+      v-if="presenting && presentUrl"
+      ref="presentRoot"
+      class="fixed inset-0 z-[4000] bg-black flex flex-col"
+    >
+      <div class="h-11 shrink-0 flex items-center gap-3 px-4 bg-black/80 text-white">
+        <span class="truncate flex-1 text-sm">{{ activeSlide?.title || '实验台' }}</span>
+        <span class="text-xs text-white/50">Esc 退出全屏</span>
+        <el-button size="small" @click="exitPresent">退出</el-button>
+      </div>
+      <iframe
+        class="flex-1 w-full border-0 bg-black"
+        :src="presentUrl"
+        sandbox="allow-scripts allow-same-origin allow-modals"
+        allow="fullscreen"
+      />
+    </div>
+  </Teleport>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft, ArrowRight, Loading, CircleClose } from '@element-plus/icons-vue'
@@ -99,6 +124,10 @@ const studentName = ref('')
 const lastSavedAt = ref(0)
 const slideStart = ref(Date.now())
 const frameHeight = ref('72vh')
+const frameEl = ref<HTMLIFrameElement | null>(null)
+const presenting = ref(false)
+const presentRoot = ref<HTMLElement | null>(null)
+const presentUrl = ref('')
 
 const interactiveSlides = computed<any[]>(() => {
   // 后端已仅下发含互动的页，并用 pos 标注其在原课件中的页序
@@ -124,10 +153,45 @@ function confirmName() {
   slideStart.value = Date.now()
 }
 
+async function enterPresent() {
+  const html = activeSlide.value?.html
+  if (!html) return
+  if (presentUrl.value) URL.revokeObjectURL(presentUrl.value)
+  presentUrl.value = URL.createObjectURL(new Blob(
+    [wrapInteractiveHtml(html, session.value?.theme || undefined)],
+    { type: 'text/html;charset=utf-8' },
+  ))
+  presenting.value = true
+  await nextTick()
+  const el = presentRoot.value as any
+  const req = el?.requestFullscreen || el?.webkitRequestFullscreen || el?.msRequestFullscreen
+  if (req) {
+    try { await req.call(el) } catch { /* 铺满遮罩即可 */ }
+  }
+}
+
+function exitPresent() {
+  presenting.value = false
+  const doc = document as any
+  if (document.fullscreenElement || doc.webkitFullscreenElement) {
+    const exit = document.exitFullscreen || doc.webkitExitFullscreen
+    if (exit) exit.call(document)
+  }
+  if (presentUrl.value) {
+    URL.revokeObjectURL(presentUrl.value)
+    presentUrl.value = ''
+  }
+}
+
+function onPresentKey(e: KeyboardEvent) {
+  if (e.key === 'Escape' && presenting.value) exitPresent()
+}
+
 async function onMessage(e: MessageEvent) {
   const d: any = e.data
   if (!d || d.__cw !== true) return
   if (d.type === 'resize') {
+    if (presenting.value || document.fullscreenElement || (document as any).webkitFullscreenElement) return
     const h = Number(d.height)
     if (h > 200) frameHeight.value = `${Math.min(Math.max(Math.ceil(h), 360), 900)}px`
     return
@@ -165,11 +229,16 @@ async function load() {
 
 onMounted(async () => {
   window.addEventListener('message', onMessage)
+  window.addEventListener('keydown', onPresentKey)
   await load()
   if (!loadError.value) {
     const saved = localStorage.getItem(`cw_name_${token}`)
     if (saved) { studentName.value = saved } else { askName.value = true }
   }
 })
-onUnmounted(() => window.removeEventListener('message', onMessage))
+onUnmounted(() => {
+  window.removeEventListener('message', onMessage)
+  window.removeEventListener('keydown', onPresentKey)
+  exitPresent()
+})
 </script>

@@ -548,6 +548,9 @@ async def generate_by_ai(
 - 每题输出 difficulty，取值 easy/medium/hard/very_hard，并与上表难度配额一致。
 {score_line}- type 取值：single_choice/multi_choice/fill_blank/true_false/short_answer/essay/calculation
 - 选择题 options 为 {{"A":"...","B":"...","C":"...","D":"..."}}，非选择题 options 为 null。
+- 每题必须给出可独立验算的答案；单选正确答案有且仅有一个，多选列出全部正确项字母。
+- 计算题 answer 只写最终结果（可含单位），步骤放在 explanation。
+- 判断题 answer 只写「对」或「错」。
 - 只输出 JSON。
 
 教学材料：
@@ -611,6 +614,105 @@ async def generate_by_ai(
     return kept
 
 
+def _count_by_type(items: list[dict]) -> dict[str, int]:
+    counts: dict[str, int] = defaultdict(int)
+    for q in items:
+        counts[_coerce_qtype(q.get("type") or q.get("question_type"))] += 1
+    return counts
+
+
+def _trim_plan(plan: TypePlan, miss: int) -> TypePlan:
+    if miss >= plan.count:
+        return TypePlan(plan.qtype, plan.count, dict(plan.buckets))
+    fallback = next(iter(plan.buckets), "medium")
+    return TypePlan(plan.qtype, miss, allocate_by_ratio(miss, plan.buckets, fallback))
+
+
+def _content_key(item: dict) -> str:
+    return _norm(str(item.get("content") or ""))
+
+
+async def generate_ai_checked(
+    cfg, *, paper: HomeworkPaper, scope: dict, remain_plan: list[TypePlan],
+) -> tuple[list[dict], int]:
+    """AI 出题后做独立校验，对不上的丢弃；缺口再补一轮。"""
+    from app.services.homework_verify import filter_verified
+
+    raw = await generate_by_ai(cfg, paper=paper, scope=scope, remain_plan=remain_plan)
+    kept, dropped = await filter_verified(cfg, raw)
+    have = _count_by_type(kept)
+    leftover: list[TypePlan] = []
+    for p in remain_plan:
+        miss = p.count - have.get(p.qtype, 0)
+        if miss > 0:
+            leftover.append(_trim_plan(p, miss))
+    if leftover:
+        more = await generate_by_ai(cfg, paper=paper, scope=scope, remain_plan=leftover)
+        extra, extra_drop = await filter_verified(cfg, more)
+        dropped += extra_drop
+        seen = {_content_key(q) for q in kept if _content_key(q)}
+        for q in extra:
+            key = _content_key(q)
+            if key and key in seen:
+                continue
+            if key:
+                seen.add(key)
+            kept.append(q)
+    return kept, dropped
+
+
+def is_paper_verified(paper: HomeworkPaper) -> bool:
+    status = getattr(paper, "review_status", None) or ""
+    return status == "verified"
+
+
+async def commit_verified_to_bank(db, paper: HomeworkPaper) -> int:
+    """校对通过后，把尚未入库的 AI 题写入题库并回填 question_id。"""
+    from app.services.homework_verify import CHECK_BANK
+    from app.services.question_bank_service import (
+        build_question, upsert_question_models, bump_use_count,
+    )
+
+    pending = [
+        q for q in (paper.questions or [])
+        if (q.source or "") == QuestionSource.ai.value and not q.question_id
+    ]
+    if not pending:
+        return 0
+    subject_id, grade_id = paper.subject_id, paper.grade_id
+    if not subject_id or not grade_id:
+        logger.warning("作业 %s 缺少年级/科目，校对后无法写入题库", paper.id)
+        return 0
+    models: list[Question] = []
+    linked: list[HomeworkQuestion] = []
+    for hq in pending:
+        q = build_question(
+            teacher_id=paper.teacher_id,
+            subject_id=int(subject_id),
+            grade_id=int(grade_id),
+            content=hq.content,
+            question_type=hq.question_type,
+            options=hq.options,
+            answer=hq.answer,
+            explanation=hq.explanation,
+        )
+        if not q:
+            continue
+        models.append(q)
+        linked.append(hq)
+    if not models:
+        return 0
+    resolved, created, _ = await upsert_question_models(db, models)
+    await db.flush()
+    for hq, bank_q in zip(linked, resolved):
+        if bank_q and bank_q.id:
+            hq.question_id = bank_q.id
+            bump_use_count(bank_q)
+            if not hq.check_status:
+                hq.check_status = CHECK_BANK
+    return created
+
+
 def _assign_score(is_exam: bool, qtype: str, raw) -> int | None:
     if not is_exam:
         return None
@@ -647,6 +749,7 @@ async def generate_homework(paper_id: int):
             raise ValueError(f"作业 {paper_id} 不存在，稍后重试")
 
         paper.gen_status = ParseStatus.processing
+        paper.review_status = "unreviewed"
         await clear_paper_questions(db, paper.id)
         await db.commit()
 
@@ -668,7 +771,6 @@ async def generate_homework(paper_id: int):
             if not plan:
                 raise ValueError("题目数量不能为 0")
 
-            difficulty = _enum_val(paper.difficulty) or "medium"
             bank_picked: dict[str, list[Question]] = {p.qtype: [] for p in plan}
             remain_plan: list[TypePlan] = []
             used_ids: set[int] = set()
@@ -701,6 +803,7 @@ async def generate_homework(paper_id: int):
                 remain_plan = list(plan)
 
             ai_items: list[dict] = []
+            ai_dropped = 0
             need_ai = use_ai and any(p.count > 0 for p in remain_plan)
             # bank 模式题量不够时回退 AI
             if need_ai:
@@ -711,68 +814,18 @@ async def generate_homework(paper_id: int):
                         await db.commit()
                         return
                 else:
-                    ai_items = await generate_by_ai(
+                    ai_items, ai_dropped = await generate_ai_checked(
                         cfg, paper=paper, scope=scope, remain_plan=remain_plan,
                     )
 
-            # 按题型配额组装，题库在前；AI 新题写入题库（重复则复用）
-            from app.services.question_bank_service import (
-                bump_use_count, build_question, upsert_question_models,
-                question_content_hash, coerce_question_type,
-            )
-
-            subject_id = scope.get("subject_id")
-            grade_id = scope.get("grade_id")
-            if not subject_id or not grade_id:
-                for rows in bank_picked.values():
-                    if rows:
-                        subject_id = subject_id or rows[0].subject_id
-                        grade_id = grade_id or rows[0].grade_id
-                        break
+            # 按题型配额组装：题库在前；AI 新题只进卷面，校对后再入库
+            from app.services.homework_verify import CHECK_BANK
+            from app.services.question_bank_service import bump_use_count
 
             assembled: list[HomeworkQuestion] = []
-            ai_by_type: dict[str, list[tuple[dict, Question | None]]] = defaultdict(list)
-            if ai_items:
-                if subject_id and grade_id:
-                    models: list[Question] = []
-                    kept_items: list[dict] = []
-                    for item in ai_items:
-                        q = build_question(
-                            teacher_id=paper.teacher_id,
-                            subject_id=int(subject_id),
-                            grade_id=int(grade_id),
-                            content=item["content"],
-                            question_type=item.get("type"),
-                            difficulty=item.get("difficulty") or difficulty,
-                            options=item.get("options"),
-                            answer=item.get("answer"),
-                            explanation=item.get("explanation"),
-                            tags=item.get("tags"),
-                        )
-                        if not q:
-                            continue
-                        models.append(q)
-                        kept_items.append(item)
-                    resolved, _, _ = await upsert_question_models(db, models)
-                    await db.flush()
-                    pairs = list(zip(kept_items, resolved))
-                else:
-                    logger.warning("作业 %s 缺少年级/科目，AI 新题无法写入题库", paper.id)
-                    pairs = []
-                    for item in ai_items:
-                        qtype = coerce_question_type(item.get("type"))
-                        digest = question_content_hash(
-                            item.get("content"), item.get("options"), qtype,
-                        )
-                        hit = (await db.execute(
-                            select(Question).where(
-                                Question.teacher_id == paper.teacher_id,
-                                Question.content_hash == digest,
-                            )
-                        )).scalars().first()
-                        pairs.append((item, hit))
-                for item, bank_q in pairs:
-                    ai_by_type[_coerce_qtype(item.get("type"))].append((item, bank_q))
+            ai_by_type: dict[str, list[dict]] = defaultdict(list)
+            for item in ai_items:
+                ai_by_type[_coerce_qtype(item.get("type"))].append(item)
 
             order = 0
             paper_qids: set[int] = set()
@@ -793,35 +846,34 @@ async def generate_homework(paper_id: int):
                         content=q.content,
                         options=q.options,
                         answer=q.answer,
+                        explanation=q.explanation,
                         question_type=qtype,
                         score=_assign_score(is_exam, qtype, None),
                         source=QuestionSource.bank.value,
+                        check_status=CHECK_BANK,
                     ))
-                for item, bank_q in ai_by_type.get(qtype) or []:
+                for ai_q in ai_by_type.get(qtype) or []:
                     if slot >= n:
                         break
-                    if bank_q and bank_q.id and bank_q.id in paper_qids:
-                        continue
                     order += 1
                     slot += 1
-                    if bank_q and bank_q.id:
-                        paper_qids.add(bank_q.id)
-                        bump_use_count(bank_q)
                     assembled.append(HomeworkQuestion(
                         paper_id=paper.id,
-                        question_id=bank_q.id if bank_q else None,
+                        question_id=None,
                         sort_order=order,
-                        content=item["content"],
-                        options=item.get("options"),
-                        answer=item.get("answer"),
+                        content=ai_q["content"],
+                        options=ai_q.get("options"),
+                        answer=ai_q.get("answer"),
+                        explanation=str(ai_q.get("explanation") or "").strip() or None,
                         question_type=qtype,
-                        score=_assign_score(is_exam, qtype, item.get("score")),
+                        score=_assign_score(is_exam, qtype, ai_q.get("score")),
                         source=QuestionSource.ai.value,
+                        check_status=ai_q.get("check_status") or None,
                     ))
 
             if not assembled:
                 paper.gen_status = ParseStatus.failed
-                paper.content = "未能生成任何题目（题库无匹配且 AI 未返回有效题目）"
+                paper.content = "未能生成任何题目（题库无匹配，或 AI 题未通过答案校验）"
                 await db.commit()
                 return
 
@@ -833,8 +885,10 @@ async def generate_homework(paper_id: int):
                 "question_source": q_source,
                 "bank": sum(1 for x in assembled if x.source == "bank"),
                 "ai": sum(1 for x in assembled if x.source == "ai"),
+                "ai_dropped": ai_dropped,
             }, ensure_ascii=False)
             paper.gen_status = ParseStatus.done
+            paper.review_status = "unreviewed"
         except Exception as e:
             logger.exception("作业 %s 生成失败：%s", paper.id, e)
             paper.gen_status = ParseStatus.failed

@@ -57,6 +57,8 @@ SKILL_CAPABILITIES: dict[str, dict] = {
         "problem_types": {
             "combustion_ch4": "甲烷燃烧",
             "combustion_h2": "氢气燃烧",
+            "combustion_c": "碳在氧气中燃烧",
+            "combustion_s": "硫在氧气中燃烧",
             "electrolysis_water": "电解水",
             "redox_na_cl2": "钠与氯气反应（氧化还原·电子转移）",
             "esterification": "酯化反应（乙酸+乙醇）",
@@ -100,37 +102,125 @@ def _is_lab_subject(subject: str) -> bool:
     return ("化学" in s) or ("科学" in s)
 
 
+def _is_science(subject: str) -> bool:
+    return "科学" in (subject or "")
+
+
 # 宏观实验目录：匹配、课件下拉、PPT 题名共用。新增实验先改 generate.py REGISTRY，再在此补一行。
 LAB_CATALOG: list[dict] = [
     {"key": "prep_oxygen_kmno4", "title": "高锰酸钾制取氧气", "group": "制取气体",
-     "keywords": ("氧气", "制氧", "制取氧气", "高锰酸钾", "氯酸钾", "过氧化氢", "带火星", "复燃")},
+     "keywords": ("制氧", "制取氧气", "高锰酸钾", "氯酸钾", "过氧化氢", "带火星", "复燃"),
+     "knowledge_tags": ["制取氧气"]},
     {"key": "prep_hydrogen", "title": "锌和稀盐酸制取氢气", "group": "制取气体",
-     "keywords": ("氢气", "制氢", "锌粒", "爆鸣", "验纯", "向下排空气")},
+     "keywords": ("制氢", "制取氢气", "锌粒", "爆鸣", "验纯", "向下排空气"),
+     "knowledge_tags": ["制取氢气"]},
     {"key": "prep_co2", "title": "大理石和稀盐酸制取二氧化碳", "group": "制取气体",
-     "keywords": ("二氧化碳", "大理石", "石灰石", "变浑浊", "向上排空气")},
+     "keywords": ("大理石", "石灰石", "变浑浊", "向上排空气", "制取二氧化碳"),
+     "knowledge_tags": ["制取二氧化碳"]},
+    {"key": "co2_candles", "title": "倾倒二氧化碳熄灭蜡烛", "group": "反应与性质",
+     "keywords": ("蜡烛", "灭火", "灭火原理", "倾倒二氧化碳", "密度比空气", "不支持燃烧", "两支蜡烛"),
+     "knowledge_tags": ["灭火原理", "倾倒二氧化碳", "二氧化碳密度"]},
+    {"key": "air_oxygen", "title": "测定空气中氧气的含量", "group": "反应与性质",
+     "keywords": ("测定空气", "氧气含量", "红磷燃烧", "水面上升", "空气中氧气"),
+     "knowledge_tags": ["空气中氧气含量", "测定空气中氧气", "红磷测定氧气"]},
+    {"key": "charcoal_in_oxygen", "title": "木炭在氧气中燃烧", "group": "反应与性质",
+     "keywords": ("木炭在氧气", "木炭燃烧", "发出白光", "碳和氧气"),
+     "knowledge_tags": ["木炭在氧气中燃烧", "碳在氧气中燃烧"]},
+    {"key": "sulfur_in_oxygen", "title": "硫在氧气中燃烧", "group": "反应与性质",
+     "keywords": ("硫在氧气", "硫燃烧", "蓝紫色火焰", "二氧化硫"),
+     "knowledge_tags": ["硫在氧气中燃烧", "硫的燃烧"]},
+    {"key": "charcoal_reduce_cuo", "title": "木炭还原氧化铜", "group": "反应与性质",
+     "keywords": ("木炭还原氧化铜", "还原氧化铜", "碳还原氧化铜", "还原反应"),
+     "knowledge_tags": ["木炭还原氧化铜", "碳还原氧化铜"]},
+    {"key": "mass_conservation", "title": "验证质量守恒定律", "group": "反应与性质",
+     "keywords": ("质量守恒定律", "反应前后质量", "密闭称量"),
+     "knowledge_tags": ["质量守恒定律"]},
+    {"key": "metal_displace", "title": "铁与硫酸铜的置换反应", "group": "反应与性质",
+     "keywords": ("铁与硫酸铜", "置换反应", "铁钉硫酸铜", "金属活动性顺序"),
+     "knowledge_tags": ["置换反应", "铁与硫酸铜", "金属活动性顺序"]},
+    {"key": "iron_rust", "title": "探究铁钉生锈的条件", "group": "反应与性质",
+     "keywords": ("铁钉生锈", "铁生锈", "生锈条件", "铁锈"),
+     "knowledge_tags": ["铁钉生锈", "铁生锈"]},
+    {"key": "combustion_conditions", "title": "探究燃烧的条件", "group": "反应与性质",
+     "keywords": ("燃烧的条件", "燃烧条件", "白磷红磷", "着火点"),
+     "knowledge_tags": ["燃烧的条件", "燃烧条件", "着火点"]},
+    {"key": "acid_indicator", "title": "酸碱指示剂变色", "group": "反应与性质",
+     "keywords": ("酸碱指示剂", "石蕊", "酚酞", "指示剂变色"),
+     "knowledge_tags": ["酸碱指示剂", "石蕊", "酚酞"]},
+    {"key": "dilute_h2so4", "title": "稀释浓硫酸", "group": "基本操作",
+     "keywords": ("稀释浓硫酸", "浓硫酸稀释", "酸入水"),
+     "knowledge_tags": ["稀释浓硫酸", "浓硫酸稀释"]},
     {"key": "electrolysis", "title": "电解水", "group": "反应与性质",
-     "keywords": ("电解水", "正氧负氢", "霍夫曼", "通电分解")},
+     "keywords": ("电解水", "正氧负氢", "霍夫曼", "通电分解"),
+     "knowledge_tags": ["电解水"]},
     {"key": "neutralization", "title": "酸碱中和（酚酞指示剂）", "group": "反应与性质",
-     "keywords": ("中和", "中和反应", "酸碱中和", "滴定", "恰好完全")},
+     "keywords": ("中和", "中和反应", "酸碱中和", "滴定", "恰好完全"),
+     "knowledge_tags": ["中和反应", "酸碱中和"]},
     {"key": "metal_acid", "title": "金属与稀盐酸反应", "group": "反应与性质",
-     "keywords": ("金属活动性", "置换氢", "锌和稀盐酸", "铁和稀盐酸", "铜不反应")},
+     "keywords": ("金属活动性", "置换氢", "锌和稀盐酸", "铁和稀盐酸", "铜不反应", "金属与稀盐酸"),
+     "knowledge_tags": ["金属活动性", "金属与酸", "金属与稀盐酸"]},
     {"key": "metal_oxide_acid", "title": "氧化铜与稀硫酸反应", "group": "反应与性质",
-     "keywords": ("氧化铜", "稀硫酸", "硫酸铜", "金属氧化物", "黑色粉末变蓝")},
+     "keywords": ("氧化铜", "稀硫酸", "硫酸铜", "金属氧化物", "黑色粉末变蓝"),
+     "knowledge_tags": ["氧化铜"]},
     {"key": "nh4hco3_decomp", "title": "碳酸氢铵受热分解", "group": "反应与性质",
-     "keywords": ("碳酸氢铵", "铵盐分解", "湿润红色石蕊", "扇闻")},
+     "keywords": ("碳酸氢铵", "铵盐分解", "碳酸氢铵受热", "湿润红色石蕊", "扇闻"),
+     "knowledge_tags": ["碳酸氢铵分解", "碳酸氢铵受热分解", "铵盐"]},
     {"key": "iron_in_oxygen", "title": "铁丝在氧气中燃烧", "group": "反应与性质",
-     "keywords": ("铁丝", "铁丝燃烧", "火星四射", "氧气中燃烧", "四氧化三铁", "瓶底留水")},
+     "keywords": ("铁丝", "铁丝燃烧", "铁丝在氧气中燃烧", "火星四射", "氧气中燃烧", "四氧化三铁", "瓶底留水"),
+     "knowledge_tags": ["铁丝燃烧", "铁丝在氧气中燃烧"]},
     {"key": "filtration", "title": "过滤", "group": "基本操作",
-     "keywords": ("过滤", "滤纸", "一贴二低三靠", "残渣")},
+     "keywords": ("过滤", "滤纸", "一贴二低三靠", "残渣"),
+     "knowledge_tags": ["过滤"]},
     {"key": "evaporation", "title": "蒸发结晶", "group": "基本操作",
-     "keywords": ("蒸发", "结晶", "蒸发皿", "余热蒸干", "飞溅")},
+     "keywords": ("蒸发", "结晶", "蒸发皿", "余热蒸干", "飞溅"),
+     "knowledge_tags": ["蒸发结晶"]},
     {"key": "solution_prep", "title": "配制一定溶质质量分数的溶液", "group": "基本操作",
-     "keywords": ("溶质质量分数", "配制溶液", "称量", "量筒", "托盘天平")},
+     "keywords": ("溶质质量分数", "配制溶液", "称量", "量筒", "托盘天平"),
+     "knowledge_tags": ["配制溶液", "溶质质量分数"]},
 ]
 LAB_KEYWORDS: dict[str, tuple[str, ...]] = {e["key"]: e["keywords"] for e in LAB_CATALOG}
 SKILL_CAPABILITIES["edu-chem-lab"]["problem_types"] = {
     e["key"]: f"{e['title']}（宏观实验台）" for e in LAB_CATALOG
 }
+
+# 分子 3D：微观过程用动画，不要和宏观实验台抢「电解水」「制氢气」这类课。
+REACTION_CATALOG: list[dict] = [
+    {"key": "combustion_ch4", "title": "甲烷燃烧（分子 3D）",
+     "keywords": ("甲烷燃烧", "甲烷"), "knowledge_tags": ["甲烷燃烧"]},
+    {"key": "combustion_h2", "title": "氢气燃烧（分子 3D）",
+     "keywords": ("氢气燃烧", "氢氧燃烧"), "knowledge_tags": ["氢气燃烧"]},
+    {"key": "combustion_c", "title": "碳在氧气中燃烧（分子 3D）",
+     "keywords": ("碳分子", "碳和氧气分子", "微观碳燃烧"), "knowledge_tags": ["碳分子", "碳分子氧化"]},
+    {"key": "combustion_s", "title": "硫在氧气中燃烧（分子 3D）",
+     "keywords": ("硫分子", "二氧化硫分子", "微观硫燃烧"), "knowledge_tags": ["硫分子", "硫分子氧化"]},
+    {"key": "electrolysis_water", "title": "电解水（分子 3D）",
+     "keywords": ("水分子", "微观电解", "分子分解"), "knowledge_tags": ["水分子分解"]},
+    {"key": "redox_na_cl2", "title": "钠与氯气反应（电子转移）",
+     "keywords": ("钠与氯气", "离子键", "电子转移"), "knowledge_tags": ["钠与氯气", "离子键", "氧化还原"]},
+    {"key": "esterification", "title": "酯化反应（乙酸+乙醇）",
+     "keywords": ("酯化", "乙酸乙酯", "乙醇和乙酸"), "knowledge_tags": ["酯化反应"]},
+    {"key": "glucose_combustion", "title": "葡萄糖有氧氧化（细胞呼吸）",
+     "keywords": ("有氧呼吸", "细胞呼吸", "有氧氧化"), "knowledge_tags": ["细胞呼吸", "有氧呼吸"]},
+]
+SKILL_KIND = {
+    "edu-chem-lab": "chem_lab",
+    "edu-chem-reaction": "chem_reaction",
+    "edu-bio": "bio_explore",
+    "edu-physics": "physics_explore",
+    "edu-solid-geometry": "solid_explore",
+    "edu-analytic-geometry": "curve_explore",
+}
+_MACRO_CUES = (
+    "装置", "仪器", "组装", "选取", "倾倒", "过滤", "蒸发", "配制",
+    "试管", "集气", "酒精灯", "排水", "排空气", "蜡烛", "灭火", "制取",
+    "电解", "操作步骤", "一贴二低", "验纯",
+    "红磷", "测定空气", "稀释", "指示剂", "生锈", "置换", "质量守恒",
+    "燃烧的条件", "还原氧化铜",
+)
+_MICRO_CUES = (
+    "分子", "微观", "电子转移", "结构", "双螺旋", "细胞器", "机理",
+    "离子键", "有氧呼吸", "3D", "磁感线", "成像", "定律探究",
+)
 
 # 生物探究：点击结构 / 分阶段播放。新增场景先改 generate.py REGISTRY，再在此补一行。
 BIO_CATALOG: list[dict] = [
@@ -280,21 +370,12 @@ def lab_experiment_catalog() -> dict:
 
 
 def match_lab_key(text: str, explicit: str | None = None) -> str | None:
-    """从指定 key 或关键词中解析宏观实验题型。"""
+    """从指定 key 或目录打分中解析宏观实验题型。"""
     caps = SKILL_CAPABILITIES["edu-chem-lab"]["problem_types"]
     key = (explicit or "").strip()
     if key in caps:
         return key
-    blob = text or ""
-    best_key, best_n = None, 0
-    for k, words in LAB_KEYWORDS.items():
-        n = sum(1 for w in words if w in blob)
-        if n > best_n:
-            best_key, best_n = k, n
-    # 单个共享词（如「氧气」）不够，避免把不相关课时配上实验台
-    if best_n < 2:
-        return None
-    return best_key
+    return _best_catalog_key(text, LAB_CATALOG)
 
 
 def pick_chem_lab(
@@ -322,19 +403,41 @@ def pick_chem_lab(
     return best_i, key
 
 
-def match_bio_key(text: str) -> str | None:
+def _best_catalog_key(text: str, catalog: list[dict], min_score: int = 5) -> str | None:
+    """按标签/关键词给知识点打分。短词单独出现不够，避免「电路」误配串并联。"""
     blob = text or ""
-    best_key, best_n = None, 0
-    for k, words in BIO_KEYWORDS.items():
-        n = sum(1 for w in words if w in blob)
-        if n > best_n:
-            best_key, best_n = k, n
+    if not blob:
+        return None
+    best_key, best = None, 0
+    for e in catalog:
+        score = 0
+        for t in e.get("knowledge_tags") or []:
+            if not t or t not in blob:
+                continue
+            if len(t) >= 3:
+                score += 5
+            elif blob.startswith(t):
+                score += 4
+            else:
+                score += 1
+        for w in e.get("keywords") or ():
+            if not w or w not in blob:
+                continue
+            score += 3 if len(w) >= 4 else 1
+        if score > best:
+            best_key, best = e["key"], score
+    if best < min_score:
+        return None
     return best_key
+
+
+def match_bio_key(text: str) -> str | None:
+    return _best_catalog_key(text, BIO_CATALOG)
 
 
 def route_bio_point(point: dict, subject_name: str) -> dict | None:
     """生物探究：关键词命中即用模板，不调 LLM。"""
-    if not _is_bio(subject_name):
+    if not (_is_bio(subject_name) or _is_science(subject_name)):
         return None
     text = " ".join(str(point.get(k) or "") for k in ("name", "plain_explanation", "activity_goal"))
     key = match_bio_key(text)
@@ -344,18 +447,64 @@ def route_bio_point(point: dict, subject_name: str) -> dict | None:
 
 
 def match_physics_key(text: str) -> str | None:
+    return _best_catalog_key(text, PHYSICS_CATALOG)
+
+
+def match_reaction_key(text: str) -> str | None:
+    return _best_catalog_key(text, REACTION_CATALOG)
+
+
+def demo_preference(text: str) -> str | None:
+    """宏观操作走实验台，微观/规律走动画；看不出倾向则返回 None。"""
     blob = text or ""
-    best_key, best_n = None, 0
-    for k, words in PHYSICS_KEYWORDS.items():
-        n = sum(1 for w in words if w in blob)
-        if n > best_n:
-            best_key, best_n = k, n
-    return best_key
+    macro = sum(1 for c in _MACRO_CUES if c in blob)
+    micro = sum(1 for c in _MICRO_CUES if c in blob)
+    if macro > micro:
+        return "lab"
+    if micro > macro:
+        return "anim"
+    return None
+
+
+def choose_skill_route(
+    point: dict,
+    subject_name: str,
+    lab_key: str | None = None,
+    *,
+    allow_lab: bool = True,
+) -> dict | None:
+    """按课题选实验台或动画：对不上不硬塞，宏观/微观冲突时选更合适的。"""
+    text = " ".join(str(point.get(k) or "") for k in ("name", "plain_explanation", "activity_goal"))
+    pref = demo_preference(text)
+    lab = match_lab_key(text, lab_key) if allow_lab and (_is_lab_subject(subject_name) or lab_key) else None
+    rxn = match_reaction_key(text) if (_is_chem(subject_name) or _is_science(subject_name) or _is_bio(subject_name)) else None
+    phy = match_physics_key(text) if (_is_physics(subject_name) or _is_science(subject_name)) else None
+    bio = match_bio_key(text) if (_is_bio(subject_name) or _is_science(subject_name)) else None
+
+    if lab and rxn:
+        if pref == "anim":
+            lab = None
+        else:
+            rxn = None
+    if pref == "lab" and not lab:
+        rxn = None
+    if pref == "anim" and lab and (rxn or phy or bio):
+        lab = None
+
+    if lab:
+        return {"skill": "edu-chem-lab", "problem_type": lab, "spec": {}, "kind": "chem_lab"}
+    if rxn:
+        return {"skill": "edu-chem-reaction", "problem_type": rxn, "spec": {}, "kind": "chem_reaction"}
+    if phy:
+        return {"skill": "edu-physics", "problem_type": phy, "spec": {}, "kind": "physics_explore"}
+    if bio:
+        return {"skill": "edu-bio", "problem_type": bio, "spec": {}, "kind": "bio_explore"}
+    return None
 
 
 def route_physics_point(point: dict, subject_name: str) -> dict | None:
     """物理探究：关键词命中即用模板，不调 LLM。"""
-    if not _is_physics(subject_name):
+    if not (_is_physics(subject_name) or _is_science(subject_name)):
         return None
     text = " ".join(str(point.get(k) or "") for k in ("name", "plain_explanation", "activity_goal"))
     key = match_physics_key(text)
@@ -451,13 +600,11 @@ async def route_chem_lab_point(
     lab_key: str | None = None,
     force: bool = False,
 ) -> dict | None:
-    """宏观实验台路由：指定 key 或关键词命中；force 时用默认制氧实验。"""
+    """宏观实验台路由：指定 key 或关键词命中。对不上不硬塞实验。"""
     if not force and not lab_key and not _is_lab_subject(subject_name):
         return None
     text = " ".join(str(point.get(k) or "") for k in ("name", "plain_explanation", "activity_goal"))
     key = match_lab_key(text, lab_key)
-    if not key and force:
-        key = "prep_oxygen_kmno4"
     if not key:
         return None
     return {"skill": "edu-chem-lab", "problem_type": key, "spec": {}}
@@ -465,7 +612,7 @@ async def route_chem_lab_point(
 
 async def route_chem_point(cfg, point: dict, subject_name: str) -> dict | None:
     """判断化学/生物知识点能否用化学反应 skill 演示。命中返回 routed，否则 None。"""
-    if not _is_chem(subject_name):
+    if not (_is_chem(subject_name) or _is_science(subject_name)):
         return None
 
     prompt = f"""你是化学/生物课件工具的路由器。判断下面这个知识点是否适合用「反应过程 3D 交互演示」讲解。
@@ -483,7 +630,7 @@ async def route_chem_point(cfg, point: dict, subject_name: str) -> dict | None:
 - glucose_combustion：葡萄糖有氧氧化 C₆H₁₂O₆ + 6O₂（细胞呼吸，适合生物）。
 
 规则：
-1. 只有知识点确实对应上述某反应时才命中；否则返回 {{"match": false}}。
+1. 只有知识点确实对应上述某反应时才命中；指示剂、溶液酸碱性、制气装置等不要配到这些反应上。否则返回 {{"match": false}}。
 2. spec 一律为 {{}}。
 3. 只输出 JSON，不要解释，不要 markdown 代码块。
 
@@ -645,26 +792,18 @@ async def render_skill_html(routed: dict, timeout: float | None = None) -> str:
 # ---------------------------------------------------------------------------
 async def maybe_generate_skill(
     cfg, point: dict, subject_name: str,
-    *, lab_key: str | None = None, prefer_lab: bool = False,
+    *, lab_key: str | None = None, prefer_lab: bool = False, allow_lab: bool = True,
 ) -> tuple[str, dict | None]:
-    """尝试用 skill 生成互动 HTML，并带回可导出的 routed 规格。失败返回 ('', None)。"""
+    """按课题选实验台或动画生成 HTML。对不上返回 ('', None)，不让 LLM 假造实验。"""
     routed = None
     try:
-        if prefer_lab or lab_key:
-            routed = await route_chem_lab_point(
-                point, subject_name, lab_key=lab_key, force=prefer_lab,
-            )
-        if not routed:
-            if _is_math(subject_name):
-                routed = await route_math_point(cfg, point, subject_name)
-            elif _is_physics(subject_name):
-                routed = route_physics_point(point, subject_name)
-            elif _is_bio(subject_name):
-                routed = route_bio_point(point, subject_name)
-                if not routed:
-                    routed = await route_chem_point(cfg, point, subject_name)
-            elif _is_chem(subject_name):
-                routed = await route_chem_point(cfg, point, subject_name)
+        routed = choose_skill_route(
+            point, subject_name, lab_key=lab_key, allow_lab=allow_lab or prefer_lab,
+        )
+        if not routed and _is_math(subject_name):
+            routed = await route_math_point(cfg, point, subject_name)
+            if routed:
+                routed["kind"] = SKILL_KIND.get(routed["skill"] or "", "")
     except Exception as e:
         logger.warning("skill 路由异常：%s", e)
         return "", None
@@ -678,12 +817,24 @@ async def maybe_generate_skill(
     html = await render_skill_html(routed)
     if not html:
         return "", None
-    logger.info("知识点「%s」命中 skill %s/%s", point.get("name"),
-                routed["skill"], routed["problem_type"])
+    kind = routed.get("kind") or SKILL_KIND.get(routed["skill"] or "", "")
+    title = ""
+    pt = routed["problem_type"]
+    for cat in (LAB_CATALOG, REACTION_CATALOG, BIO_CATALOG, PHYSICS_CATALOG):
+        for e in cat:
+            if e["key"] == pt:
+                title = e.get("title") or ""
+                break
+        if title:
+            break
+    logger.info("知识点「%s」使用 %s/%s（%s）", point.get("name"),
+                routed["skill"], pt, "实验台" if kind == "chem_lab" else "动画")
     return html, {
         "skill": routed["skill"],
-        "problem_type": routed["problem_type"],
+        "problem_type": pt,
         "spec": routed.get("spec") or {},
+        "kind": kind,
+        "title": title,
     }
 
 

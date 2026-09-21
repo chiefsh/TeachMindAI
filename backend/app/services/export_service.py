@@ -5,6 +5,7 @@ import re
 from typing import Any
 
 from app.services.courseware_theme import get_theme, page_kind, page_label, rgb
+from app.services.chem_text import normalize_chem_text
 
 log = logging.getLogger(__name__)
 
@@ -109,10 +110,10 @@ def _slide_lines(slide: dict) -> list[str]:
     lines: list[str] = []
     for b in slide.get("bullets") or []:
         if b:
-            lines.append(f"• {b}")
+            lines.append(f"• {normalize_chem_text(str(b))}")
     content = _strip_markdown(slide.get("content") or "")
     if content:
-        lines.extend([l for l in content.splitlines() if l.strip()])
+        lines.extend([normalize_chem_text(l) for l in content.splitlines() if l.strip()])
     if slide.get("html"):
         lines.append("（本页含互动动画，请在在线课件中查看）")
     return lines
@@ -210,7 +211,6 @@ def _build_pptx_shapes(content: dict, title: str, images: dict[int, bytes], them
                 sub.text = line
                 sub.font.size = Pt(16)
                 sub.font.color.rgb = c_white
-            _textbox(slide, Inches(6.2), Inches(3.0), Inches(6.4), Inches(1.2), "知序台教学课件", 18, c_muted)
         elif cover_style == "ribbon":
             _bg(slide, c_bg)
             _deco(slide)
@@ -338,12 +338,11 @@ def _build_pptx_shapes(content: dict, title: str, images: dict[int, bytes], them
 
     add_cover_slide(
         meta.get("title") or title,
-        [meta.get("duration", ""), "知序台教学课件"],
+        [meta.get("duration", "")],
     )
-    for h, items in _meta_blocks(meta):
-        add_text_slide(h, [f"• {x}" for x in items], kind="objectives")
     for s in slides:
-        if page_kind(s.get("type")) == "cover":
+        kind = page_kind(s.get("type"))
+        if kind in ("cover", "objectives"):
             continue
         label = page_label(s.get("type"))
         heading = s.get("title") or label or "幻灯片"
@@ -388,7 +387,7 @@ def build_docx(content: dict, title: str, images: dict[int, bytes], theme: str |
 
     h = doc.add_heading(meta.get("title") or title, level=0)
     for run in h.runs:
-        run.font.color.rgb = c_primary
+            run.font.color.rgb = c_primary
     if meta.get("duration"):
         doc.add_paragraph(f"课时：{meta['duration']}")
 
@@ -398,7 +397,7 @@ def build_docx(content: dict, title: str, images: dict[int, bytes], theme: str |
             doc.add_paragraph(x, style="List Bullet")
 
     for s in slides:
-        if page_kind(s.get("type")) == "cover":
+        if page_kind(s.get("type")) in ("cover", "objectives"):
             continue
         label = page_label(s.get("type"))
         heading = s.get("title") or label or "幻灯片"
@@ -482,15 +481,8 @@ def build_pdf(content: dict, title: str, images: dict[int, bytes], theme: str | 
         story.append(Paragraph(f"课时：{esc(meta['duration'])}", body))
         story.append(Spacer(1, 4 * mm))
 
-    for hd, items in _meta_blocks(meta):
-        story.append(Paragraph(esc(hd), h2))
-        story.append(ListFlowable(
-            [ListItem(Paragraph(esc(x), body)) for x in items], bulletType="bullet"
-        ))
-        story.append(Spacer(1, 3 * mm))
-
     for s in slides:
-        if page_kind(s.get("type")) == "cover":
+        if page_kind(s.get("type")) in ("cover", "objectives"):
             continue
         label = page_label(s.get("type"))
         heading = s.get("title") or label or "幻灯片"
@@ -524,8 +516,6 @@ def build_pdf(content: dict, title: str, images: dict[int, bytes], theme: str | 
                     pass
         if s.get("html"):
             story.append(Paragraph("（本页含互动动画，请在在线课件中查看）", note))
-        if s.get("notes"):
-            story.append(Paragraph(f"教师讲稿：{esc(s['notes'])}", note))
         story.append(Spacer(1, 5 * mm))
 
     buf = io.BytesIO()

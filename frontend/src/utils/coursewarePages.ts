@@ -2,6 +2,7 @@
 // revealDeck.ts 与 lessonPage.ts 共用这里的 CSS、装饰与 inner HTML，保证演示稿与网页课件同一套视觉语言。
 import { renderMarkdown } from './markdown'
 import { coverGradient, themeCssVars, type CoursewareTheme } from './coursewareTheme'
+import { normalizeChemText } from './chemText'
 import { isAppInteractiveHtml } from './coursewareFrame'
 
 export type PageKind =
@@ -37,8 +38,17 @@ export function pageTypeLabel(type?: string): string {
   return PAGE_LABELS[type || ''] || PAGE_LABELS[normalizePageKind(type)] || '内容'
 }
 
+/** 给学生上课看的页：学习目标只写在 meta，不进投影/网页。 */
+export function isStudentSlide(slide?: { type?: string } | null): boolean {
+  return normalizePageKind(slide?.type) !== 'objectives'
+}
+
 export function esc(s: string): string {
   return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+function vis(s: string): string {
+  return esc(normalizeChemText(s))
 }
 
 export function escAttr(s: string): string {
@@ -180,6 +190,22 @@ export function pageCss(theme: CoursewareTheme, mode: 'deck' | 'page'): string {
 .cw-interact{margin-top:8px;background:var(--c-card);border-radius:16px;box-shadow:var(--shadow);overflow:hidden}
 .cw-interact-bar{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;
   background:linear-gradient(90deg,var(--c-primary),var(--c-accent));color:var(--c-on-cover);font-weight:700}
+.cw-fs-box{margin-top:8px;background:var(--c-card);border-radius:16px;box-shadow:var(--shadow);overflow:hidden;display:flex;flex-direction:column}
+.cw-fs-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px;
+  background:linear-gradient(90deg,var(--c-primary),var(--c-accent));color:var(--c-on-cover);font-weight:700;font-size:14px;flex-shrink:0}
+.cw-fs-stage{width:100%}
+.cw-fs-btn{appearance:none;border:0;background:rgba(255,255,255,.2);color:inherit;border-radius:999px;
+  padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer;letter-spacing:.04em}
+.cw-fs-btn:hover{background:rgba(255,255,255,.32)}
+html.cw-fs-lock,html.cw-fs-lock body{overflow:hidden!important;height:100%!important}
+#cw-present-layer{display:none;position:fixed;inset:0;z-index:99999;background:#000;flex-direction:column}
+#cw-present-layer.is-on{display:flex}
+#cw-present-layer .cw-present-bar{height:44px;flex-shrink:0;display:flex;align-items:center;gap:12px;
+  padding:0 16px;background:rgba(0,0,0,.8);color:#fff;font-size:14px}
+#cw-present-layer .cw-present-title{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#cw-present-layer .cw-present-hint{font-size:12px;color:rgba(255,255,255,.5)}
+#cw-present-layer .cw-present-exit{appearance:none;border:0;border-radius:6px;padding:6px 12px;cursor:pointer;font-size:12px}
+#cw-present-layer .cw-present-frame{flex:1;width:100%;min-height:0;border:0;background:#000}
 .cw-compare{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:10px}
 .cw-compare-col{background:var(--c-card);border-radius:16px;padding:16px;box-shadow:var(--shadow-soft)}
 .cw-compare-col.a{border-top:5px solid var(--c-primary)}
@@ -227,6 +253,9 @@ ${compact ? `
   .cw-goals,.cw-example,.cw-compare,.cw-cover--split{grid-template-columns:1fr}
   .cw-cover-card{padding:28px 22px}
 }
+@media print{
+  .cw-fs-btn{display:none}
+}
 `
 }
 
@@ -261,18 +290,18 @@ function columnsOf(slide: any): { title: string; items: string[] }[] {
 
 function kicker(label: string, index?: number): string {
   const chap = index ? `第 ${index} 页 · ` : ''
-  return `<span class="cw-kicker">${esc(chap + label)}</span>`
+  return `<span class="cw-kicker">${vis(chap + label)}</span>`
 }
 
 function heading(slide: any): string {
-  const h = slide.title ? `<h2>${esc(slide.title)}</h2>` : ''
-  const s = slide.subtitle ? `<p class="sub" style="color:var(--c-muted);margin:.15em 0 .4em">${esc(slide.subtitle)}</p>` : ''
+  const h = slide.title ? `<h2>${vis(slide.title)}</h2>` : ''
+  const s = slide.subtitle ? `<p class="sub" style="color:var(--c-muted);margin:.15em 0 .4em">${vis(slide.subtitle)}</p>` : ''
   return h + s
 }
 
 function pointsList(items: string[]): string {
   if (!items.length) return ''
-  return `<ul class="cw-points">${items.map((b) => `<li><span>${esc(b)}</span></li>`).join('')}</ul>`
+  return `<ul class="cw-points">${items.map((b) => `<li><span>${vis(b)}</span></li>`).join('')}</ul>`
 }
 
 function mdBlock(html: string): string {
@@ -293,17 +322,17 @@ export interface SlideCtx {
 }
 
 function coverInner(slide: any, theme: CoursewareTheme, ctx: SlideCtx): string {
-  const title = esc(slide.title || '教学课件')
-  const sub = slide.subtitle ? `<p class="sub">${esc(slide.subtitle)}</p>` : ''
+  const title = vis(slide.title || '教学课件')
+  const sub = slide.subtitle ? `<p class="sub">${vis(slide.subtitle)}</p>` : ''
   const style = theme.coverStyle
   const iconColor = style === 'diagonal' ? theme.onCover : theme.primary
   const badge = ctx.subject
     ? `<div class="cw-chip">${subjectSvg(subjectKind(ctx.subject), iconColor)}${esc(ctx.subject)}</div>`
     : ''
-  const chap = ctx.chapter ? `<span class="cw-kicker">${esc(ctx.chapter)}</span>` : kicker('课程封面')
+  const chap = ctx.chapter ? `<span class="cw-kicker">${esc(ctx.chapter)}</span>` : ''
   if (style === 'split') {
     return `<div class="cw-cover-panel"><div>${chap}</div><h1>${title}</h1>${sub}</div>
-      <div class="cw-cover-side">${badge}<p style="color:var(--c-muted);font-size:.95em">知序台教学课件</p></div>`
+      <div class="cw-cover-side">${badge}</div>`
   }
   if (style === 'ribbon') {
     return `${badge}<div class="cw-ribbon"><div>${chap}</div><h1>${title}</h1>${sub}</div>`
@@ -335,7 +364,7 @@ function innerByKind(kind: PageKind, slide: any, media: SlideMedia, ctx: SlideCt
     const goals = (bs.length ? bs : [slide.content || '完成本课学习目标']).slice(0, 6)
     return `${kicker(label, ctx.index)}${heading(slide)}
       <div class="cw-goals">${goals.map((g, i) =>
-        `<div class="cw-goal"><span class="cw-goal-n">${String(i + 1).padStart(2, '0')}</span><div>${esc(g)}</div></div>`
+        `<div class="cw-goal"><span class="cw-goal-n">${String(i + 1).padStart(2, '0')}</span><div>${vis(g)}</div></div>`
       ).join('')}</div>${md}${imgs}${notes}`
   }
   if (kind === 'knowledge') {
@@ -346,26 +375,24 @@ function innerByKind(kind: PageKind, slide: any, media: SlideMedia, ctx: SlideCt
   if (kind === 'example') {
     const prompt = slide.prompt || (bs.length ? bs.join('；') : (slide.title || '例题'))
     const solText = String(slide.solution || '').trim()
-    const solutionBody = solText ? esc(solText) : media.mdHtml
+    const solutionBody = solText ? vis(solText) : media.mdHtml
     const reveal = solutionBody
       ? `<details class="cw-reveal"><summary>想好后再看解析</summary><div class="body">${solutionBody}</div></details>`
       : ''
     return `${kicker(label, ctx.index)}${heading(slide)}
       <div class="cw-example">
-        <div class="cw-example-q"><h3>题干</h3><div>${esc(String(prompt))}</div></div>
+        <div class="cw-example-q"><h3>题干</h3><div>${vis(String(prompt))}</div></div>
         ${reveal}
       </div>${imgs}${notes}`
   }
   if (kind === 'interactive') {
-    return `${kicker(label, ctx.index)}${heading(slide)}${pointsList(bs)}${md}
-      <div class="cw-interact"><div class="cw-interact-bar"><span>先观察 · 再判断</span><span>现象即依据</span></div>${frame}</div>
-      ${imgs}${notes}`
+    return `${kicker(label, ctx.index)}${heading(slide)}${pointsList(bs)}${md}${frame}${imgs}${notes}`
   }
   if (kind === 'comparison') {
     const cols = columnsOf(slide)
     return `${kicker(label, ctx.index)}${heading(slide)}
       <div class="cw-compare">${cols.map((c, i) =>
-        `<div class="cw-compare-col ${i ? 'b' : 'a'}"><h3>${esc(c.title)}</h3>${pointsList(c.items)}</div>`
+        `<div class="cw-compare-col ${i ? 'b' : 'a'}"><h3>${vis(c.title)}</h3>${pointsList(c.items)}</div>`
       ).join('')}</div>${md}${imgs}${notes}`
   }
   if (kind === 'process') {
@@ -374,20 +401,20 @@ function innerByKind(kind: PageKind, slide: any, media: SlideMedia, ctx: SlideCt
       <div class="cw-steps">${steps.map((st, i) => `
         <div class="cw-step">
           <div class="cw-step-rail"><span class="cw-step-n">${i + 1}</span>${i < steps.length - 1 ? '<span class="cw-step-line"></span>' : ''}</div>
-          <div class="cw-step-body"><strong>${esc(st.title)}</strong>${st.detail ? `<div class="body">${esc(st.detail)}</div>` : ''}</div>
+          <div class="cw-step-body"><strong>${vis(st.title)}</strong>${st.detail ? `<div class="body">${vis(st.detail)}</div>` : ''}</div>
         </div>`).join('')}</div>${md}${imgs}${notes}`
   }
   if (kind === 'summary') {
     return `${kicker(label, ctx.index)}${heading(slide)}
       <div class="cw-block-accent cw-summary-hero">今天带走这几件事</div>
-      <div class="cw-summary-grid">${bs.map((b) => `<div class="cw-block">${esc(b)}</div>`).join('')}</div>
+      <div class="cw-summary-grid">${bs.map((b) => `<div class="cw-block">${vis(b)}</div>`).join('')}</div>
       ${md}${imgs}${notes}`
   }
   if (kind === 'exercise') {
     const qs = bs.length ? bs : (slide.content ? [slide.content] : ['完成本页练习'])
     return `${kicker(label, ctx.index)}${heading(slide)}
       <div class="cw-exercise">${qs.map((q, i) =>
-        `<div class="cw-ex"><span class="cw-ex-n">${i + 1}</span><div>${esc(q)}</div></div>`
+        `<div class="cw-ex"><span class="cw-ex-n">${i + 1}</span><div>${vis(q)}</div></div>`
       ).join('')}</div>${md}${imgs}${frame}${notes}`
   }
   if (kind === 'homework') {
@@ -395,7 +422,7 @@ function innerByKind(kind: PageKind, slide: any, media: SlideMedia, ctx: SlideCt
     return `${kicker(label, ctx.index)}${heading(slide)}
       <div class="cw-block-accent">分层任务：基础巩固 + 生活迁移 + 小作品</div>
       <div class="cw-hw">${tasks.map((t) =>
-        `<div class="cw-hw-item"><span class="cw-hw-box"></span><div>${esc(t)}</div></div>`
+        `<div class="cw-hw-item"><span class="cw-hw-box"></span><div>${vis(t)}</div></div>`
       ).join('')}</div>${md}${imgs}${notes}`
   }
   return `${kicker(label, ctx.index)}${heading(slide)}${pointsList(bs)}${md}${imgs}${frame}${notes}`
@@ -432,14 +459,20 @@ export function mediaFromSlide(
   let iframeHtml = ''
   if (slide.html && opts.wrapHtml) {
     const app = isAppInteractiveHtml(slide.html)
-    iframeHtml = `<iframe class="cw-iframe${app ? ' cw-iframe--app' : ''}" sandbox="allow-scripts allow-popups" srcdoc="${escAttr(opts.wrapHtml(slide.html))}"></iframe>`
+    const label = app ? '实验台' : '互动动画'
+    iframeHtml = `<div class="cw-fs-box">
+      <div class="cw-fs-bar"><span>${label}</span><button type="button" class="cw-fs-btn" aria-pressed="false">全屏</button></div>
+      <div class="cw-fs-stage">
+        <iframe class="cw-iframe${app ? ' cw-iframe--app' : ''}" allow="fullscreen *" allowfullscreen sandbox="allow-scripts allow-popups allow-modals" srcdoc="${escAttr(opts.wrapHtml(slide.html))}"></iframe>
+      </div>
+    </div>`
   }
   let notesHtml = ''
   if (slide.notes && opts.notesMode === 'aside') {
-    notesHtml = `<aside class="notes">${esc(slide.notes)}</aside>`
+    notesHtml = `<aside class="notes">${vis(slide.notes)}</aside>`
   } else if (slide.notes && opts.notesMode === 'details') {
-    notesHtml = `<details class="cw-notes cw-block"><summary>教师讲稿 / 备注</summary><p>${esc(slide.notes)}</p></details>`
+    notesHtml = `<details class="cw-notes cw-block"><summary>教师讲稿 / 备注</summary><p>${vis(slide.notes)}</p></details>`
   }
-  const mdHtml = slide.content ? renderMarkdown(slide.content) : ''
+  const mdHtml = slide.content ? renderMarkdown(normalizeChemText(slide.content)) : ''
   return { imagesHtml, iframeHtml, notesHtml, mdHtml }
 }

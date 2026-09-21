@@ -110,9 +110,10 @@ export function isAppInteractiveHtml(html?: string | null): boolean {
   return /<html[\s>]/i.test(s) || /id=["']lab-data["']/.test(s)
 }
 
-/** 父页监听后按内容撑开 `.cw-iframe`。 */
+/** 父页监听后按内容撑开 `.cw-iframe`。全屏时不改高度，避免把实验台压回去。 */
 export const IFRAME_AUTO_HEIGHT = `
 (function(){
+  function fsNow(){ return document.fullscreenElement || document.webkitFullscreenElement || null; }
   window.addEventListener('message', function(e){
     var d = e.data;
     if (!d || d.__cw !== true || d.type !== 'resize') return;
@@ -121,11 +122,112 @@ export const IFRAME_AUTO_HEIGHT = `
     var frames = document.querySelectorAll('iframe.cw-iframe');
     for (var i = 0; i < frames.length; i++) {
       if (frames[i].contentWindow === e.source) {
+        var box = frames[i].closest('.cw-fs-box');
+        var cur = fsNow();
+        if (cur && (cur === box || cur === frames[i] || (box && box.contains(cur)))) return;
         var cap = frames[i].classList.contains('cw-iframe--app') ? 1100 : 720;
         frames[i].style.height = Math.min(Math.max(Math.ceil(h), 360), cap) + 'px';
         break;
       }
     }
+  });
+})();
+`
+
+/** 网页课件 / 演示稿里的动画、实验台：点「全屏」走铺满视口遮罩（与互动动画「全屏演示」一致）。 */
+export const IFRAME_FULLSCREEN = `
+(function(){
+  var layer = null;
+  var presentFrame = null;
+  var presentUrl = '';
+  function embedded(){ return !!(window.parent && window.parent !== window); }
+  function srcOf(box){
+    var frame = box.querySelector('iframe.cw-iframe');
+    return frame ? (frame.getAttribute('srcdoc') || '') : '';
+  }
+  function titleOf(box){
+    var el = box.querySelector('.cw-fs-bar span');
+    return (el && el.textContent) ? String(el.textContent).trim() : '实验台';
+  }
+  function askParent(action, extra){
+    extra = extra || {};
+    try {
+      parent.postMessage({
+        __cw: true,
+        type: 'fullscreen',
+        action: action,
+        title: extra.title || '',
+        srcdoc: extra.srcdoc || ''
+      }, '*');
+      return true;
+    } catch (e) { return false; }
+  }
+  function revoke(){
+    if (presentUrl) { try { URL.revokeObjectURL(presentUrl); } catch (e) {} presentUrl = ''; }
+  }
+  function ensureLayer(){
+    if (layer) return;
+    layer = document.createElement('div');
+    layer.id = 'cw-present-layer';
+    layer.innerHTML = '<div class="cw-present-bar"><span class="cw-present-title"></span><span class="cw-present-hint">Esc 退出全屏</span><button type="button" class="cw-present-exit">退出</button></div><iframe class="cw-present-frame" sandbox="allow-scripts allow-same-origin allow-popups allow-modals" allow="fullscreen"></iframe>';
+    document.body.appendChild(layer);
+    presentFrame = layer.querySelector('iframe');
+    layer.querySelector('.cw-present-exit').addEventListener('click', function(ev){
+      ev.preventDefault();
+      exitLocal();
+    });
+  }
+  function isOn(){ return !!(layer && layer.classList.contains('is-on')); }
+  function enterLocal(box){
+    var html = srcOf(box);
+    if (!html) return;
+    ensureLayer();
+    layer.querySelector('.cw-present-title').textContent = titleOf(box);
+    revoke();
+    presentUrl = URL.createObjectURL(new Blob([html], { type: 'text/html;charset=utf-8' }));
+    presentFrame.src = presentUrl;
+    layer.classList.add('is-on');
+    document.documentElement.classList.add('cw-fs-lock');
+    if (document.body) document.body.classList.add('cw-fs-lock');
+    var req = layer.requestFullscreen || layer.webkitRequestFullscreen;
+    if (req) {
+      try {
+        var p = req.call(layer);
+        if (p && typeof p.catch === 'function') p.catch(function(){});
+      } catch (e) {}
+    }
+  }
+  function exitLocal(){
+    if (!isOn()) return;
+    layer.classList.remove('is-on');
+    if (presentFrame) presentFrame.removeAttribute('src');
+    revoke();
+    document.documentElement.classList.remove('cw-fs-lock');
+    if (document.body) document.body.classList.remove('cw-fs-lock');
+    var cur = document.fullscreenElement || document.webkitFullscreenElement;
+    if (cur) {
+      var x = document.exitFullscreen || document.webkitExitFullscreen;
+      if (x) try { x.call(document); } catch (e) {}
+    }
+  }
+  document.addEventListener('click', function(e){
+    var t = e.target;
+    if (t && t.nodeType === 3) t = t.parentElement;
+    var btn = t && t.closest && t.closest('.cw-fs-btn');
+    if (!btn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    var box = btn.closest('.cw-fs-box');
+    if (!box) return;
+    if (embedded()) {
+      askParent('enter', { title: titleOf(box), srcdoc: srcOf(box) });
+      return;
+    }
+    if (isOn()) exitLocal();
+    else enterLocal(box);
+  });
+  document.addEventListener('keydown', function(e){
+    if (e.key === 'Escape' && isOn()) exitLocal();
   });
 })();
 `

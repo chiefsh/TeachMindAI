@@ -81,7 +81,7 @@ SUBJECT_PROMPTS = {
         "interactive_guidance": "适合：生字词卡片、重点句段批注高亮、朗读节奏标注、按情节排序的拖拽、根据情境填词的小练习。",
     },
     "数学": {
-        "prompt": "强调概念的来龙去脉与逻辑推导，而非直接给结论；每个知识点配「概念—例题分步讲解—变式训练」；突出数形结合，鼓励学生动手算、动脑想，预设易错点并点拨。",
+        "prompt": "准确性是硬性要求：定理条件、推理步骤、计算结果必须正确，以课本为准，拿不准就少写。强调概念的来龙去脉与逻辑推导，而非直接给结论；每个知识点配「概念—例题分步讲解—变式训练」；突出数形结合，鼓励学生动手算、动脑想，预设易错点并点拨。公式一律用 $...$ 书写（如 $l=\\frac{n\\pi R}{180}$、$S=\\pi r^{2}$），禁止把指数写成 a2、R2；三角函数名保持小写 sin/cos/tan。",
         "interactive_guidance": "适合：数轴/坐标系动画、函数图像动态演示、几何图形 SVG 作图与变换、分步揭示的例题、可输入作答的随堂演算小题。",
     },
     "英语": {
@@ -89,15 +89,15 @@ SUBJECT_PROMPTS = {
         "interactive_guidance": "适合：单词翻卡记忆、句型替换填空、情景对话角色扮演、听力/选词拖拽配对、图文匹配小游戏。",
     },
     "物理": {
-        "prompt": "从生活现象与实验出发建立物理概念，强调过程分析与受力/能量等模型；讲清公式的物理意义与适用条件；配例题演示规范解题步骤，重视科学探究与误差分析。",
+        "prompt": "准确性是硬性要求：公式、单位、方向、适用条件、实验过程必须与课本一致，禁止编造数据或演示与定律相反的过程。从生活现象与实验出发建立物理概念，强调过程分析与受力/能量等模型；讲清公式的物理意义与适用条件；配例题演示规范解题步骤，重视科学探究与误差分析。公式用 $...$ 或规范符号：下标写 v₀ 不是 v0，单位写 m/s²、cm² 不是 m/s2、cm2。",
         "interactive_guidance": "适合：实验过程模拟动画、受力分析图、运动/电路等可视化演示、参数可调的交互模型、图表数据分析。",
     },
     "化学": {
-        "prompt": "以实验为核心建立微观—宏观联系，讲清反应原理、现象与化学方程式；强调规范实验操作与安全；通过对比与归纳帮助记忆元素、物质性质与变化规律。",
+        "prompt": "准确性是硬性要求：化学方程式、实验现象、试剂、装置摆放与收集方法必须符合该学段课本，禁止编造或画错装置。以实验为核心建立微观—宏观联系，讲清反应原理、现象与化学方程式；化学式必须规范：元素符号首字母大写、其余小写（CO₂ 不是 Co2），原子个数用下标（H₂O 不是 H2O），方程式用 = 或 → 并写清系数与↑↓。",
         "interactive_guidance": "适合：实验装置与反应过程动画、微观粒子运动示意、化学方程式配平练习、物质性质对比表、安全操作判断题。",
     },
     "生物": {
-        "prompt": "围绕结构与功能相适应的主线，结合图示与实例讲解概念；强调观察、比较与归纳；联系生活与健康，培养科学思维与生命观念。",
+        "prompt": "准确性是硬性要求：结构名称与功能、生理过程、物质变化必须与该学段课本一致，不要把更高学段细节塞进较低学段。围绕结构与功能相适应的主线，结合图示与实例讲解概念；强调观察、比较与归纳；联系生活与健康，培养科学思维与生命观念。涉及物质变化时化学式必须规范：CO₂、O₂、H₂O、C₆H₁₂O₆，方程式带系数（6CO₂+6H₂O→C₆H₁₂O₆+6O₂），禁止 CO2、H2O、C6H12O6 直写。",
         "interactive_guidance": "适合：细胞/器官结构标注图、生理过程动画、分类与配对、实验现象观察、概念图梳理。",
     },
     "历史": {
@@ -105,7 +105,7 @@ SUBJECT_PROMPTS = {
         "interactive_guidance": "适合：时间轴动画、历史地图标注、史料阅读与设问、事件因果连线、人物/事件配对。",
     },
     "地理": {
-        "prompt": "突出地图与空间分析能力，结合自然与人文地理讲清「在哪里—为什么—怎么样」；联系区域案例与生活实际，培养综合思维与人地协调观。",
+        "prompt": "突出地图与空间分析能力，结合自然与人文地理讲清「在哪里—为什么—怎么样」；联系区域案例与生活实际，培养综合思维与人地协调观。面积单位写 km² 不是 km2；涉及大气成分时写 CO₂、O₂。",
         "interactive_guidance": "适合：地图分层标注、气候/地形示意动画、数据图表分析、区域对比表、读图填空。",
     },
     "道德与法治": {
@@ -117,7 +117,7 @@ SUBJECT_PROMPTS = {
         "interactive_guidance": "适合：时政案例分析、观点辨析投票、概念关系图、材料设问、判断与论证小题。",
     },
     "科学": {
-        "prompt": "以探究为中心，从问题与现象出发，经历「猜想—实验—观察—结论」的过程；鼓励动手与合作，培养好奇心与科学方法。",
+        "prompt": "准确性是硬性要求：实验过程、器材摆放、现象与结论必须与课本一致，互动动画不得演示错误过程。以探究为中心，从问题与现象出发，经历「猜想—实验—观察—结论」的过程；鼓励动手与合作，培养好奇心与科学方法。化学式与单位必须规范：CO₂ 不是 CO2，H₂O 不是 H2O，m/s² 不是 m/s2，cm³ 不是 cm3。",
         "interactive_guidance": "适合：实验模拟动画、现象观察记录、简单数据图表、分类配对、动手小实验指引。",
     },
     "信息技术": {
@@ -142,26 +142,29 @@ SUBJECT_PROMPTS = {
 GENERIC_SUBJECT_PROMPT = (
     "结合本学科特点设计课件：讲解要具体充实、循序渐进，配合恰当的例子、图示与课堂活动，"
     "突出重点、突破难点，帮助学生理解并能运用所学。"
+    "准确性是硬性要求：定义、公式、事实必须与课本一致，禁止编造。"
 )
 
 
 async def seed_subject_prompts():
-    """写入各科目的系统默认提示词（teacher_id 为空）。仅在首次为空时写入。"""
+    """系统默认提示词（teacher_id 为空）与目录对齐；教师覆盖不改。"""
     async with AsyncSessionLocal() as db:
-        existing = await db.execute(
-            select(SubjectPromptTemplate.id).where(SubjectPromptTemplate.teacher_id.is_(None))
-        )
-        if existing.scalars().first():
-            return
-        db.add_all([
-            SubjectPromptTemplate(
-                teacher_id=None,
-                subject_name=name,
-                prompt=cfg["prompt"],
-                interactive_guidance=cfg.get("interactive_guidance"),
-            )
-            for name, cfg in SUBJECT_PROMPTS.items()
-        ])
+        rows = (await db.execute(
+            select(SubjectPromptTemplate).where(SubjectPromptTemplate.teacher_id.is_(None))
+        )).scalars().all()
+        by_name = {r.subject_name: r for r in rows}
+        for name, cfg in SUBJECT_PROMPTS.items():
+            row = by_name.get(name)
+            if row is None:
+                db.add(SubjectPromptTemplate(
+                    teacher_id=None,
+                    subject_name=name,
+                    prompt=cfg["prompt"],
+                    interactive_guidance=cfg.get("interactive_guidance"),
+                ))
+            else:
+                row.prompt = cfg["prompt"]
+                row.interactive_guidance = cfg.get("interactive_guidance")
         await db.commit()
 
 

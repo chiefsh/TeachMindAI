@@ -143,6 +143,18 @@ _COLUMN_SQL = [
         "teachers", "is_super",
         "ALTER TABLE teachers ADD COLUMN is_super TINYINT(1) NOT NULL DEFAULT 0",
     ),
+    (
+        "homework_papers", "review_status",
+        "ALTER TABLE homework_papers ADD COLUMN review_status VARCHAR(16) NOT NULL DEFAULT 'unreviewed'",
+    ),
+    (
+        "homework_questions", "explanation",
+        "ALTER TABLE homework_questions ADD COLUMN explanation TEXT NULL",
+    ),
+    (
+        "homework_questions", "check_status",
+        "ALTER TABLE homework_questions ADD COLUMN check_status VARCHAR(16) NULL",
+    ),
 ]
 
 
@@ -159,6 +171,7 @@ async def _ensure_columns():
     from sqlalchemy import inspect as sa_inspect
 
     async with engine.begin() as conn:
+        added_review = False
         for table, column, ddl in _COLUMN_SQL:
             try:
                 columns = await conn.run_sync(
@@ -166,6 +179,16 @@ async def _ensure_columns():
                 )
                 if column not in columns:
                     await conn.execute(text(ddl))
+                    if table == "homework_papers" and column == "review_status":
+                        added_review = True
+            except Exception:
+                pass
+        if added_review:
+            try:
+                await conn.execute(text(
+                    "UPDATE homework_papers SET review_status='verified' "
+                    "WHERE gen_status='done'"
+                ))
             except Exception:
                 pass
         # 作业题分值改为可空（作业不记分）

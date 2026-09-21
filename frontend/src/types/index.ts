@@ -158,6 +158,8 @@ export interface HomeworkQuestion {
   id: number; sort_order: number; content: string
   options?: Record<string, string> | null; answer?: string | null; score?: number | null
   source?: 'ai' | 'bank' | null
+  check_status?: 'passed' | 'unchecked' | 'bank' | null
+  explanation?: string | null
   question_id?: number | null
   question_type?: QuestionType | string | null
 }
@@ -167,7 +169,8 @@ export type QuestionSourceMode = 'ai' | 'bank' | 'mixed'
 
 export interface HomeworkPaper {
   id: number; title: string; paper_type: string; difficulty: DifficultyLevel
-  gen_status: ParseStatus; courseware_id?: number; created_at: string
+  gen_status: ParseStatus; review_status?: 'unreviewed' | 'verified' | string
+  courseware_id?: number; created_at: string
   content?: string
   question_config?: Record<string, any>
   questions?: HomeworkQuestion[]

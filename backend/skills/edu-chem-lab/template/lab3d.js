@@ -216,6 +216,8 @@
       fx.tubeBubbles.push(add(g, b, (Math.random() - 0.5) * 0.06, 0.12 + Math.random() * 0.12, (Math.random() - 0.5) * 0.06));
     }
     powder.visible = zinc.visible = marble.visible = acid.visible = false;
+    fx.cotton = add(g, sph(0.032, mat(0xf8fafc, { roughness: 0.85 })), 0, 0.5, 0);
+    fx.cotton.visible = false;
     if (tilt) g.rotation.z = tilt;
     fx.tube = g;
   }
@@ -376,24 +378,33 @@
   function buildCell(g) {
     add(g, box(1.4, 0.28, 0.7, liquidMat(0x38bdf8)), 0, 0.16, 0);
     add(g, box(1.42, 0.04, 0.72, mat(0x0369a1)), 0, 0.02, 0);
-    add(g, box(0.04, 0.28, 0.04, mat(0x64748b, { metalness: 0.6 })), -0.35, 0.2, 0);
-    add(g, box(0.04, 0.28, 0.04, mat(0x64748b, { metalness: 0.6 })), 0.35, 0.2, 0);
+    add(g, box(0.04, 0.28, 0.04, mat(0x1d4ed8, { metalness: 0.6 })), -0.35, 0.2, 0);
+    add(g, box(0.04, 0.28, 0.04, mat(0xdc2626, { metalness: 0.6 })), 0.35, 0.2, 0);
   }
   function buildPower(g) {
     add(g, box(0.38, 0.16, 0.22, mat(0x111827, { roughness: 0.38 })), 0, 0.2, 0);
-    var lab = labelSprite("电源", "#fbbf24");
-    lab.position.set(0, 0.36, 0.12);
-    g.add(lab);
+    add(g, sph(0.028, mat(0xdc2626, { roughness: 0.3 })), -0.12, 0.22, 0.12);
+    add(g, sph(0.028, mat(0x1d4ed8, { roughness: 0.3 })), 0.12, 0.22, 0.12);
+    var pos = labelSprite("+", "#fecaca");
+    pos.scale.set(0.28, 0.08, 1);
+    pos.position.set(-0.12, 0.34, 0.14);
+    var neg = labelSprite("−", "#bfdbfe");
+    neg.scale.set(0.28, 0.08, 1);
+    neg.position.set(0.12, 0.34, 0.14);
+    g.add(pos, neg);
   }
   function buildTubes(g) {
     add(g, cyl(0.055, 0.055, 0.3, glass(0xdbeafe), 20), -0.35, 0.44, 0);
     add(g, cyl(0.055, 0.055, 0.3, glass(0xdbeafe), 20), 0.35, 0.44, 0);
-    fx.h2 = labelSprite("H₂", "#99f6e4"); fx.o2 = labelSprite("O₂", "#fdba74");
-    fx.h2.position.set(-0.35, 0.66, 0.08); fx.o2.position.set(0.35, 0.66, 0.08);
+    fx.h2gas = add(g, cyl(0.042, 0.042, 0.18, mat(0xe0f2fe, { transparent: true, opacity: 0.55 }), 16), -0.35, 0.48, 0);
+    fx.o2gas = add(g, cyl(0.042, 0.042, 0.09, mat(0xffedd5, { transparent: true, opacity: 0.55 }), 16), 0.35, 0.40, 0);
+    fx.h2gas.visible = fx.o2gas.visible = false;
+    fx.h2 = labelSprite("− H₂", "#99f6e4"); fx.o2 = labelSprite("+ O₂", "#fdba74");
+    fx.h2.position.set(-0.35, 0.68, 0.08); fx.o2.position.set(0.35, 0.68, 0.08);
     fx.h2.visible = fx.o2.visible = false;
     g.add(fx.h2, fx.o2);
-    fx.ratio = labelSprite("体积比约 2 : 1", "#99f6e4");
-    fx.ratio.scale.set(1.15, 0.22, 1);
+    fx.ratio = labelSprite("H₂ : O₂ ≈ 2 : 1", "#99f6e4");
+    fx.ratio.scale.set(1.2, 0.22, 1);
     fx.ratio.position.set(0, 0.1, 0.45);
     fx.ratio.visible = false;
     g.add(fx.ratio);
@@ -427,9 +438,65 @@
   function buildCover(g) {
     add(g, cyl(0.14, 0.14, 0.016, glass(0xe2e8f0), 24), 0, 0.02, 0);
   }
+  function buildCandleBeaker(g) {
+    add(g, lathe([[0.22, 0], [0.24, 0.02], [0.27, 0.52], [0.29, 0.54], [0.24, 0.54]], glass(0xd4eefc), 40), 0, 0, 0);
+    function candle(x, h, flameKey) {
+      add(g, cyl(0.032, 0.034, h, mat(0xf8fafc, { roughness: 0.7 }), 12), x, h / 2 + 0.02, 0);
+      add(g, cyl(0.004, 0.004, 0.028, mat(0x44403c), 6), x, h + 0.03, 0);
+      var flame = add(g, sph(0.024, mat(0xf97316, { emissive: 0xea580c, emissiveIntensity: 0.85 })), x, h + 0.07, 0);
+      var inner = add(g, sph(0.012, mat(0xfde68a, { emissive: 0xfacc15, emissiveIntensity: 0.9 })), x, h + 0.065, 0);
+      flame.visible = inner.visible = false;
+      fx[flameKey] = flame;
+      fx[flameKey + "Inner"] = inner;
+    }
+    candle(-0.09, 0.16, "flameLow");
+    candle(0.1, 0.32, "flameHigh");
+    fx.co2Low = add(g, cyl(0.24, 0.23, 0.12, mat(0x64748b, { transparent: true, opacity: 0.32 }), 20), 0, 0.08, 0);
+    fx.co2Mid = add(g, cyl(0.24, 0.23, 0.26, mat(0x94a3b8, { transparent: true, opacity: 0.28 }), 20), 0, 0.16, 0);
+    fx.co2Low.visible = fx.co2Mid.visible = false;
+    var lo = labelSprite("较低处", "#334155");
+    lo.scale.set(0.42, 0.1, 1);
+    lo.position.set(-0.09, 0.04, 0.28);
+    var hi = labelSprite("较高处", "#334155");
+    hi.scale.set(0.42, 0.1, 1);
+    hi.position.set(0.1, 0.04, 0.28);
+    g.add(lo, hi);
+  }
+  function buildConditionBeaker(g) {
+    add(g, lathe([[0.22, 0], [0.24, 0.02], [0.27, 0.52], [0.29, 0.54], [0.24, 0.54]], glass(0xd4eefc), 40), 0, 0, 0);
+    fx.hotWater = add(g, cyl(0.24, 0.23, 0.28, liquidMat(0xfb923c), 20), 0, 0.16, 0);
+    add(g, box(0.5, 0.012, 0.28, mat(0xb45309, { metalness: 0.45 })), 0, 0.34, 0);
+    fx.wpAir = add(g, sph(0.03, mat(0xf8fafc)), -0.12, 0.38, 0);
+    fx.flameWp = add(g, sph(0.022, mat(0xf97316, { emissive: 0xea580c, emissiveIntensity: 0.85 })), -0.12, 0.44, 0);
+    fx.rpAir = add(g, sph(0.03, mat(0xdc2626)), 0.12, 0.38, 0);
+    fx.wpWater = add(g, sph(0.028, mat(0xf8fafc)), 0, 0.12, 0);
+    fx.wpO2 = add(g, sph(0.02, mat(0xf97316, { emissive: 0xea580c, emissiveIntensity: 0.7 })), 0, 0.2, 0);
+    fx.hotWater.visible = fx.wpAir.visible = fx.flameWp.visible = fx.rpAir.visible = fx.wpWater.visible = fx.wpO2.visible = false;
+  }
+  function buildRustTubes(g) {
+    function tube(x, label, withWater, oil, dry) {
+      add(g, cyl(0.05, 0.05, 0.42, glass(0xdbeafe), 20), x, 0.22, 0);
+      if (withWater) add(g, cyl(0.04, 0.04, 0.16, liquidMat(0x38bdf8), 16), x, 0.1, 0);
+      if (oil) add(g, cyl(0.04, 0.04, 0.03, liquidMat(0xca8a04), 16), x, 0.2, 0);
+      if (dry) add(g, sph(0.028, mat(0xf8fafc)), x, 0.34, 0);
+      var nail = add(g, box(0.018, 0.12, 0.018, mat(0x94a3b8, { metalness: 0.55 })), x, 0.12, 0);
+      if (label === "水+空气") fx.rustNail = nail;
+      var t = labelSprite(label, "#334155");
+      t.scale.set(0.5, 0.12, 1);
+      t.position.set(x, 0.02, 0.12);
+      g.add(t);
+    }
+    tube(-0.28, "水+空气", true, false, false);
+    tube(0, "油封隔空气", true, true, false);
+    tube(0.28, "干燥剂", false, false, true);
+  }
+
   function buildLime(g) {
-    add(g, lathe([[0.09, 0], [0.11, 0.02], [0.1, 0.24], [0.05, 0.27]], glass(0xe2e8f0), 24), 0, 0, 0);
-    fx.limeLiquid = add(g, cyl(0.085, 0.08, 0.07, liquidMat(0xe0f2fe), 16), 0, 0.1, 0);
+    add(g, lathe([[0.14, 0], [0.16, 0.02], [0.17, 0.30], [0.19, 0.32], [0.15, 0.32]], glass(0xd4eefc), 40), 0, 0, 0);
+    var spout = box(0.055, 0.024, 0.036, glass(0xd4eefc));
+    spout.rotation.z = -0.4;
+    add(g, spout, 0.175, 0.31, 0);
+    fx.limeLiquid = add(g, cyl(0.148, 0.138, 0.12, liquidMat(0xe8f1f8), 20), 0, 0.1, 0);
   }
 
   function tileFloor() {
@@ -581,14 +648,14 @@
         S("stand", "铁架台", sx, sz);
         S("tube", "试管", tx, tz, 0x38bdf8);
         S("lamp", "酒精灯", tx + 0.02, 0.08, 0xf59e0b);
-        S("paper", "试纸", mouth[0] + 0.12, -0.28, 0xf87171);
-        S("lime_beaker", "石灰水", mouth[0] + 0.42, 0.1, 0x94a3b8);
+        S("paper", "试纸", mouth[0] + 0.08, -0.12, 0xf87171);
+        S("lime_beaker", "石灰水", mouth[0] + 0.38, 0.08, 0x94a3b8);
         S("reagent", "药品", sx, -0.38, 0xa78bfa);
         pieceGroup("stand", buildStand, sx, y, sz);
         pieceGroup("tube", tiltTube(tilt), tx, ty, tz);
         pieceGroup("lamp", buildLamp, tx + 0.02, y, 0.08);
-        pieceGroup("paper", buildPaper, mouth[0] + 0.12, y, -0.28);
-        pieceGroup("lime_beaker", buildLime, mouth[0] + 0.42, y, 0.1);
+        pieceGroup("paper", buildPaper, mouth[0] + 0.08, y + 0.08, -0.12);
+        pieceGroup("lime_beaker", buildLime, mouth[0] + 0.38, y, 0.08);
       },
       prep_hydrogen: function () {
         /* 固液不加热：试管直立夹在铁架台，导管通入水槽倒扣集气瓶。 */
@@ -616,28 +683,32 @@
         pieceGroup("splint", buildSplint, 1.4, y, -0.28);
       },
       prep_co2: function () {
-        /* 向上排空气：导管从试管口伸出后折入集气瓶底部，瓶口覆玻璃片，石灰水紧挨瓶旁。 */
+        /* 向上排空气：试管直立，导管伸入正放集气瓶底部，瓶口盖玻璃片，石灰水烧杯在右侧。 */
         var sx = -1.55, sz = 0;
         var tubeX = sx + 0.46;
         var mouth = [tubeX, y + 0.53, sz];
-        var bx = -0.18, bz = 0.04;
-        fx.collectAt = { x: bx, y: 1.22, z: bz };
+        var bx = -0.08, bz = 0.04;
+        fx.collectAt = { x: bx, y: y + 0.06, z: bz };
         S("stand", "铁架台", sx, sz);
         S("tube", "试管", tubeX, sz, 0x38bdf8);
         S("bottle", "集气瓶", bx, bz, 0x38bdf8);
-        S("lime_beaker", "石灰水", bx + 0.5, 0.08, 0x94a3b8);
-        S("splint", "木条", 1.25, -0.28, 0xf59e0b);
+        S("lime_beaker", "石灰水", bx + 0.78, 0.12, 0x94a3b8);
+        S("splint", "木条", 1.42, -0.28, 0xf59e0b);
         S("reagent", "药品", sx, -0.38, 0xa78bfa);
         pieceGroup("stand", buildStand, sx, y, sz);
         pieceGroup("tube", tiltTube(0), tubeX, y, sz);
         placeHose("delivery", [
           mouth,
-          [bx, mouth[1], bz],
-          [bx, y + 0.12, bz]
+          [mouth[0] + 0.22, mouth[1], 0.02],
+          [bx, mouth[1] - 0.04, bz],
+          [bx, y + 0.06, bz]
         ]);
-        pieceGroup("bottle", buildBottle, bx, y, bz);
-        pieceGroup("lime_beaker", buildLime, bx + 0.5, y, 0.08);
-        pieceGroup("splint", buildSplint, 1.25, y, -0.28);
+        pieceGroup("bottle", function (g) {
+          buildBottle(g);
+          add(g, cyl(0.13, 0.13, 0.014, glass(0xe2e8f0), 24), 0, 0.47, 0);
+        }, bx, y, bz);
+        pieceGroup("lime_beaker", buildLime, bx + 0.78, y, 0.12);
+        pieceGroup("splint", buildSplint, 1.42, y, -0.28);
       },
       iron_in_oxygen: function () {
         S("lamp", "酒精灯", -0.95, 0.1, 0xf59e0b);
@@ -711,11 +782,11 @@
         pieceGroup("rod", buildRod, fx_ - 0.08, y + 0.28, -0.06);
       },
       evaporation: function () {
-        S("stand", "三脚架", -0.35, 0.08, 0x94a3b8);
-        S("gauze", "陶土网", 0, -0.22, 0xcbd5e1);
-        S("dish", "蒸发皿", 0.32, -0.16, 0x38bdf8);
-        S("lamp", "酒精灯", 0, 0.26, 0xf59e0b);
-        S("rod", "玻璃棒", 0.42, -0.12, 0x94a3b8);
+        S("stand", "三脚架", 0, 0.06, 0x94a3b8);
+        S("gauze", "陶土网", 0, 0.06, 0xcbd5e1);
+        S("dish", "蒸发皿", 0, 0.06, 0x38bdf8);
+        S("lamp", "酒精灯", 0, 0.06, 0xf59e0b);
+        S("rod", "玻璃棒", 0.38, -0.06, 0x94a3b8);
         S("reagent", "溶液", 1.05, -0.18, 0xa78bfa);
         pieceGroup("lamp", buildLamp, 0, y, 0.06);
         pieceGroup("stand", function (g) {
@@ -738,6 +809,34 @@
         pieceGroup("lamp", buildLamp, tx, y, tz);
         pieceGroup("tube", tiltTube(tilt), tx, ty, tz);
         pieceGroup("rod", buildClamp, tx + 0.15, ty + 0.24, tz);
+      },
+      co2_candles: function () {
+        S("bottle", "二氧化碳", -0.95, 0.08, 0x64748b);
+        S("beaker", "烧杯", 0.35, 0.08, 0x38bdf8);
+        pieceGroup("bottle", buildBottle, -0.95, y, 0.08);
+        pieceGroup("beaker", buildCandleBeaker, 0.35, y, 0.08);
+      },
+      air_oxygen: function () {
+        S("lamp", "酒精灯", -1.05, 0.1, 0xf59e0b);
+        S("wire", "燃烧匙", 0.02, -0.22, 0xfb7185);
+        S("bottle", "集气瓶", 0.02, 0.08, 0x38bdf8);
+        S("beaker", "烧杯", 0.85, 0.1, 0x0ea5e9);
+        S("reagent", "红磷", -1.05, -0.35, 0xa78bfa);
+        pieceGroup("lamp", buildLamp, -1.05, y, 0.1);
+        pieceGroup("bottle", buildBottle, 0.02, y, 0.06);
+        pieceGroup("wire", buildWire, 0.02, y + 0.12, 0.06);
+        pieceGroup("beaker", buildBeaker, 0.85, y, 0.08);
+        fx.collectAt = { x: 0.02, y: 1.4, z: 0.06 };
+      },
+      combustion_conditions: function () {
+        S("beaker", "烧杯", 0.05, 0.08, 0x38bdf8);
+        S("cover", "薄铜片", 0.05, -0.18, 0xb45309);
+        pieceGroup("beaker", buildConditionBeaker, 0.05, y, 0.08);
+        pieceGroup("cover", buildCover, 0.72, y, -0.18);
+      },
+      iron_rust: function () {
+        S("tube", "对照试管", 0, 0.06, 0x38bdf8);
+        pieceGroup("tube", buildRustTubes, 0, y, 0.06);
       }
     };
     L.oxygen = L.prep_oxygen_kmno4;
@@ -969,6 +1068,7 @@
     if (fx.powder) fx.powder.visible = (!!st.powder || !!st.oxide) && st.liquid !== "blue";
     if (fx.zinc) fx.zinc.visible = !!st.zinc;
     if (fx.marble) fx.marble.visible = !!st.marble;
+    if (fx.cotton) fx.cotton.visible = !!st.cotton;
     if (fx.acid) {
       fx.acid.visible = !!st.acid || !!st.oxide_acid || st.liquid === "blue";
       if (st.liquid === "blue") fx.acid.material.color.setHex(0x2563eb);
@@ -979,8 +1079,27 @@
     if (fx.flameLight) fx.flameLight.intensity = lit ? 1.6 : 0;
     (fx.bubbles || []).forEach(function (b) { b.visible = !!st.bubbles; });
     (fx.tubeBubbles || []).forEach(function (b) { b.visible = !!st.acid_bubbles || !!st.oxide_bubbles || !!st.bubbles; });
-    if (fx.gas) fx.gas.visible = !!st.collected && !st.air_collect;
-    if (fx.bottleWater) fx.bottleWater.visible = !!st.bottle_water;
+    if (fx.gas) fx.gas.visible = (!!st.collected && !st.air_collect) || !!st.co2_fill;
+    if (fx.flameLow) fx.flameLow.visible = !!st.lit && !st.low_out;
+    if (fx.flameLowInner) fx.flameLowInner.visible = !!st.lit && !st.low_out;
+    if (fx.flameHigh) fx.flameHigh.visible = !!st.lit && !st.high_out;
+    if (fx.flameHighInner) fx.flameHighInner.visible = !!st.lit && !st.high_out;
+    if (fx.co2Low) fx.co2Low.visible = !!st.co2_low || !!st.co2_mid;
+    if (fx.co2Mid) fx.co2Mid.visible = !!st.co2_mid;
+    if (pieces.bottle && st.pouring) pieces.bottle.rotation.z = -0.72;
+    else if (pieces.bottle) pieces.bottle.rotation.z = 0;
+    if (fx.bottleWater) {
+      fx.bottleWater.visible = !!st.bottle_water || !!st.water_rise;
+      if (st.water_rise) fx.bottleWater.scale.set(1, 2.4, 1);
+      else fx.bottleWater.scale.set(1, 1, 1);
+    }
+    if (fx.hotWater) fx.hotWater.visible = !!st.hot_water;
+    if (fx.wpAir) fx.wpAir.visible = !!st.wp_air;
+    if (fx.flameWp) fx.flameWp.visible = !!st.wp_air;
+    if (fx.rpAir) fx.rpAir.visible = !!st.rp_air;
+    if (fx.wpWater) fx.wpWater.visible = !!st.wp_water;
+    if (fx.wpO2) fx.wpO2.visible = !!st.wp_o2;
+    if (fx.rustNail && st.rust) fx.rustNail.material.color.setHex(0xb45309);
     if (fx.troughWater && pieces.trough) pieces.trough.visible = pieces.trough.visible && !st.air_collect;
     if (fx.pop) fx.pop.visible = !!st.pop;
     if (fx.jet) fx.jet.visible = !!st.jet_flame;
@@ -1000,6 +1119,8 @@
     (fx.beakerBubbles || []).forEach(function (b) { b.visible = !!st.acid_bubbles; });
     if (fx.h2) fx.h2.visible = !!st.gases;
     if (fx.o2) fx.o2.visible = !!st.gases;
+    if (fx.h2gas) fx.h2gas.visible = !!st.gases;
+    if (fx.o2gas) fx.o2gas.visible = !!st.gases;
     if (fx.ratio) fx.ratio.visible = !!st.ratio;
     if (fx.filterPaper) fx.filterPaper.visible = !!st.paper;
     if (fx.residue) fx.residue.visible = !!st.residue;

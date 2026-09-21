@@ -17,7 +17,8 @@ import tempfile
 from pathlib import Path
 from xml.sax.saxutils import escape
 
-from app.services.courseware_theme import get_theme, page_kind, page_label
+from app.services.courseware_theme import get_theme, is_student_slide, page_kind, page_label
+from app.services.chem_text import normalize_slide_chem
 
 log = logging.getLogger(__name__)
 
@@ -524,7 +525,6 @@ def _paint_cover(p: Page, slide: dict, subject: str, chapter: str) -> None:
             sw = min(400, _measure(sl, SZ_CAPTION) + 40)
             right.append(p.rect(620, 300, sw, 44, th["surface"], rx=22))
             right.append(p.text(638, 328, sl, SZ_CAPTION, th["text"], "600"))
-        right.append(p.text(620, 390, "知序台教学课件", SZ_BODY, th["muted"]))
         p.group("cover-right", 600, 280, 620, 180, "".join(right))
         return
 
@@ -1080,7 +1080,7 @@ def render_slide_svg(
 
 
 def collect_pages(content: dict, title: str) -> tuple[list[dict], str]:
-    """与网页演示同一页序：缺封面则补一张；meta 概览插在封面后。"""
+    """与网页演示同一页序：缺封面则补一张。教学目标只在教师端，不进学生页。"""
     meta = content.get("meta") or {}
     slides = []
     for i, s in enumerate(content.get("slides") or []):
@@ -1092,24 +1092,16 @@ def collect_pages(content: dict, title: str) -> tuple[list[dict], str]:
     if not has_cover:
         pages.append({
             "type": "cover",
-            "title": meta.get("title") or title or "教学课件",
+            "title": meta.get("title") or title or "课堂课件",
             "subtitle": meta.get("duration") or "",
         })
-    blocks: list[tuple[str, list[str]]] = []
-    if meta.get("objectives"):
-        blocks.append(("教学目标", [str(x) for x in meta["objectives"]]))
-    if meta.get("key_points"):
-        blocks.append(("教学重点", [str(x) for x in meta["key_points"]]))
-    if meta.get("difficulties"):
-        blocks.append(("教学难点", [str(x) for x in meta["difficulties"]]))
-    overview = {"type": "_overview", "title": "备课备忘", "blocks": blocks} if blocks else None
 
     for s in slides:
-        pages.append(s)
-    if overview:
-        pages.append(overview)
+        if not is_student_slide(s.get("type")):
+            continue
+        pages.append(normalize_slide_chem(s))
     if not pages:
-        pages.append({"type": "cover", "title": title or "教学课件"})
+        pages.append({"type": "cover", "title": title or "课堂课件"})
     return pages, subject
 
 

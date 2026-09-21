@@ -2,13 +2,22 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <title>智课星</title>
-    <script type="module" crossorigin src="/assets/index-BOkzA5sF.js"></script>
-    <link rel="modulepreload" crossorigin href="/assets/vue-vendor-BSTfypgV.js">
-    <link rel="modulepreload" crossorigin href="/assets/element-plus-Cv2SdTEF.js">
-    <link rel="stylesheet" crossorigin href="/assets/index-mrKrZdJi.css">
+    <meta name="description" content="知序台：备课、出题、阅卷分析与知识图谱，集中在一个安静好用的教师工作台。" />
+    <title>知序台</title>
+    <script>
+      (function () {
+        var t = localStorage.getItem('app_theme') === 'tech' ? 'tech' : 'paper'
+        document.documentElement.dataset.theme = t
+        document.documentElement.classList.remove('dark')
+      })()
+    </script>
+    <script type="module" crossorigin src="/assets/index-Dxo4CQta.js"></script>
+    <link rel="modulepreload" crossorigin href="/assets/vue-vendor-CVCDINbA.js">
+    <link rel="modulepreload" crossorigin href="/assets/element-plus-B8pXqD4c.js">
+    <link rel="stylesheet" crossorigin href="/assets/index-CKhkipPZ.css">
   </head>
   <body>
     <div id="app"></div>

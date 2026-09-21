@@ -179,6 +179,11 @@ def page_label(slide_type: str | None) -> str:
     return PAGE_LABELS.get(t) or PAGE_LABELS.get(page_kind(t), "内容")
 
 
+def is_student_slide(slide_type: str | None) -> bool:
+    """给学生上课投影的页：学习目标只写在 meta，不进 PPT/网页。"""
+    return page_kind(slide_type) != "objectives"
+
+
 def rgb(hex_color: str) -> tuple[int, int, int]:
     """#RRGGBB → (r, g, b)，供 python-pptx / python-docx 构造 RGBColor。"""
     h = (hex_color or "").lstrip("#")

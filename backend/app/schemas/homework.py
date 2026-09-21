@@ -40,6 +40,7 @@ class HomeworkOut(BaseModel):
     paper_type: HomeworkType
     difficulty: DifficultyLevel
     gen_status: ParseStatus
+    review_status: str | None = None
     courseware_id: int | None
     courseware_ids: list | None = None
     textbook_id: int | None = None
@@ -63,11 +64,17 @@ class HomeworkQuestionOut(BaseModel):
     content: str
     options: dict | None = None
     answer: str | None = None
+    explanation: str | None = None
     question_type: str | None = None
     score: float | int | None = None
     source: str | None = None
+    check_status: str | None = None
     question_id: int | None = None
     model_config = {"from_attributes": True}
+
+
+class HomeworkReviewIn(BaseModel):
+    verified: bool = True
 
 
 class HomeworkDetail(HomeworkOut):

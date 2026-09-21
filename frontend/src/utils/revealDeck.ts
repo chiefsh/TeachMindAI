@@ -1,9 +1,9 @@
 // 用 reveal.js 把课件内容渲染成专业演示文稿（转场动画 / 演讲者视图 / 键盘翻页）。
 // 互动页以内嵌 iframe 形式渲染，复用 wrapInteractiveHtml 保证隔离与统一样式。
-import { wrapInteractiveHtml, IFRAME_AUTO_HEIGHT } from './coursewareFrame'
+import { wrapInteractiveHtml, IFRAME_AUTO_HEIGHT, IFRAME_FULLSCREEN } from './coursewareFrame'
 import { getTheme, type CoursewareTheme } from './coursewareTheme'
 import {
-  buildSlideInner, decoSvg, esc, mediaFromSlide, pageCss,
+  buildSlideInner, decoSvg, esc, isStudentSlide, mediaFromSlide, pageCss,
 } from './coursewarePages'
 
 const REVEAL_VERSION = '5.1.0'
@@ -45,22 +45,6 @@ function slideSection(slide: any, imageMap: DeckImageMap, theme: CoursewareTheme
   return `<section class="cw-page ${view.className}">${decoSvg(theme)}${view.inner}</section>`
 }
 
-function metaSection(meta: any, theme: CoursewareTheme): string {
-  const blocks: [string, string[]][] = []
-  if (meta.objectives?.length) blocks.push(['教学目标', meta.objectives])
-  if (meta.key_points?.length) blocks.push(['教学重点', meta.key_points])
-  if (meta.difficulties?.length) blocks.push(['教学难点', meta.difficulties])
-  if (!blocks.length) return ''
-  const cols = blocks.map(([h, items], i) =>
-    `<div class="cw-block" style="border-top:4px solid ${i === 1 ? 'var(--c-accent)' : 'var(--c-primary)'}">
-      <h3 style="margin:0 0 .4em;color:var(--c-primary)">${esc(h)}</h3>
-      <ul>${items.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>`
-  ).join('')
-  return `<section class="cw-page cw-page--objectives">${decoSvg(theme)}
-    <div class="cw-inner"><span class="cw-kicker">备课备忘</span>
-    <div class="meta-grid" style="margin-top:12px">${cols}</div></div></section>`
-}
-
 interface DeckOptions {
   print?: boolean
   theme?: string
@@ -78,23 +62,22 @@ export function buildRevealDeck(content: any, imageMap: DeckImageMap = {}, opts:
   const hasCover = slides.some((s) => s.type === 'title' || s.type === 'cover')
   if (!hasCover) {
     sections.push(slideSection(
-      { type: 'cover', title: meta.title || '教学课件', subtitle: meta.duration || '' },
+      { type: 'cover', title: meta.title || '课堂课件', subtitle: meta.duration || '' },
       {}, theme, { index: 0, subject },
     ))
   }
-  const metaSec = metaSection(meta, theme)
 
   slides.forEach((s, i) => {
+    if (!isStudentSlide(s)) return
     sections.push(slideSection(s, imageMap, theme, { index: i + 1, subject }))
   })
-  if (metaSec) sections.push(metaSec)
 
   return `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${esc(meta.title || '教学课件')}</title>
+<title>${esc(meta.title || '课堂课件')}</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@${REVEAL_VERSION}/dist/reveal.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@${REVEAL_VERSION}/dist/theme/white.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@${KATEX_VERSION}/dist/katex.min.css">
@@ -138,6 +121,7 @@ ${sections.join('\n')}
   });
 </script>
 <script>${IFRAME_AUTO_HEIGHT}</script>
+<script>${IFRAME_FULLSCREEN}</script>
 </body>
 </html>`
 }

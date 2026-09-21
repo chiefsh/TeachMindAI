@@ -375,6 +375,8 @@ async def create_assignment(db: AsyncSession, teacher_id: int, data) -> GradingA
     paper = await _paper_or_404(db, data.paper_id, teacher_id)
     if paper.gen_status != ParseStatus.done or not paper.questions:
         raise ValueError("请选择已生成完成且含题目的作业/试卷")
+    if (getattr(paper, "review_status", None) or "") != "verified":
+        raise ValueError("请先在作业/考试中校对卷面后再布置")
     assigned_at = data.assigned_at or date.today()
     class_id = getattr(data, "class_id", None)
     class_name = (data.class_name or "").strip() or None

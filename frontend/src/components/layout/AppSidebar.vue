@@ -8,7 +8,7 @@
       </div>
     </div>
 
-    <nav class="flex-1 overflow-y-auto py-2 px-2.5">
+    <nav ref="navRef" class="flex-1 overflow-y-auto py-2 px-2.5">
       <div v-for="item in navMenu" :key="item.key" class="mb-0.5">
         <router-link
           v-if="item.path"
@@ -19,29 +19,25 @@
           <el-icon><component :is="item.icon" /></el-icon>
           <span>{{ item.label }}</span>
         </router-link>
-        <template v-else>
-          <button
-            type="button"
+        <details
+          v-else
+          class="nav-group"
+          name="sidebar-nav"
+          :data-key="item.key"
+          @toggle="$emit('toggle', item, $event)"
+          @mouseenter="$emit('prefetch', item)"
+        >
+          <summary
             class="nav-item w-full"
             :class="{ 'nav-group-on': isGroupActive(item) }"
-            :aria-expanded="expandedKey === item.key"
-            @click="$emit('toggle', item)"
           >
             <el-icon><component :is="item.icon" /></el-icon>
             <span class="flex-1 text-left">{{ item.label }}</span>
-            <el-icon
-              class="text-[11px] transition-transform duration-150"
-              style="color: var(--ink-muted)"
-              :class="{ 'rotate-180': expandedKey === item.key }"
-            >
+            <el-icon class="nav-caret text-[11px]" style="color: var(--ink-muted)">
               <ArrowDown />
             </el-icon>
-          </button>
-          <div
-            v-show="expandedKey === item.key"
-            class="ml-4 pl-2 border-l"
-            style="border-color: var(--border)"
-          >
+          </summary>
+          <div class="ml-4 pl-2 border-l" style="border-color: var(--border)">
             <router-link
               v-for="child in item.children"
               :key="child.path"
@@ -53,7 +49,7 @@
               <span>{{ child.label }}</span>
             </router-link>
           </div>
-        </template>
+        </details>
       </div>
     </nav>
 
@@ -83,6 +79,7 @@
 </template>
 
 <script setup lang="ts">
+import { ref, watch, nextTick } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { ArrowDown } from '@element-plus/icons-vue'
 
@@ -96,7 +93,7 @@ export type NavItem = {
   children?: NavChild[]
 }
 
-defineProps<{
+const props = defineProps<{
   navMenu: NavItem[]
   expandedKey: string
   isChildActive: (path: string) => boolean
@@ -104,19 +101,48 @@ defineProps<{
 }>()
 
 defineEmits<{
-  toggle: [item: NavItem]
+  toggle: [item: NavItem, e?: Event]
+  prefetch: [item: NavItem]
   profile: []
   logout: []
 }>()
 
 const auth = useAuthStore()
+const navRef = ref<HTMLElement | null>(null)
+
+watch(
+  () => props.expandedKey,
+  (key) => {
+    nextTick(() => {
+      navRef.value?.querySelectorAll<HTMLDetailsElement>('details.nav-group').forEach((el) => {
+        const shouldOpen = el.dataset.key === key
+        if (el.open !== shouldOpen) el.open = shouldOpen
+      })
+    })
+  },
+  { immediate: true },
+)
 </script>
 
 <style scoped>
 .nav-item {
   @apply flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm mb-0.5;
   color: var(--sidebar-text);
+  touch-action: manipulation;
   transition: background 160ms ease, color 160ms ease, box-shadow 160ms ease;
+}
+.nav-group > summary {
+  list-style: none;
+  cursor: pointer;
+}
+.nav-group > summary::-webkit-details-marker {
+  display: none;
+}
+.nav-caret {
+  transition: transform 150ms ease;
+}
+.nav-group[open] .nav-caret {
+  transform: rotate(180deg);
 }
 .nav-item:hover {
   background: var(--hover);

@@ -12,6 +12,7 @@
         :is-child-active="isChildActive"
         :is-group-active="isGroupActive"
         @toggle="toggle"
+        @prefetch="prefetchGroup"
         @profile="profileOpen = true"
         @logout="handleLogout"
       />
@@ -33,6 +34,7 @@
         :is-child-active="isChildActive"
         :is-group-active="isGroupActive"
         @toggle="toggle"
+        @prefetch="prefetchGroup"
         @profile="profileOpen = true"
         @logout="handleLogout"
       />
@@ -209,9 +211,30 @@ function groupOf(path: string) {
 
 const expandedKey = ref(groupOf(route.path))
 
-function toggle(item: NavItem) {
+function prefetchPath(path: string) {
+  for (const rec of router.resolve(path).matched) {
+    const loader = rec.components?.default
+    if (typeof loader === 'function') {
+      Promise.resolve((loader as () => unknown)()).catch(() => {})
+    }
+  }
+}
+
+function prefetchGroup(item: NavItem) {
+  if (item.path) prefetchPath(item.path)
+  item.children?.forEach((child) => prefetchPath(child.path))
+}
+
+function toggle(item: NavItem, e?: Event) {
   if (!item.children) return
+  const details = e?.target
+  if (details instanceof HTMLDetailsElement) {
+    expandedKey.value = details.open ? item.key : (expandedKey.value === item.key ? '' : expandedKey.value)
+    if (details.open) prefetchGroup(item)
+    return
+  }
   expandedKey.value = expandedKey.value === item.key ? '' : item.key
+  if (expandedKey.value === item.key) prefetchGroup(item)
 }
 
 watch(isDesktop, (v) => { if (v) drawerOpen.value = false })

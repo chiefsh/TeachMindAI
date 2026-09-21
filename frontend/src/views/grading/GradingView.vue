@@ -79,10 +79,12 @@
             <el-option
               v-for="p in papers"
               :key="p.id"
-              :label="`${p.title}（${p.paper_type === 'exam' ? '考试' : '作业'}）`"
+              :label="paperOptionLabel(p)"
               :value="p.id"
+              :disabled="p.review_status !== 'verified'"
             />
           </el-select>
+          <p class="text-xs text-slate-400 mt-1">仅已校对的卷面可布置。待校对请先到「作业/考试」核对答案。</p>
         </el-form-item>
         <el-form-item label="标题">
           <el-input v-model="form.title" placeholder="默认同卷面标题" />
@@ -202,6 +204,11 @@ function onPaper(id: number) {
   loadClasses()
 }
 
+function paperOptionLabel(p: HomeworkPaper) {
+  const kind = p.paper_type === 'exam' ? '考试' : '作业'
+  return p.review_status === 'verified' ? `${p.title}（${kind}）` : `${p.title}（${kind}·待校对）`
+}
+
 function onGradeChange() {
   form.subject_id = edu.defaultSubjectId(form.grade_id) || form.subject_id
   form.class_id = null
@@ -279,6 +286,11 @@ onMounted(async () => {
   const pid = Number(route.query.paper_id)
   if (pid) {
     await loadPapers()
+    const paper = papers.value.find(p => p.id === pid)
+    if (paper && paper.review_status !== 'verified') {
+      ElMessage.warning('该卷面尚未校对，请先在「作业/考试」核对答案')
+      return
+    }
     openCreate()
     form.paper_id = pid
     onPaper(pid)

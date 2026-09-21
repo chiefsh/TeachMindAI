@@ -16,6 +16,7 @@ from app.models.education import Subject
 from app.models.subject_prompt import SubjectPromptTemplate
 from app.models.llm_config import LLMConfig
 from app.models.question import Question
+from app.services.chem_text import normalize_lesson_chem, normalize_slide_chem
 
 logger = logging.getLogger(__name__)
 
@@ -812,6 +813,7 @@ def _merge_slide_patch(slide: dict, patch: dict) -> None:
                 })
         if cleaned_steps:
             slide["steps"] = cleaned_steps
+    normalize_slide_chem(slide)
 
 
 async def _apply_teacher_intent(cfg, cw, lesson: dict, intent: str) -> dict:
@@ -840,8 +842,9 @@ async def _apply_teacher_intent(cfg, cw, lesson: dict, intent: str) -> dict:
 硬性规则：
 1. 不增删页，不改 index/type，不要输出 html/images/skill。
 2. 只改 title/subtitle/bullets/content/notes/prompt/solution，必须落实教师想法。
-3. 封面 notes、学习目标、讲解、例题、练习、作业必须明显体现教师要求（难度、侧重、例题、节奏）。
-4. 只输出 JSON：{"slides":[{...}]}，不要 markdown。"""
+3. 学生页文案面向学生上课看，禁止说课口吻（「本节课我们将学习」「教学目标」「请同学们」）。教师要求写进 notes，不要出现在 title/bullets/content 上。
+4. 不得改写公式、方程式、实验现象、装置、单位、数据等学科事实；教师想法只改变讲解侧重与例题情境。
+5. 只输出 JSON：{"slides":[{...}]}，不要 markdown。"""
     user = (
         f"课题：{cw.title}\n\n【教师想法——必须落实】\n{intent}\n\n"
         f"现有页面：\n{json.dumps(slim, ensure_ascii=False)}"
@@ -911,13 +914,18 @@ def _lesson_extract_prompts(cw, chapter_content: str, subject_name: str, subject
             "\n8. 上次缺了这些字段，必须补全且写具体内容，禁止套话："
             + "、".join(missing[:12])
         )
+    from app.services.courseware_components import ACCURACY_RULES
+
     system_prompt = f"""你是一线特级教师。根据课题和课本，设计【一节可直接上的 45 分钟课】的教学蓝图，只输出 JSON。{subject_hint}
 
+{ACCURACY_RULES}
+
 要求：
+0. 下面「课本内容」是事实来源。知识点、公式、方程式、现象、装置、数据必须与之相符；对不上就不要写进蓝图。
 1. 先定课时：课题若是大单元名（如酸碱盐、力、电），默认 lesson_grain=period，只取本节最该先上的 1～2 个点，topic 写成具体课时名（如「溶液的酸碱性：指示剂与pH」），不要用单元名当课时名。仅当教师明确要求单元复习时用 unit，可抽 3～4 点。
 2. 目标必须可检测（能说出/会判断/会操作），禁止「理解某某标题」「掌握某某知识点」。目标给学生上课前不要念，写进 objectives 供教师备课。
 3. 导入必须是具体物品或现象，禁止「从熟悉的生活场景出发」这类空话。课序是先探究再命名：学生先看现象、动手，再出现规范说法。
-4. 每个知识点必须有：至少 2 条 core_concepts、至少 1 个真实 life_example、至少 1 条 common_mistakes。
+4. 每个知识点必须有：至少 2 条 core_concepts、至少 1 个真实 life_example、至少 1 条 common_mistakes。理科符号必须规范：化学式用 Unicode 下标（CO₂、H₂O、C₆H₁₂O₆），禁止 CO2/H2O/Co2；物理单位用上标（m/s²、cm²），初速度写 v₀ 不是 v0；数学公式用 $...$，禁止 a2、R2 当指数；三角函数名小写 sin/cos/tan。
 5. 例题、随堂练习、作业都要写具体题面；作业禁止「自拟题」，并包含一个小作品（如体检单、方案、口头报告）。练习要带简短判断依据（给学生看题，依据留给教师）。
 6. 小结写学生能复述的短句，不要重复知识点标题。
 7. 只输出 JSON，不要 markdown。{web_rule}{intent_rule}{lab_rule}{retry_rule}
@@ -931,7 +939,7 @@ JSON 格式：
   "intro": {{
     "title": "具体情境标题",
     "subtitle": "",
-    "content": "为什么要从这里切入",
+    "content": "为什么学生要从这个现象切入（教师备课，不投影）",
     "steps": [{{"title": "看", "detail": "具体物品/现象"}}, {{"title": "问", "detail": "学生要回答的问题"}}]
   }},
   "knowledge_points": [
@@ -949,10 +957,14 @@ JSON 格式：
   "homework": [{{"task": "基础：……"}}, {{"task": "规范或挑战：……"}}],
   "summary": ["带走的短句1", "短句2"]
 }}"""
-    user_prompt = f"课件课题：{cw.title}\n\n课本内容：\n{chapter_content[:9000]}"
+    user_prompt = (
+        f"课件课题：{cw.title}\n\n"
+        "【课本原文——学科事实必须以这里为准，禁止编造】\n"
+        f"{chapter_content[:9000]}"
+    )
     if intent:
         user_prompt += (
-            f"\n\n【教师想法——必须遵守】\n{intent}\n"
+            f"\n\n【教师想法——必须遵守；只改讲解侧重与例题情境，不得改写学科事实】\n{intent}\n"
             "请据此决定讲哪些点、讲到多深、用什么例子。"
         )
     return system_prompt, user_prompt
@@ -1158,6 +1170,41 @@ def _fallback_interactive_html(point: dict, point_idx: int) -> str:
 </div>"""
 
 
+_MACRO_LAB_HINTS = (
+    "制取", "倾倒", "熄灭蜡烛", "电解", "过滤", "蒸发",
+    "实验装置", "组装装置", "集气", "排水法", "排空气",
+    "点燃蜡烛", "灭火原理", "酒精灯加热", "试管口",
+    "实验台", "宏观实验", "两支蜡烛",
+)
+_FAKE_LAB_MARKERS = (
+    "实验台演示", "开始演示", "虚拟实验", "虚拟实验台",
+    "观察两支蜡烛的状态", "较高处蜡烛", "较低处蜡烛",
+)
+
+
+def _point_text(point: dict) -> str:
+    return " ".join(
+        str(point.get(k) or "")
+        for k in ("name", "plain_explanation", "activity_goal", "life_example")
+    )
+
+
+def _needs_deterministic_lab(point: dict, subject_name: str) -> bool:
+    """宏观实验过程必须走系统实验台，不能让 LLM 现编演示。"""
+    s = subject_name or ""
+    if "化学" not in s and "科学" not in s:
+        return False
+    blob = _point_text(point)
+    return any(w in blob for w in _MACRO_LAB_HINTS)
+
+
+def _html_fakes_experiment(html: str) -> bool:
+    """LLM 片段冒充实验台时丢弃（系统实验台带 edu-lab 标记）。"""
+    if not html or "edu-lab:" in html or "edu-sim:" in html:
+        return False
+    return any(m in html for m in _FAKE_LAB_MARKERS)
+
+
 async def _generate_interactive_html_for_point(
     cfg,
     cw,
@@ -1166,12 +1213,20 @@ async def _generate_interactive_html_for_point(
     subject_name: str,
     image_catalog: str,
     interactive_hint: str,
+    chapter_content: str = "",
 ) -> str:
     """按知识点生成单页互动 HTML（片段）。
 
     直接要求 LLM 输出 ```html 代码块，完全避免 JSON-in-JSON 的双重转义问题。
     """
     image_ref = f"\n可引用课本图片：\n{image_catalog}" if image_catalog else ""
+    textbook_ref = ""
+    excerpt = (chapter_content or "").strip()
+    if excerpt:
+        textbook_ref = (
+            "\n【课本原文（事实来源）】互动中的定义、公式、方程式、现象、数据必须与此一致，"
+            f"不要另编实验或装置：\n{excerpt[:3500]}\n"
+        )
     prompt = f"""请围绕以下知识点，生成 1 页可直接运行的互动课件 HTML 片段。
 
 课件标题：{cw.title}
@@ -1182,14 +1237,15 @@ async def _generate_interactive_html_for_point(
 常见误区：{json.dumps(point.get("common_mistakes") or [], ensure_ascii=False)}
 生活例子：{point.get("life_example", "")}
 互动目标：{point.get("activity_goal", "")}
-学科：{subject_name or "通用"}{image_ref}{_interactive_teacher_intent_block(cw, point)}
+学科：{subject_name or "通用"}{image_ref}{textbook_ref}{_interactive_teacher_intent_block(cw, point)}
 
 风格要求：
 - 生动、直白，句子短。至少 1 个真实情境、1 个可操作互动（点击/拖拽/输入）。
 - 一屏只做一个主操作（观察 / 调节 / 判断三选一），不要再堆一套选择题或概念清单。
 - 先观察或判断，再公布规范说法；不要在学生操作前列出核心要点或答案。
 - 反馈要诠释现象：根据学生看到的颜色/读数/变化说明「为什么这样判断」，不要只写「正确/错误」。
-- 学科事实必须正确。化学：石蕊只有红/紫/蓝，酚酞只有无色/红；彩虹色仅用于 pH 试纸；不要用万能指示剂颜色冒充石蕊或酚酞。
+- 学科事实必须正确，以课本为准。化学：石蕊只有红/紫/蓝，酚酞只有无色/红；彩虹色仅用于 pH 试纸；不要用万能指示剂颜色冒充石蕊或酚酞。
+- 禁止用 CSS/SVG 自绘化学实验装置。禁止「实验台演示」「开始演示」、禁止用按钮切换蜡烛燃烧/熄灭来假装做实验。宏观实验由系统实验台演示；本页只做判断、配平、读数或步骤排序。
 - 判定对错时调用 window.CW?.correct(题目, 答案) 或 window.CW?.wrong(题目, 答案)。
 
 【输出格式——严格遵守，不要有任何多余文字】
@@ -1225,6 +1281,7 @@ async def _generate_interactive_html_for_point(
             f"请直接输出一个 HTML 代码块（用 ```html 包裹），"
             f"内容是围绕「{point.get('name', '')}」的互动教学页面片段，"
             f"以 <div class=\"stage\"> 开头，含1个可点击互动。"
+            f"不要写实验台、开始演示或蜡烛熄灭动画。"
             f"不要任何说明文字，只输出代码块。"
         )
         if retry_intent:
@@ -1239,6 +1296,10 @@ async def _generate_interactive_html_for_point(
             )
             # 兜底：用知识点数据本地拼出基础互动卡片，保证互动环节不空白
             return _fallback_interactive_html(point, point_idx)
+
+    if _html_fakes_experiment(html):
+        logger.warning("课件 %s 知识点%s 互动页是假实验台，改用本地判断模板", cw.id, point_idx)
+        return _fallback_interactive_html(point, point_idx)
 
     # 确保有 stage 根容器
     if not html.lstrip().startswith('<div class="stage"') and not html.lstrip().startswith("<div class='stage'"):
@@ -1525,9 +1586,12 @@ async def _rewrite_one_slide(
                 prefer_lab = bool(lab_key) or ("实验" in (instruction or slide.get("title") or ""))
                 html, routed = await skill_service.maybe_generate_skill(
                     cfg, point, subject_name, lab_key=lab_key, prefer_lab=prefer_lab,
+                    allow_lab=True,
                 )
         except Exception as e:
             logger.warning("单页优化 skill 失败，回退 LLM：%s", e)
+        if not html and _needs_deterministic_lab(point, subject_name):
+            html = _fallback_interactive_html(point, index + 1)
         if not html:
             class _Cw:
                 title = cw_title
@@ -1537,6 +1601,8 @@ async def _rewrite_one_slide(
                 subject_name=subject_name, image_catalog="",
                 interactive_hint=build_interactive_prompt(subject_interactive),
             )
+        if _html_fakes_experiment(html):
+            html = _fallback_interactive_html(point, index + 1)
         if not html:
             raise ValueError("未能生成互动页面")
         out = {"html": html}
@@ -1570,6 +1636,7 @@ async def _rewrite_one_slide(
 - 只输出这一个页面的 JSON 对象，不要 markdown 围栏，不要解释。
 - 禁止输出 meta、slides、pages，禁止写成「教学目标 + 教学过程」的整课教案。
 - 不要改页面类型，不要新增无关知识点，不要把整单元结构塞进 content。
+- 不得改写公式、方程式、实验现象、装置、单位、数据；拿不准的内容不要编。
 - 字段：{schema_note}
 - bullets 是字符串数组，最多 8 条；content / notes / prompt / solution 必须是字符串（markdown），公式用 $...$。
 - 不要输出 html、images、type、index。
@@ -1642,6 +1709,7 @@ async def _generate_lesson_content(
             "一节【完整的、可直接照着讲授的】课堂教学课件（类似 PPT），每页 content 精炼、以要点为主"
         )
         system_prompt = f"""你是一位资深的一线教师和课件设计专家。请基于课本内容，设计{form_hint}，时长约 40-45 分钟。{subject_hint}
+准确性是硬性要求：定义、公式、方程式、实验现象与装置必须与课本一致，禁止编造；课件内动画必须演示正确过程。
 要求：
 1. 课件需有 meta + slides 结构。每页字段：index,type,title,subtitle,bullets,content,notes；对比页可加 columns[{{title,items}}]，过程页可加 steps[{{title,detail}}]，例题页可加 prompt/solution。
 2. 课序必须先探究再命名：cover → process（导入）→ interactive → knowledge → comparison → example → summary → exercise → homework。
@@ -1649,15 +1717,19 @@ async def _generate_lesson_content(
    type 从以上标准类型中选；旧别名 title/content/intro/quiz 也可。
 3. 全部中文，输出严格 JSON，不要 markdown 代码块。
 4. 若为互动课件，可在 interactive 页附 html 字段（片段）。一屏一个主操作；反馈要诠释现象，不要只报对错。
-5. 例题解析、练习答案只写在 notes，不要和题干并排展示。作业含一个小作品（体检单/方案/口头报告）。
-6. 若用户给出了教师想法，必须当作硬约束：选题、讲解侧重、例题难度、练习与作业都要对齐，不能只写在备注里。
+5. 例题解析、练习答案只写在 notes，不要和题干并排展示。作业含一个小作品（体检单/方案/口头报告）。学生页禁止说课口吻。
+6. 若用户给出了教师想法，落实在例题、练习与作业的题面和讲解侧重上，用学生能看懂的话写，不要写成教案或说课稿。
 {interactive_hint}
 """
-        user_prompt = f"课件课题：{cw.title}\n\n课本内容：\n{chapter_content[:8000]}{image_hint}"
+        user_prompt = (
+            f"课件课题：{cw.title}\n\n"
+            "【课本原文——学科事实必须以这里为准，禁止编造】\n"
+            f"{chapter_content[:8000]}{image_hint}"
+        )
         fallback_intent = _teacher_intent(cw)
         if fallback_intent:
             user_prompt += (
-                "\n\n【教师想法——硬约束，必须在学习目标、讲解侧重、例题、练习与作业中落实，不要只当参考】\n"
+                "\n\n【教师想法——硬约束，落实在学生能看到的题面与讲解侧重上，不要写成说课稿】\n"
                 f"{fallback_intent}"
             )
         resp = await _call_llm(
@@ -1670,23 +1742,25 @@ async def _generate_lesson_content(
         if data and data.get("slides"):
             if fallback_intent:
                 data = await _apply_teacher_intent(cfg, cw, data, fallback_intent)
-            return data
+            return normalize_lesson_chem(data)
         fallback = {
             "meta": {"title": cw.title},
             "slides": [{"index": 1, "type": "content", "title": cw.title, "content": raw, "bullets": [], "notes": ""}],
         }
         if fallback_intent:
             fallback = await _apply_teacher_intent(cfg, cw, fallback, fallback_intent)
-        return fallback
+        return normalize_lesson_chem(fallback)
 
     return await _assemble_lesson_from_blueprint(
         cfg, cw, blueprint, points, subject_name, image_catalog, interactive_hint, is_web,
+        chapter_content=chapter_content,
     )
 
 
 async def _assemble_lesson_from_blueprint(
     cfg, cw, blueprint: dict, points: list[dict],
     subject_name: str, image_catalog: str, interactive_hint: str, is_web: bool,
+    chapter_content: str = "",
 ) -> dict:
     """用蓝图拼课：先探究再命名；目标只进 meta，不给学生看。"""
     from app.models.courseware import RenderStyle
@@ -1725,12 +1799,15 @@ async def _assemble_lesson_from_blueprint(
     idx += 1
     slides.append({
         "index": idx, "type": "process",
-        "title": intro.get("title") or "情境导入",
-        "subtitle": intro.get("subtitle") or "从具体现象切入",
+        "title": intro.get("title") or "先看这个现象",
+        "subtitle": intro.get("subtitle") or "先观察，再下判断",
         "bullets": [s["detail"] for s in intro.get("steps") or [] if s.get("detail")][:3],
         "steps": intro.get("steps") or [],
-        "content": intro.get("content") or f"用具体情境引出「{topic}」。",
-        "notes": "停课点：学生说完自己的判断后再往下翻。这一页只观察、只表达，不公布规范说法。",
+        "content": "",
+        "notes": (
+            (intro.get("content") + " " if intro.get("content") else "")
+            + "停课点：学生说完自己的判断后再往下翻。这一页只观察、只表达，不公布规范说法。"
+        ).strip(),
     })
     idx += 1
 
@@ -1744,7 +1821,7 @@ async def _assemble_lesson_from_blueprint(
             "title": f"{p['name']} · 动手做",
             "subtitle": "先观察再下结论",
             "bullets": [p.get("activity_goal") or "根据现象说出判断依据"],
-            "content": "先完成一个操作，再根据现象说出判断依据。系统会解释你看到的现象，不急着给标准答案。",
+            "content": "先完成一个操作，再根据现象说出你的判断。系统会解释你看到的现象。",
             "notes": (
                 "停课点：操作后先问「你看到了什么？这说明什么？」不要立刻给标准答案。"
                 "反馈要诠释现象，不要只报对错。"
@@ -1754,6 +1831,7 @@ async def _assemble_lesson_from_blueprint(
         interactive_jobs.append((len(slides) - 1, point_i, p))
         idx += 1
 
+    used_anim: set[str] = set()
     if interactive_jobs:
         from app.services import skill_service
         sem = asyncio.Semaphore(3)
@@ -1763,30 +1841,55 @@ async def _assemble_lesson_from_blueprint(
                 html = ""
                 routed = None
                 try:
-                    html, routed = await skill_service.maybe_generate_skill(cfg, p, subject_name)
+                    from app.services.skill_service import match_lab_key
+                    lab_key = match_lab_key(_point_text(p))
+                    html, routed = await skill_service.maybe_generate_skill(
+                        cfg, p, subject_name, lab_key=lab_key, allow_lab=True,
+                    )
                 except Exception as e:
                     logger.warning("课件 %s 知识点 %s skill 生成失败，回退 LLM：%s", cw.id, p.get("name"), e)
+                if not html and _needs_deterministic_lab(p, subject_name):
+                    logger.warning(
+                        "课件 %s 知识点「%s」需要真实实验台但未命中 skill，不用 LLM 假实验",
+                        cw.id, p.get("name"),
+                    )
+                    html = _fallback_interactive_html(p, point_i)
                 if not html:
                     try:
                         html = await _generate_interactive_html_for_point(
                             cfg=cfg, cw=cw, point=p, point_idx=point_i,
                             subject_name=subject_name, image_catalog=image_catalog,
                             interactive_hint=interactive_hint,
+                            chapter_content=chapter_content,
                         )
                     except Exception as e:
                         logger.warning("课件 %s 知识点 %s 互动页生成失败：%s", cw.id, p.get("name"), e)
+                    if _html_fakes_experiment(html):
+                        logger.warning("课件 %s 丢弃知识点「%s」的假实验页", cw.id, p.get("name"))
+                        html = _fallback_interactive_html(p, point_i)
                 return html or "", routed
 
         htmls = await asyncio.gather(*[_gen_html(pi, p) for _, pi, p in interactive_jobs])
+        from app.services.animation_service import KIND_SUBTITLE
         for (slide_i, _, _), (html, routed) in zip(interactive_jobs, htmls):
             if html:
                 slides[slide_i]["html"] = html
             if routed:
                 slides[slide_i]["skill"] = routed
+                kind = routed.get("kind") or ""
+                if kind in KIND_SUBTITLE:
+                    slides[slide_i]["subtitle"] = KIND_SUBTITLE[kind]
+                if routed.get("title"):
+                    slides[slide_i]["title"] = routed["title"]
+                for k in (routed.get("asset_key"), routed.get("problem_type")):
+                    if k:
+                        used_anim.add(str(k))
 
     if anim_keys:
         from app.services.animation_service import payload_for_key, KIND_SUBTITLE
         for key in anim_keys:
+            if key in used_anim:
+                continue
             try:
                 html, routed = await payload_for_key(key)
             except Exception as e:
@@ -1799,8 +1902,10 @@ async def _assemble_lesson_from_blueprint(
             slides.append({
                 "index": idx,
                 "type": "interactive",
-                "title": routed.get("title") or "互动动画",
-                "subtitle": KIND_SUBTITLE.get(kind) or "动画库 · 可操作演示",
+                "title": routed.get("title") or ("互动实验台" if is_lab else "互动动画"),
+                "subtitle": KIND_SUBTITLE.get(kind) or (
+                    "实验台 · 可操作演示" if is_lab else "动画 · 可操作演示"
+                ),
                 "bullets": ["与本课核心点对齐的动画库实验，不重复生成"],
                 "content": "",
                 "notes": (
@@ -1819,6 +1924,7 @@ async def _assemble_lesson_from_blueprint(
         if not bullets and p.get("plain_explanation"):
             bullets = [p["plain_explanation"]]
         content_parts = []
+        notes_bits = ["停课点：先让学生用刚才的现象自己说，再揭开规范说法。讲解要短句、直白。"]
         if p.get("plain_explanation"):
             content_parts.append(f"### 先用一句话说清楚\n{p['plain_explanation']}")
         if is_web and p.get("deep_dive"):
@@ -1826,7 +1932,7 @@ async def _assemble_lesson_from_blueprint(
         if p.get("common_mistakes"):
             content_parts.append("### 常见误区\n" + "\n".join(f"- {x}" for x in p["common_mistakes"]))
         if p.get("teacher_focus"):
-            content_parts.append(f"### 按教师要求\n{p['teacher_focus']}")
+            notes_bits.append(f"落实教师要求：{p['teacher_focus']}")
         if p.get("life_example"):
             content_parts.append(f"### 生活中的例子\n- {p['life_example']}")
         slides.append({
@@ -1836,7 +1942,7 @@ async def _assemble_lesson_from_blueprint(
             "subtitle": "把刚才看到的现象说成规范说法",
             "bullets": bullets[:5],
             "content": "\n\n".join(content_parts),
-            "notes": "停课点：先让学生用刚才的现象自己说，再揭开规范说法。讲解要短句、直白。",
+            "notes": " ".join(notes_bits),
         })
         idx += 1
 
@@ -1887,7 +1993,7 @@ async def _assemble_lesson_from_blueprint(
         "index": idx,
         "type": "summary",
         "title": "今天带走这几句话",
-        "subtitle": "让学生复述，不要老师再念标题",
+        "subtitle": "用自己的话说一遍",
         "bullets": summary[:4],
         "content": "",
         "notes": (
@@ -1905,7 +2011,7 @@ async def _assemble_lesson_from_blueprint(
         "title": "随堂练习",
         "subtitle": "当堂检验，先写依据再对答案",
         "bullets": [ex["question"] for ex in exercises[:4]],
-        "content": "独立完成后对照教师讲稿里的判断依据。能说出“因为……”才算过关。",
+        "content": "先独立完成，能说出“因为……”再对答案。",
         "notes": (
             "停课点：先收判断依据，再对答案。\n"
             + (answer_notes or "巡视时关注卡在概念判断上的学生。")
@@ -1918,7 +2024,7 @@ async def _assemble_lesson_from_blueprint(
         "title": "课后任务",
         "subtitle": "会说出理由，比只选对答案更重要",
         "bullets": [h["task"] for h in homework[:4]],
-        "content": "分层完成：基础巩固 + 规范改错 + 小作品。不要自拟题目。",
+        "content": "分层完成：基础巩固 + 生活迁移 + 小作品。",
         "notes": "停课点：下节课用 1 分钟交流作品。收作业时抽查“依据”一栏。",
     })
 
@@ -1940,7 +2046,7 @@ async def _assemble_lesson_from_blueprint(
     intent = _teacher_intent(cw)
     if intent:
         lesson = await _apply_teacher_intent(cfg, cw, lesson, intent)
-    return lesson
+    return normalize_lesson_chem(lesson)
 
 
 async def parse_questions_from_text(cfg, text: str, image_catalog: str = "") -> list[dict]:

@@ -39,8 +39,11 @@
     <template v-else-if="payload">
       <iframe
         v-if="(kind === 'courseware' || kind === 'courseware_version') && frameUrl"
+        ref="frameEl"
         :src="frameUrl"
         sandbox="allow-scripts allow-same-origin allow-popups allow-modals"
+        allow="fullscreen *"
+        allowfullscreen
         class="w-full border-0 bg-white"
         :style="{ height: 'calc(100vh - 56px)' }"
       />
@@ -121,19 +124,19 @@
 
   <Teleport to="body">
     <div
-      v-if="presenting && kind === 'animation' && frameUrl"
+      v-if="presenting && presentSrc"
       ref="presentRoot"
       class="fixed inset-0 z-[4000] bg-black flex flex-col"
     >
       <div class="h-11 shrink-0 flex items-center gap-3 px-4 bg-black/80 text-white">
-        <span class="truncate flex-1 text-sm">{{ title }}</span>
+        <span class="truncate flex-1 text-sm">{{ presentTitle || title }}</span>
         <span class="text-xs text-white/50">Esc 退出全屏</span>
         <el-button size="small" @click="exitPresent">退出</el-button>
       </div>
       <iframe
         class="flex-1 w-full border-0 bg-black"
-        :src="frameUrl"
-        sandbox="allow-scripts allow-same-origin"
+        :src="presentSrc"
+        sandbox="allow-scripts allow-same-origin allow-popups allow-modals"
         allow="fullscreen"
       />
     </div>
@@ -165,8 +168,12 @@ const expiresAt = ref('')
 const kind = ref('')
 const payload = ref<Record<string, any> | null>(null)
 const frameUrl = ref('')
+const frameEl = ref<HTMLIFrameElement | null>(null)
 const presenting = ref(false)
 const presentRoot = ref<HTMLElement | null>(null)
+const presentTitle = ref('')
+const presentLabUrl = ref('')
+const presentSrc = computed(() => presentLabUrl.value || (kind.value === 'animation' ? frameUrl.value : ''))
 const revealed = reactive(new Set<number>())
 const blobUrls = reactive<Record<number, string>>({})
 
@@ -213,8 +220,15 @@ function applyPayload(data: { title: string; expires_at: string; resource_type: 
   }
 }
 
-async function enterPresent() {
-  if (!frameUrl.value) return
+async function enterPresent(html?: string, labTitle?: string) {
+  if (typeof html === 'string' && html) {
+    if (presentLabUrl.value) URL.revokeObjectURL(presentLabUrl.value)
+    presentLabUrl.value = URL.createObjectURL(new Blob([html], { type: 'text/html;charset=utf-8' }))
+    presentTitle.value = labTitle || '实验台'
+  } else {
+    presentTitle.value = title.value
+  }
+  if (!presentSrc.value) return
   presenting.value = true
   await nextTick()
   const el = presentRoot.value as any
@@ -230,6 +244,10 @@ function exitPresent() {
   if (document.fullscreenElement || doc.webkitFullscreenElement) {
     const exit = document.exitFullscreen || doc.webkitExitFullscreen
     if (exit) exit.call(document)
+  }
+  if (presentLabUrl.value) {
+    URL.revokeObjectURL(presentLabUrl.value)
+    presentLabUrl.value = ''
   }
 }
 
@@ -252,8 +270,20 @@ async function unlock(pwd?: string) {
   }
 }
 
+function onCwFullscreenMessage(e: MessageEvent) {
+  const d: any = e.data
+  if (!d || d.__cw !== true || d.type !== 'fullscreen') return
+  if (frameEl.value && e.source !== frameEl.value.contentWindow) return
+  if (d.action === 'exit') {
+    exitPresent()
+    return
+  }
+  void enterPresent(d.srcdoc || '', d.title)
+}
+
 onMounted(async () => {
   window.addEventListener('keydown', onPresentKey)
+  window.addEventListener('message', onCwFullscreenMessage)
   loading.value = true
   try {
     const meta = await publicApi.shareMeta(token)
@@ -280,6 +310,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onPresentKey)
+  window.removeEventListener('message', onCwFullscreenMessage)
   exitPresent()
   if (frameUrl.value) URL.revokeObjectURL(frameUrl.value)
   for (const u of Object.values(blobUrls)) URL.revokeObjectURL(u)

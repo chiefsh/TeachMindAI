@@ -220,6 +220,8 @@ _LIBRARY_BUILDERS = {
                          "CO₂", r"\text{CO}_2", "二氧化碳", "carbon dioxide", "slate"),
     "H2O": lambda: _spec("H2O", _bent("O", "H", 0.96, 104.5),
                          "H₂O", r"\text{H}_2\text{O}", "水", "water", "cyan"),
+    "SO2": lambda: _spec("SO2", _bent("S", "O", 1.43, 119),
+                         "SO₂", r"\text{SO}_2", "二氧化硫", "sulfur dioxide", "amber"),
     "CH4": lambda: _spec("CH4", _tetrahedral("C", "H", 1.10),
                          "CH₄", r"\text{CH}_4", "甲烷", "methane", "slate"),
     "NH3": lambda: _spec("NH3", _pyramidal("N", "H", 1.0),
@@ -227,6 +229,7 @@ _LIBRARY_BUILDERS = {
     # — 金属 / 原子 / 离子对 —
     "Na":  lambda: _spec("Na", _mono("Na"), "Na", r"\text{Na}", "钠", "sodium", "violet"),
     "C":   lambda: _spec("C",  _mono("C"),  "C",  r"\text{C}",  "碳", "carbon", "slate"),
+    "S":   lambda: _spec("S",  _mono("S"),  "S",  r"\text{S}",  "硫", "sulfur", "amber"),
     "Fe":  lambda: _spec("Fe", _mono("Fe"), "Fe", r"\text{Fe}", "铁", "iron", "orange"),
     "Mg":  lambda: _spec("Mg", _mono("Mg"), "Mg", r"\text{Mg}", "镁", "magnesium", "slate"),
     "NaCl": lambda: _spec("NaCl", _ion_pair("Na", "Na", "Cl", "Cl", 1.50),

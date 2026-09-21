@@ -43,7 +43,8 @@
         '<g class="fx-zinc" visibility="hidden"><rect x="24" y="148" width="16" height="8" rx="1" fill="#94a3b8"/><rect x="26" y="150" width="6" height="4" fill="#e2e8f0"/></g>' +
         '<g class="fx-marble" visibility="hidden"><circle cx="28" cy="154" r="5" fill="#f8fafc" stroke="#cbd5e1"/><circle cx="36" cy="157" r="4" fill="#e2e8f0"/></g>' +
         '<g class="fx-acid" visibility="hidden"><path d="M20 120 h24 v36 a12 16 0 0 1 -24 0z" fill="#38bdf8" opacity=".45"/><ellipse cx="32" cy="120" rx="12" ry="4" fill="#7dd3fc" opacity=".6"/></g>' +
-        '<g class="fx-acid-bubbles" visibility="hidden"><circle cx="24" cy="130" r="2.2" fill="#fff" opacity=".75"/><circle cx="36" cy="122" r="2" fill="#fff" opacity=".7"/><circle cx="30" cy="140" r="1.8" fill="#fff" opacity=".7"/></g>'
+        '<g class="fx-acid-bubbles" visibility="hidden"><circle cx="24" cy="130" r="2.2" fill="#fff" opacity=".75"/><circle cx="36" cy="122" r="2" fill="#fff" opacity=".7"/><circle cx="30" cy="140" r="1.8" fill="#fff" opacity=".7"/></g>' +
+        '<g class="fx-cotton" visibility="hidden"><ellipse cx="32" cy="22" rx="13" ry="7" fill="#f8fafc" stroke="#d6d3d1"/><ellipse cx="28" cy="20" rx="5" ry="4" fill="#e7e5e4"/></g>'
     },
     lamp: {
       w: 108, h: 136, label: "酒精灯",
@@ -77,6 +78,14 @@
         '<path d="M18 20 H 148 V 320" fill="none" stroke="#e0f2fe" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>' +
         '<path d="M140 320 h16" fill="none" stroke="#475569" stroke-width="6" stroke-linecap="round"/>'
     },
+    delivery_air: {
+      w: 220, h: 250, label: "导管",
+      outline: "M4 6 h200 v28 H42 v186 H16 V42 H4z",
+      paint: '<circle cx="14" cy="20" r="9" fill="#7c2d12"/><circle cx="14" cy="20" r="4" fill="#1e293b"/>' +
+        '<path d="M18 20 H 168 V 218" fill="none" stroke="#94a3b8" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>' +
+        '<path d="M18 20 H 168 V 218" fill="none" stroke="#e0f2fe" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>' +
+        '<path d="M160 218 h16" fill="none" stroke="#475569" stroke-width="6" stroke-linecap="round"/>'
+    },
     trough: {
       w: 280, h: 130, label: "水槽",
       outline: "M10 18 h260 v10 H28 v80 h224 v10 H10z",
@@ -90,9 +99,14 @@
       outline: "M38 4 h24 v16 h12 v8 H26 v112 a28 18 0 0 0 48 0 V28 H62 V20 H38z",
       paint:         '<path d="M38 4 h24 v16 h12 v8 H26 v112 a28 18 0 0 0 48 0 V28 H62 V20 H38z" fill="url(#g-glass)" stroke="#64748b" stroke-width="1.5"/>' +
         '<rect x="36" y="2" width="28" height="10" rx="2" fill="#e2e8f0" stroke="#94a3b8"/>' +
+        '<rect class="fx-cover" x="22" y="0" width="56" height="7" rx="1" fill="#e0f2fe" stroke="#64748b" opacity=".9" visibility="hidden"/>' +
         '<path d="M36 36 v110" stroke="#fff" stroke-opacity=".5" stroke-width="5"/>' +
         '<g class="fx-gas" visibility="hidden"><rect x="34" y="70" width="32" height="70" fill="#f8fafc" opacity=".55"/></g>' +
-        '<g class="fx-bottle-water" visibility="hidden"><rect x="32" y="130" width="36" height="18" fill="#38bdf8" opacity=".45"/></g>'
+        '<g class="fx-bottle-water" visibility="hidden"><rect x="32" y="130" width="36" height="18" fill="#38bdf8" opacity=".45"/></g>' +
+        '<g class="fx-water-rise" visibility="hidden"><rect x="30" y="108" width="40" height="40" fill="#38bdf8" opacity=".5"/><text x="50" y="102" text-anchor="middle" font-size="10" fill="#0f172a" font-weight="700">约1/5</text></g>' +
+        '<g class="fx-marks" visibility="hidden">' +
+        '<path d="M68 52 h10 M68 70 h10 M68 88 h10 M68 106 h10 M68 124 h10" stroke="#334155" stroke-width="1.4"/>' +
+        '</g>'
     },
     bottle_inv: {
       w: 100, h: 168, label: "集气瓶",
@@ -109,6 +123,42 @@
       paint: '<rect x="11" y="28" width="10" height="120" rx="2" fill="#b45309"/>' +
         '<rect x="12" y="30" width="3" height="110" fill="#fbbf24" opacity=".35"/>' +
         '<ellipse class="fx-splint" cx="16" cy="18" rx="10" ry="12" fill="#fbbf24" opacity=".85"/>'
+    },
+    candle_beaker: {
+      w: 200, h: 230, label: "烧杯",
+      outline: "M18 8 h140 l12 8 14 -8 h10 l14 204 H10z",
+      paint:
+        '<path d="M18 8 h140 l12 8 14 -8 h10 l14 204 H10z" fill="url(#g-glass)" stroke="#64748b" stroke-width="1.6"/>' +
+        '<path d="M16 8 h164" stroke="#94a3b8" stroke-width="2.6"/>' +
+        '<path d="M28 22 v168" stroke="#fff" stroke-opacity=".4" stroke-width="6"/>' +
+        '<g class="fx-co2-mid" visibility="hidden">' +
+        '<path d="M28 88 h144 l8 112 H22z" fill="#94a3b8" opacity=".28"/>' +
+        '<ellipse cx="100" cy="88" rx="72" ry="10" fill="#cbd5e1" opacity=".35"/>' +
+        '</g>' +
+        '<g class="fx-co2-low" visibility="hidden">' +
+        '<path d="M30 148 h140 l6 52 H26z" fill="#64748b" opacity=".32"/>' +
+        '<ellipse cx="100" cy="148" rx="70" ry="9" fill="#94a3b8" opacity=".4"/>' +
+        '</g>' +
+        '<rect x="56" y="150" width="18" height="52" rx="2" fill="#f8fafc" stroke="#d6d3d1"/>' +
+        '<rect x="61" y="142" width="8" height="10" fill="#78716c"/>' +
+        '<rect x="126" y="78" width="18" height="124" rx="2" fill="#f8fafc" stroke="#d6d3d1"/>' +
+        '<rect x="131" y="70" width="8" height="10" fill="#78716c"/>' +
+        '<g class="fx-flame-low" visibility="hidden">' +
+        '<ellipse cx="65" cy="132" rx="8" ry="14" fill="#f97316"/><ellipse cx="65" cy="134" rx="4" ry="8" fill="#fde68a"/>' +
+        '</g>' +
+        '<g class="fx-flame-high" visibility="hidden">' +
+        '<ellipse cx="135" cy="58" rx="9" ry="16" fill="#f97316"/><ellipse cx="135" cy="60" rx="4" ry="9" fill="#fde68a"/>' +
+        '</g>' +
+        '<g class="fx-smoke-low" visibility="hidden">' +
+        '<ellipse cx="62" cy="128" rx="10" ry="6" fill="#cbd5e1" opacity=".55"/>' +
+        '<ellipse cx="70" cy="116" rx="8" ry="5" fill="#e2e8f0" opacity=".45"/>' +
+        '</g>' +
+        '<g class="fx-smoke-high" visibility="hidden">' +
+        '<ellipse cx="132" cy="54" rx="11" ry="6" fill="#cbd5e1" opacity=".55"/>' +
+        '<ellipse cx="140" cy="42" rx="8" ry="5" fill="#e2e8f0" opacity=".45"/>' +
+        '</g>' +
+        '<text x="65" y="222" text-anchor="middle" font-size="13" fill="#334155" font-weight="700">较低处</text>' +
+        '<text x="135" y="222" text-anchor="middle" font-size="13" fill="#334155" font-weight="700">较高处</text>'
     },
     beaker: {
       w: 124, h: 146, label: "烧杯",
@@ -189,8 +239,10 @@
       outline: "M10 20 h248 v10 H24 v68 h220 v10 H10z",
       paint: '<rect x="8" y="16" width="252" height="90" rx="6" fill="#e0f2fe" stroke="#0369a1" stroke-width="2"/>' +
         '<rect x="16" y="40" width="236" height="58" fill="#38bdf8" opacity=".4"/>' +
-        '<rect x="70" y="8" width="8" height="98" fill="#94a3b8"/>' +
-        '<rect x="190" y="8" width="8" height="98" fill="#cbd5e1"/>'
+        '<rect x="70" y="8" width="8" height="98" fill="#1d4ed8"/>' +
+        '<rect x="190" y="8" width="8" height="98" fill="#dc2626"/>' +
+        '<text x="74" y="114" text-anchor="middle" fill="#1d4ed8" font-size="11" font-weight="700">−</text>' +
+        '<text x="194" y="114" text-anchor="middle" fill="#dc2626" font-size="11" font-weight="700">+</text>'
     },
     power: {
       w: 130, h: 74, label: "电源",
@@ -205,9 +257,9 @@
       outline: "M20 6 h32 v158 a6 6 0 0 1 -32 0z M104 6 h32 v158 a6 6 0 0 1 -32 0z",
       paint: '<rect x="18" y="8" width="36" height="160" rx="4" fill="url(#g-glass)" stroke="#64748b"/>' +
         '<rect x="102" y="8" width="36" height="160" rx="4" fill="url(#g-glass)" stroke="#64748b"/>' +
-        '<g class="fx-h2" visibility="hidden"><rect x="22" y="20" width="28" height="90" fill="#e0f2fe" opacity=".55"/></g>' +
-        '<g class="fx-o2" visibility="hidden"><rect x="106" y="70" width="28" height="40" fill="#e0f2fe" opacity=".55"/></g>' +
-        '<g class="fx-ratio" visibility="hidden"><text x="78" y="50" text-anchor="middle" fill="#0f766e" font-size="16" font-weight="700">2 : 1</text></g>'
+        '<g class="fx-h2" visibility="hidden"><rect x="22" y="20" width="28" height="90" fill="#e0f2fe" opacity=".55"/><text x="36" y="16" text-anchor="middle" fill="#0f766e" font-size="11" font-weight="700">H₂</text></g>' +
+        '<g class="fx-o2" visibility="hidden"><rect x="106" y="70" width="28" height="40" fill="#e0f2fe" opacity=".55"/><text x="120" y="66" text-anchor="middle" fill="#c2410c" font-size="11" font-weight="700">O₂</text></g>' +
+        '<g class="fx-ratio" visibility="hidden"><text x="78" y="50" text-anchor="middle" fill="#0f766e" font-size="14" font-weight="700">H₂ : O₂ ≈ 2 : 1</text></g>'
     },
     balance: {
       w: 188, h: 108, label: "天平",
@@ -250,6 +302,44 @@
       paint: '<rect x="24" y="6" width="24" height="16" rx="2" fill="#78716c"/>' +
         '<path d="M18 22 h36 v72 a16 12 0 0 1 -36 0z" fill="#7c3aed" opacity=".8" stroke="#5b21b6"/>' +
         '<rect x="20" y="28" width="8" height="50" fill="#fff" opacity=".25"/>'
+    },
+    condition_beaker: {
+      w: 220, h: 210, label: "烧杯",
+      outline: "M18 8 h150 l12 8 16 -8 h12 l16 186 H10z",
+      paint:
+        '<path d="M18 8 h150 l12 8 16 -8 h12 l16 186 H10z" fill="url(#g-glass)" stroke="#64748b" stroke-width="1.6"/>' +
+        '<path d="M28 20 v150" stroke="#fff" stroke-opacity=".4" stroke-width="6"/>' +
+        '<g class="fx-hot-water"><path d="M28 88 h164 l8 90 H22z" fill="#f97316" opacity=".28"/><ellipse cx="110" cy="88" rx="82" ry="10" fill="#fdba74" opacity=".45"/></g>' +
+        '<rect x="24" y="70" width="172" height="8" rx="1" fill="#b45309"/>' +
+        '<g class="fx-wp-air" visibility="hidden"><ellipse cx="58" cy="58" rx="12" ry="8" fill="#f8fafc" stroke="#cbd5e1"/><ellipse class="fx-flame-wp" cx="58" cy="42" rx="8" ry="14" fill="#f97316"/><text x="58" y="84" text-anchor="middle" font-size="11" fill="#0f172a" font-weight="700">白磷</text></g>' +
+        '<g class="fx-rp-air" visibility="hidden"><ellipse cx="162" cy="58" rx="12" ry="8" fill="#dc2626"/><text x="162" y="84" text-anchor="middle" font-size="11" fill="#0f172a" font-weight="700">红磷</text></g>' +
+        '<g class="fx-wp-water" visibility="hidden"><ellipse cx="110" cy="148" rx="14" ry="8" fill="#f8fafc" stroke="#94a3b8"/><text x="110" y="172" text-anchor="middle" font-size="11" fill="#0f172a" font-weight="700">水中白磷</text></g>' +
+        '<g class="fx-wp-o2" visibility="hidden"><circle cx="96" cy="132" r="3" fill="#fff" opacity=".8"/><circle cx="118" cy="124" r="2.5" fill="#fff" opacity=".8"/><ellipse cx="110" cy="118" rx="8" ry="12" fill="#f97316" opacity=".85"/></g>'
+    },
+    rust_tubes: {
+      w: 280, h: 180, label: "对照试管",
+      outline: "M12 8 h256 v164 H12z",
+      paint:
+        '<g transform="translate(18,12)">' +
+        '<rect x="18" y="8" width="36" height="120" rx="10" fill="url(#g-glass)" stroke="#64748b"/>' +
+        '<rect x="22" y="70" width="28" height="50" fill="#38bdf8" opacity=".35"/>' +
+        '<rect x="28" y="88" width="16" height="8" rx="2" fill="#94a3b8"/>' +
+        '<g class="fx-rust" visibility="hidden"><rect x="28" y="86" width="16" height="10" rx="2" fill="#b45309"/></g>' +
+        '<text x="36" y="150" text-anchor="middle" font-size="11" fill="#0f172a" font-weight="700">水+空气</text>' +
+        '</g>' +
+        '<g transform="translate(108,12)">' +
+        '<rect x="18" y="8" width="36" height="120" rx="10" fill="url(#g-glass)" stroke="#64748b"/>' +
+        '<rect x="22" y="70" width="28" height="50" fill="#38bdf8" opacity=".35"/>' +
+        '<rect x="22" y="66" width="28" height="8" fill="#ca8a04" opacity=".7"/>' +
+        '<rect x="28" y="88" width="16" height="8" rx="2" fill="#94a3b8"/>' +
+        '<text x="36" y="150" text-anchor="middle" font-size="11" fill="#0f172a" font-weight="700">油封隔空气</text>' +
+        '</g>' +
+        '<g transform="translate(198,12)">' +
+        '<rect x="18" y="8" width="36" height="120" rx="10" fill="url(#g-glass)" stroke="#64748b"/>' +
+        '<ellipse cx="36" cy="28" rx="10" ry="6" fill="#f8fafc"/>' +
+        '<rect x="28" y="96" width="16" height="8" rx="2" fill="#94a3b8"/>' +
+        '<text x="36" y="150" text-anchor="middle" font-size="11" fill="#0f172a" font-weight="700">干燥剂</text>' +
+        '</g>'
     }
   };
 
@@ -270,8 +360,8 @@
       { id: "stand", x: 300, y: TABLE - 240, label: "铁架台" },
       { id: "tube", x: 346, y: 96, r: 80, ox: 32, oy: 100, label: "试管" },
       { id: "lamp", x: 270, y: TABLE - 136, label: "酒精灯" },
-      { id: "paper", x: 590, y: TABLE - 84, label: "试纸" },
-      { id: "lime_beaker", x: 500, y: TABLE - 146, label: "石灰水" },
+      { id: "paper", x: 500, y: 168, label: "试纸" },
+      { id: "lime_beaker", x: 560, y: TABLE - 146, label: "石灰水" },
       { id: "reagent", x: 210, y: TABLE - 108, label: "药品" }
     ],
     prep_hydrogen: [
@@ -284,13 +374,13 @@
       { id: "reagent", x: 210, y: TABLE - 108, label: "药品" }
     ],
     prep_co2: [
-      { id: "stand", x: 280, y: TABLE - 240, label: "铁架台" },
-      { id: "tube", x: 348, y: 122, label: "试管" },
-      { id: "delivery", art: "delivery_down", x: 356, y: 110, s: 0.72, label: "导管" },
-      { id: "bottle", x: 430, y: TABLE - 168, label: "集气瓶" },
-      { id: "lime_beaker", x: 548, y: TABLE - 146, label: "石灰水" },
-      { id: "splint", x: 820, y: TABLE - 156, label: "木条" },
-      { id: "reagent", x: 210, y: TABLE - 108, label: "药品" }
+      { id: "stand", x: 292, y: TABLE - 240, label: "铁架台" },
+      { id: "tube", x: 340, y: 122, label: "试管" },
+      { id: "delivery", art: "delivery_air", x: 358, y: 110, label: "导管" },
+      { id: "bottle", x: 476, y: TABLE - 168, label: "集气瓶" },
+      { id: "lime_beaker", x: 600, y: TABLE - 146, label: "石灰水" },
+      { id: "splint", x: 760, y: TABLE - 156, label: "木条" },
+      { id: "reagent", x: 190, y: TABLE - 108, label: "药品" }
     ],
     iron_in_oxygen: [
       { id: "lamp", x: 300, y: TABLE - 136, label: "酒精灯" },
@@ -343,11 +433,29 @@
       { id: "rod", x: 560, y: 208, r: -16, ox: 20, oy: 11, label: "玻璃棒" },
       { id: "reagent", x: 680, y: TABLE - 108, label: "溶液" }
     ],
+    co2_candles: [
+      { id: "bottle", x: 300, y: TABLE - 168, label: "二氧化碳" },
+      { id: "beaker", art: "candle_beaker", x: 500, y: TABLE - 230, label: "烧杯" }
+    ],
     metal_oxide_acid: [
       { id: "lamp", x: 428, y: TABLE - 136, label: "酒精灯" },
       { id: "tube", x: 448, y: 58, r: 34, ox: 32, oy: 168, label: "试管" },
       { id: "rod", art: "clamp", x: 512, y: 78, r: -14, label: "试管夹" },
       { id: "reagent", x: 280, y: TABLE - 108, label: "药品" }
+    ],
+    air_oxygen: [
+      { id: "lamp", x: 260, y: TABLE - 136, label: "酒精灯" },
+      { id: "wire", x: 468, y: 88, label: "燃烧匙" },
+      { id: "bottle", x: 490, y: TABLE - 168, label: "集气瓶" },
+      { id: "beaker", x: 640, y: TABLE - 146, label: "烧杯" },
+      { id: "reagent", x: 190, y: TABLE - 108, label: "红磷" }
+    ],
+    combustion_conditions: [
+      { id: "beaker", art: "condition_beaker", x: 420, y: TABLE - 210, label: "烧杯" },
+      { id: "cover", x: 700, y: TABLE - 20, label: "薄铜片" }
+    ],
+    iron_rust: [
+      { id: "tube", art: "rust_tubes", x: 360, y: TABLE - 180, label: "对照试管" }
     ]
   };
   SCENES.oxygen = SCENES.prep_oxygen_kmno4;
@@ -474,10 +582,21 @@
     vis("fx-zinc", !!st.zinc);
     vis("fx-marble", !!st.marble);
     vis("fx-acid", !!st.acid || !!st.oxide_acid || st.liquid === "blue");
+    vis("fx-cover", !!st.air_collect);
+    vis("fx-cotton", !!st.cotton);
     vis("fx-oxide", !!st.oxide && st.liquid !== "blue");
     vis("fx-flame", !!st.flame || !!st.heat);
-    vis("fx-gas", !!st.collected && !st.air_collect);
+    vis("fx-gas", (!!st.collected && !st.air_collect) || !!st.co2_fill);
     vis("fx-bottle-water", !!st.bottle_water);
+    vis("fx-water-rise", !!st.water_rise);
+    vis("fx-marks", !!st.bottle_water || !!st.water_rise);
+    vis("fx-hot-water", !!st.hot_water);
+    vis("fx-wp-air", !!st.wp_air);
+    vis("fx-rp-air", !!st.rp_air);
+    vis("fx-wp-water", !!st.wp_water);
+    vis("fx-wp-o2", !!st.wp_o2);
+    vis("fx-flame-wp", !!st.wp_air && !st.wp_o2 || !!st.flame);
+    vis("fx-rust", !!st.rust);
     vis("fx-drip", !!st.dripping);
     vis("fx-metal", !!st.metal);
     vis("fx-beaker-bubbles", !!st.acid_bubbles);
@@ -492,6 +611,12 @@
     vis("fx-jet", !!st.jet_flame);
     vis("fx-sparks", !!st.sparks);
     vis("fx-pop", !!st.pop);
+    vis("fx-flame-low", !!st.lit && !st.low_out);
+    vis("fx-flame-high", !!st.lit && !st.high_out);
+    vis("fx-co2-low", !!st.co2_low || !!st.co2_mid);
+    vis("fx-co2-mid", !!st.co2_mid);
+    vis("fx-smoke-low", !!st.low_out);
+    vis("fx-smoke-high", !!st.high_out);
     if (pieces.trough) {
       var shown = pieces.trough.el.dataset.placed === "1" && !st.air_collect;
       pieces.trough.el.style.display = shown ? "" : "none";
@@ -509,6 +634,12 @@
         bs.r = 0;
         delete bs.ox;
         delete bs.oy;
+      }
+      if (st.pouring) {
+        bs.r = -50;
+        bs.ox = 80;
+        bs.oy = 16;
+        bs.x = (pieces.bottle.spec.x || 0) + 36;
       }
       pieces.bottle.el.setAttribute("transform", tf(bs));
     }

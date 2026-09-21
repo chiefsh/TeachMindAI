@@ -90,7 +90,7 @@ def build_prep_oxygen_kmno4() -> dict:
                 "id": "pick",
                 "need": "select",
                 "title": "选取仪器与药品",
-                "hint": "点选制氧气需要的仪器：铁架台、试管、酒精灯、导管、水槽、集气瓶、带火星木条；药品选高锰酸钾。",
+                "hint": "点选制氧气需要的仪器：铁架台、试管、酒精灯、导管、水槽、集气瓶、带火星木条；药品选高锰酸钾。试管口还要放棉花（下一步会问到）。",
             },
             {
                 "id": "assemble",
@@ -105,13 +105,26 @@ def build_prep_oxygen_kmno4() -> dict:
                 ],
             },
             {
+                "id": "cotton",
+                "need": "choice",
+                "title": "试管口的棉花",
+                "hint": "高锰酸钾是粉末，加热时粉末会进入导管。",
+                "choices": [
+                    {"id": "plug", "label": "试管口放一团棉花，再塞导管", "correct": True,
+                     "ok": "棉花拦住粉末，避免高锰酸钾进入水槽，收集的氧气更纯。",
+                     "scene": {"cotton": True}},
+                    {"id": "none", "label": "不放棉花，让气体出得更畅快", "correct": False,
+                     "hazard": "粉末会随气流进入导管和水槽，堵塞导管，氧气也不纯。"},
+                ],
+            },
+            {
                 "id": "add",
                 "need": "action",
                 "title": "加入药品",
                 "action_label": "把高锰酸钾装入试管",
                 "hint": "药品平铺在试管底部，方便均匀受热。",
                 "phenomenon": "试管底部铺上一层紫黑色固体。",
-                "scene": {"powder": True},
+                "scene": {"powder": True, "cotton": True},
             },
             {
                 "id": "heat",
@@ -120,7 +133,7 @@ def build_prep_oxygen_kmno4() -> dict:
                 "action_label": "点燃酒精灯加热",
                 "hint": "先预热试管，再集中加热药品部位。",
                 "phenomenon": "紫黑色固体逐渐变化，导管口有气泡冒出。",
-                "scene": {"flame": True, "bubbles": True},
+                "scene": {"flame": True, "bubbles": True, "cotton": True},
             },
             {
                 "id": "collect",
@@ -129,7 +142,7 @@ def build_prep_oxygen_kmno4() -> dict:
                 "action_label": "用集气瓶排水收集氧气",
                 "hint": "氧气不易溶于水，适合排水法。气泡连续均匀后再开始收集。",
                 "phenomenon": "集气瓶中水面下降，收集到无色气体。",
-                "scene": {"collected": True},
+                "scene": {"collected": True, "cotton": True},
             },
             {
                 "id": "test",
@@ -477,7 +490,7 @@ def build_electrolysis_water() -> dict:
         "id": "electrolysis",
         "scene": "electrolysis",
         "title": "电解水",
-        "subtitle": "通电分解 · 正氧负氢 · 体积比 1:2",
+        "subtitle": "通电分解 · 正氧负氢 · 氢氧体积比约 2∶1",
         "equation": "2H₂O 通电→ 2H₂↑ + O₂↑",
         "goal": "观察电解水，根据电极和体积比判断氢气、氧气，并检验。",
         "badge": "初中化学 · 分解反应",
@@ -551,7 +564,7 @@ def build_electrolysis_water() -> dict:
         ],
         "complete": {
             "title": "实验完成",
-            "summary": "你完成了电解水：正氧负氢、体积比约 1:2，并正确检验了两种气体。",
+            "summary": "你完成了电解水：正氧负氢、氢气与氧气体积比约 2∶1，并正确检验了两种气体。",
         },
     }
 
@@ -1048,7 +1061,7 @@ def build_iron_in_oxygen() -> dict:
 def build_solution_prep() -> dict:
     return {
         "id": "solution_prep",
-        "scene": "neutralization",
+        "scene": "solution_prep",
         "title": "配制一定溶质质量分数的溶液",
         "subtitle": "称量 · 量水 · 烧杯溶解 · 玻璃棒搅拌",
         "equation": "（配制操作，无化学方程式）",
@@ -1122,6 +1135,862 @@ def build_solution_prep() -> dict:
     }
 
 
+def build_co2_candles() -> dict:
+    return {
+        "id": "co2_candles",
+        "scene": "co2_candles",
+        "scene_init": {"co2_fill": True},
+        "title": "倾倒二氧化碳熄灭蜡烛",
+        "subtitle": "密度比空气大 · 不支持燃烧 · 低处先灭",
+        "equation": "（物理性质，无化学方程式）CO₂ 密度比空气大，不能燃烧也不支持燃烧",
+        "goal": "把二氧化碳沿杯壁缓慢倒入，观察高低两支蜡烛熄灭的先后，并说明灭火原理。",
+        "badge": "初中化学 · 二氧化碳的性质",
+        "inventory": {
+            "apparatus": [
+                {"id": "beaker", "name": "装有高低两支蜡烛的烧杯", "icon": "杯"},
+                {"id": "bottle", "name": "盛满二氧化碳的集气瓶", "icon": "瓶"},
+                {"id": "cover", "name": "玻璃片", "icon": "片"},
+                {"id": "trough", "name": "水槽", "icon": "槽"},
+                {"id": "lamp", "name": "酒精灯", "icon": "灯"},
+            ],
+            "reagents": [
+                {"id": "co2", "name": "二氧化碳", "color": "#64748b"},
+                {"id": "o2", "name": "氧气", "color": "#38bdf8"},
+                {"id": "hcl", "name": "稀盐酸", "color": "#22c55e"},
+            ],
+        },
+        "required_apparatus": ["beaker", "bottle"],
+        "required_reagents": [],
+        "steps": [
+            {
+                "id": "pick",
+                "need": "select",
+                "title": "选取仪器与药品",
+                "hint": "要演示二氧化碳灭火，需要：装有高低两支蜡烛的烧杯、盛满二氧化碳的集气瓶。不要用水槽或酒精灯。",
+            },
+            {
+                "id": "light",
+                "need": "action",
+                "title": "点燃蜡烛",
+                "action_label": "点燃烧杯里高低两支蜡烛",
+                "hint": "两支蜡烛要有明显高度差，这样才看得出气体先在哪里积聚。",
+                "phenomenon": "较高处和较低处的蜡烛都在燃烧。",
+                "scene": {"co2_fill": True, "lit": True},
+            },
+            {
+                "id": "pour_way",
+                "need": "choice",
+                "title": "怎样倒入二氧化碳",
+                "hint": "二氧化碳密度比空气大。倒得太猛会搅乱层次，看不清先后。",
+                "choices": [
+                    {"id": "slow", "label": "沿烧杯内壁缓慢倾倒", "correct": True,
+                     "ok": "气体沉到杯底，能看清从下往上积聚。",
+                     "scene": {"co2_fill": True, "lit": True, "pouring": True}},
+                    {"id": "dump", "label": "把集气瓶口朝下，一下子倒完", "correct": False,
+                     "hazard": "气流太急，杯内气体被搅乱，高低蜡烛可能几乎同时熄灭，看不出密度差异。"},
+                ],
+            },
+            {
+                "id": "low",
+                "need": "action",
+                "title": "观察较低处蜡烛",
+                "action_label": "继续缓慢倾倒，盯住较低处蜡烛",
+                "hint": "二氧化碳比空气重，先在杯底铺开。",
+                "phenomenon": "较低处蜡烛先熄灭，较高处蜡烛仍在燃烧。",
+                "scene": {"co2_fill": True, "lit": True, "pouring": True, "co2_low": True, "low_out": True},
+            },
+            {
+                "id": "high",
+                "need": "action",
+                "title": "观察较高处蜡烛",
+                "action_label": "再倒一些，看较高处蜡烛",
+                "hint": "杯底被二氧化碳占满后，气层逐渐升高。",
+                "phenomenon": "较高处蜡烛随后熄灭。",
+                "scene": {"co2_fill": True, "lit": True, "pouring": True, "co2_mid": True, "low_out": True, "high_out": True},
+            },
+            {
+                "id": "why",
+                "need": "choice",
+                "title": "为什么能灭火",
+                "hint": "联系刚才的熄灭顺序：先灭的在下面。",
+                "choices": [
+                    {"id": "dense", "label": "二氧化碳密度比空气大，沉在下方隔绝氧气，且本身不支持燃烧", "correct": True,
+                     "ok": "低处先灭说明它比空气重；两支最终都灭说明它不能支持燃烧。灭火器就是利用这一点。"},
+                    {"id": "light", "label": "二氧化碳比空气轻，先跑到杯口把高处蜡烛闷灭", "correct": False,
+                     "hazard": "如果比空气轻，应该高处蜡烛先灭。实验里是低处先灭。"},
+                    {"id": "react", "label": "二氧化碳和蜡烛发生化学反应，把蜡消耗掉了", "correct": False,
+                     "hazard": "蜡烛熄灭是因为缺氧、火焰被隔绝，蜡并没有被二氧化碳反应掉。"},
+                ],
+            },
+        ],
+        "complete": {
+            "title": "实验完成",
+            "summary": "二氧化碳密度比空气大，倒入烧杯后从底部往上积聚，所以较低处蜡烛先灭；它不能燃烧也不支持燃烧，因而能灭火。",
+        },
+    }
+
+
+def build_air_oxygen() -> dict:
+    return {
+        "id": "air_oxygen",
+        "scene": "air_oxygen",
+        "scene_init": {"air_collect": True, "bottle_water": True},
+        "title": "测定空气中氧气的含量",
+        "subtitle": "红磷燃烧耗氧 · 冷却后水面上升约 1/5",
+        "equation": "4P + 5O₂ 点燃→ 2P₂O₅",
+        "goal": "用足量红磷消耗密闭空气中的氧气，冷却后看水面上升约占原来气体体积的 1/5。",
+        "badge": "初中化学 · 空气",
+        "inventory": {
+            "apparatus": [
+                {"id": "bottle", "name": "集气瓶（水面上方五等分）", "icon": "瓶"},
+                {"id": "wire", "name": "燃烧匙", "icon": "匙"},
+                {"id": "lamp", "name": "酒精灯", "icon": "灯"},
+                {"id": "beaker", "name": "烧杯（盛水）", "icon": "杯"},
+                {"id": "cover", "name": "玻璃片", "icon": "片"},
+            ],
+            "reagents": [
+                {"id": "p_red", "name": "红磷", "color": "#dc2626"},
+                {"id": "kmno4", "name": "高锰酸钾", "color": "#6b21a8"},
+                {"id": "hcl", "name": "稀盐酸", "color": "#38bdf8"},
+            ],
+        },
+        "required_apparatus": ["bottle", "wire", "lamp", "beaker"],
+        "required_reagents": ["p_red"],
+        "steps": [
+            {
+                "id": "pick",
+                "need": "select",
+                "title": "选取仪器与药品",
+                "hint": "集气瓶、燃烧匙、酒精灯、盛水的烧杯；药品用红磷。不要用高锰酸钾或盐酸。",
+            },
+            {
+                "id": "mark",
+                "need": "choice",
+                "title": "怎样准备集气瓶",
+                "hint": "要量的是瓶内空气里氧气占的体积分数。",
+                "choices": [
+                    {"id": "water", "label": "瓶内先加少量水，把水面上方空间分成 5 等份并做标记", "correct": True,
+                     "ok": "冷却后看液面升到哪一条刻度，就能读出消耗的体积分数。",
+                     "scene": {"air_collect": True, "bottle_water": True}},
+                    {"id": "dry", "label": "用干燥的空瓶，直接点燃红磷", "correct": False,
+                     "hazard": "没有水和刻度，看不出体积变化；也不能形成连通器把水吸进来。"},
+                ],
+            },
+            {
+                "id": "burn",
+                "need": "action",
+                "title": "点燃红磷并密封",
+                "action_label": "点燃足量红磷，立即伸入瓶中并塞紧",
+                "hint": "红磷必须足量，才能把瓶里的氧气几乎耗尽。塞紧后气体不能进出。",
+                "phenomenon": "红磷剧烈燃烧，产生五氧化二磷白烟，随后火焰熄灭。",
+                "scene": {"air_collect": True, "bottle_water": True, "flame": True, "sparks": True},
+            },
+            {
+                "id": "cool",
+                "need": "choice",
+                "title": "什么时候打开弹簧夹",
+                "hint": "燃烧时气体受热膨胀。要测的是冷却后减少的体积。",
+                "choices": [
+                    {"id": "wait", "label": "待红磷熄灭并冷却到室温，再打开弹簧夹", "correct": True,
+                     "ok": "温度回到室温后，减少的体积才等于被消耗的氧气体积。"},
+                    {"id": "now", "label": "火焰一灭立刻打开，趁热观察", "correct": False,
+                     "hazard": "瓶内气体还热、压强偏大，吸入的水偏少，测得氧气含量会偏低。"},
+                ],
+            },
+            {
+                "id": "rise",
+                "need": "action",
+                "title": "观察水面",
+                "action_label": "打开弹簧夹，看烧杯中的水被吸入集气瓶",
+                "hint": "氧气约占空气体积的 1/5。足量红磷、装置不漏气时，液面大约升到第一格。",
+                "phenomenon": "水被吸入集气瓶，液面大约上升至五等分的 1/5。",
+                "scene": {"air_collect": True, "bottle_water": True, "water_rise": True},
+            },
+            {
+                "id": "why",
+                "need": "choice",
+                "title": "为什么大约是 1/5",
+                "hint": "红磷只和空气中能支持燃烧的那种气体反应。",
+                "choices": [
+                    {"id": "o2", "label": "红磷消耗了氧气，氧气约占空气体积的 1/5，所以水面上升约 1/5", "correct": True,
+                     "ok": "氮气等其余气体几乎不参加反应，剩下约 4/5。"},
+                    {"id": "n2", "label": "红磷把氮气烧掉了，氮气大约占空气的 1/5", "correct": False,
+                     "hazard": "氮气不支持燃烧，红磷消耗的是氧气。氮气约占 4/5。"},
+                ],
+            },
+        ],
+        "complete": {
+            "title": "实验完成",
+            "summary": "足量红磷在密闭空气中燃烧消耗氧气，冷却后水面上升约占原气体体积的 1/5，说明氧气约占空气体积的 1/5。",
+        },
+    }
+
+
+def build_charcoal_in_oxygen() -> dict:
+    return {
+        "id": "charcoal_in_oxygen",
+        "scene": "burn",
+        "scene_init": {"air_collect": True},
+        "title": "木炭在氧气中燃烧",
+        "subtitle": "发出白光 · 生成使石灰水变浑浊的气体",
+        "equation": "C + O₂ 点燃→ CO₂",
+        "goal": "比较木炭在空气和氧气中燃烧的剧烈程度，并用澄清石灰水检验产物。",
+        "badge": "初中化学 · 氧气的性质",
+        "inventory": {
+            "apparatus": [
+                {"id": "bottle", "name": "盛氧气的集气瓶", "icon": "瓶"},
+                {"id": "wire", "name": "坩埚钳", "icon": "钳"},
+                {"id": "lamp", "name": "酒精灯", "icon": "灯"},
+                {"id": "cover", "name": "玻璃片", "icon": "片"},
+                {"id": "lime_beaker", "name": "澄清石灰水", "icon": "杯"},
+            ],
+            "reagents": [
+                {"id": "c", "name": "木炭", "color": "#1e293b"},
+                {"id": "o2", "name": "氧气", "color": "#38bdf8"},
+                {"id": "hcl", "name": "稀盐酸", "color": "#22c55e"},
+            ],
+        },
+        "required_apparatus": ["bottle", "wire", "lamp"],
+        "required_reagents": ["c", "o2"],
+        "steps": [
+            {
+                "id": "pick",
+                "need": "select",
+                "title": "选取仪器与药品",
+                "hint": "盛氧气的集气瓶、坩埚钳、酒精灯；木炭和氧气。石灰水留到检验产物再用。",
+            },
+            {
+                "id": "air",
+                "need": "action",
+                "title": "先在空气中加热",
+                "action_label": "用坩埚钳夹木炭，在酒精灯上加热",
+                "hint": "先看空气中的现象，再伸进氧气瓶作对比。",
+                "phenomenon": "木炭在空气中燃烧较缓慢，发出红热。",
+                "scene": {"air_collect": True, "flame": True},
+            },
+            {
+                "id": "oxy",
+                "need": "action",
+                "title": "伸入氧气瓶",
+                "action_label": "把燃着的木炭迅速插入盛氧气的集气瓶",
+                "hint": "氧气比空气含氧多，燃烧会更剧烈。",
+                "phenomenon": "木炭剧烈燃烧，发出白光，放出热量。",
+                "scene": {"air_collect": True, "flame": True, "sparks": True},
+            },
+            {
+                "id": "test",
+                "need": "choice",
+                "title": "怎样检验产物",
+                "hint": "碳充分燃烧的产物是二氧化碳。",
+                "choices": [
+                    {"id": "lime", "label": "向瓶中倒入澄清石灰水，振荡", "correct": True,
+                     "ok": "石灰水变浑浊，说明生成了二氧化碳：CO₂ + Ca(OH)₂ → CaCO₃↓ + H₂O。",
+                     "scene": {"air_collect": True, "lime_milky": True}},
+                    {"id": "pop", "label": "用燃着的木条伸入瓶口听爆鸣", "correct": False,
+                     "hazard": "那是检验氢气的方法。二氧化碳不能燃烧也不支持燃烧。"},
+                ],
+            },
+        ],
+        "complete": {
+            "title": "实验完成",
+            "summary": "木炭在氧气中比在空气中燃烧更旺，发出白光，生成的二氧化碳使澄清石灰水变浑浊。",
+        },
+    }
+
+
+def build_sulfur_in_oxygen() -> dict:
+    return {
+        "id": "sulfur_in_oxygen",
+        "scene": "burn",
+        "scene_init": {"air_collect": True},
+        "title": "硫在氧气中燃烧",
+        "subtitle": "空气中淡蓝 · 氧气中蓝紫 · 刺激性二氧化硫",
+        "equation": "S + O₂ 点燃→ SO₂",
+        "goal": "比较硫在空气和氧气中的火焰颜色，认识产物二氧化硫有刺激性气味。",
+        "badge": "初中化学 · 氧气的性质",
+        "inventory": {
+            "apparatus": [
+                {"id": "bottle", "name": "盛氧气的集气瓶", "icon": "瓶"},
+                {"id": "wire", "name": "燃烧匙", "icon": "匙"},
+                {"id": "lamp", "name": "酒精灯", "icon": "灯"},
+                {"id": "cover", "name": "玻璃片", "icon": "片"},
+                {"id": "goggles", "name": "护目镜", "icon": "镜"},
+            ],
+            "reagents": [
+                {"id": "s", "name": "硫粉", "color": "#eab308"},
+                {"id": "o2", "name": "氧气", "color": "#38bdf8"},
+                {"id": "c", "name": "木炭", "color": "#1e293b"},
+            ],
+        },
+        "required_apparatus": ["bottle", "wire", "lamp"],
+        "required_reagents": ["s", "o2"],
+        "steps": [
+            {
+                "id": "pick",
+                "need": "select",
+                "title": "选取仪器与药品",
+                "hint": "盛氧气的集气瓶、燃烧匙、酒精灯；硫和氧气。本实验应在通风处进行。",
+            },
+            {
+                "id": "air",
+                "need": "action",
+                "title": "硫在空气中燃烧",
+                "action_label": "在燃烧匙里放少量硫，加热至燃烧",
+                "hint": "先看空气中的火焰，再伸进氧气瓶。",
+                "phenomenon": "硫在空气中燃烧，发出微弱的淡蓝色火焰。",
+                "scene": {"air_collect": True, "flame": True},
+            },
+            {
+                "id": "oxy",
+                "need": "action",
+                "title": "伸入氧气瓶",
+                "action_label": "把燃着的硫插入盛氧气的集气瓶",
+                "hint": "氧气中燃烧更旺，火焰颜色会改变。",
+                "phenomenon": "发出明亮的蓝紫色火焰，放出热量，产生有刺激性气味的气体。",
+                "scene": {"air_collect": True, "flame": True, "sparks": True},
+            },
+            {
+                "id": "smell",
+                "need": "choice",
+                "title": "怎样闻气味",
+                "hint": "二氧化硫有刺激性，不能凑到瓶口去闻。",
+                "choices": [
+                    {"id": "fan", "label": "用手在瓶口轻轻扇闻", "correct": True,
+                     "ok": "产物是二氧化硫。刺激性气体一律扇闻，不要对着瓶口深吸。"},
+                    {"id": "nose", "label": "把鼻子凑到瓶口用力吸一下，才能闻清楚", "correct": False,
+                     "hazard": "二氧化硫刺激呼吸道。课本要求扇闻，且本实验应在通风橱中演示。"},
+                ],
+            },
+        ],
+        "complete": {
+            "title": "实验完成",
+            "summary": "硫在空气中发出淡蓝色火焰，在氧气中发出蓝紫色火焰，生成有刺激性气味的二氧化硫。",
+        },
+    }
+
+
+def build_charcoal_reduce_cuo() -> dict:
+    return {
+        "id": "charcoal_reduce_cuo",
+        "scene": "nh4hco3_decomp",
+        "title": "木炭还原氧化铜",
+        "subtitle": "高温夺氧 · 黑色变红 · 石灰水变浑浊",
+        "equation": "2CuO + C 高温→ 2Cu + CO₂↑",
+        "goal": "加热木炭和氧化铜的混合物，观察黑色粉末变红，并用石灰水检验二氧化碳。",
+        "badge": "初中化学 · 碳的化学性质",
+        "inventory": {
+            "apparatus": [
+                {"id": "stand", "name": "铁架台", "icon": "支架"},
+                {"id": "tube", "name": "试管", "icon": "试管"},
+                {"id": "lamp", "name": "酒精灯", "icon": "灯"},
+                {"id": "lime_beaker", "name": "澄清石灰水", "icon": "杯"},
+                {"id": "paper", "name": "纸（倒出产物）", "icon": "纸"},
+            ],
+            "reagents": [
+                {"id": "cuo", "name": "氧化铜粉末", "color": "#1e293b"},
+                {"id": "c", "name": "烘干的木炭粉", "color": "#334155"},
+                {"id": "hcl", "name": "稀盐酸", "color": "#22c55e"},
+            ],
+        },
+        "required_apparatus": ["stand", "tube", "lamp", "lime_beaker"],
+        "required_reagents": ["cuo", "c"],
+        "steps": [
+            {
+                "id": "pick",
+                "need": "select",
+                "title": "选取仪器与药品",
+                "hint": "铁架台、试管、酒精灯、澄清石灰水；烘干的木炭粉和氧化铜。不要用盐酸。",
+            },
+            {
+                "id": "load",
+                "need": "choice",
+                "title": "药品怎么放",
+                "hint": "木炭和氧化铜要接触才能反应；导管要通入石灰水。",
+                "choices": [
+                    {"id": "mix", "label": "把烘干的木炭粉和氧化铜混匀，铺在试管里，导管插入石灰水", "correct": True,
+                     "ok": "粉末烘干是为了避免水蒸气干扰。导管插入石灰水，才能检验生成的二氧化碳。",
+                     "scene": {"powder": True, "oxide": True}},
+                    {"id": "wet", "label": "木炭不用烘干，直接和氧化铜一起加热更省事", "correct": False,
+                     "hazard": "水蒸气会进入石灰水，也可能使试管局部炸裂，现象说不清。"},
+                ],
+            },
+            {
+                "id": "heat",
+                "need": "action",
+                "title": "高温加热",
+                "action_label": "用酒精灯（可加网罩）加热混合物几分钟",
+                "hint": "这个反应需要较高温度。先加热，再观察石灰水。",
+                "phenomenon": "混合物由黑变红，澄清石灰水变浑浊。",
+                "scene": {"powder": True, "oxide": True, "flame": True, "lime_milky": True, "heat": True},
+            },
+            {
+                "id": "stop",
+                "need": "choice",
+                "title": "停止加热的顺序",
+                "hint": "导管还插在石灰水里时就停火，水会倒吸。",
+                "choices": [
+                    {"id": "out", "label": "先撤出导管，再停止加热，冷却后把粉末倒在纸上", "correct": True,
+                     "ok": "防止石灰水倒吸进热试管。冷却后能看到红色的铜。",
+                     "scene": {"metal": True, "lime_milky": True}},
+                    {"id": "fire", "label": "先灭酒精灯，导管继续留在石灰水里冷却", "correct": False,
+                     "hazard": "试管内气压下降，石灰水倒吸，热试管会炸裂。"},
+                ],
+            },
+        ],
+        "complete": {
+            "title": "实验完成",
+            "summary": "高温下碳夺取氧化铜中的氧：黑色氧化铜变成红色铜，生成的二氧化碳使石灰水变浑浊。这是还原反应。",
+        },
+    }
+
+
+def build_mass_conservation() -> dict:
+    return {
+        "id": "mass_conservation",
+        "scene": "solution_prep",
+        "title": "验证质量守恒定律",
+        "subtitle": "密闭容器 · 铁与硫酸铜 · 反应前后总质量相等",
+        "equation": "Fe + CuSO₄ → Cu + FeSO₄",
+        "goal": "在密闭装置中让铁与硫酸铜反应，称量反应前后总质量，认识质量守恒。",
+        "badge": "初中化学 · 质量守恒定律",
+        "inventory": {
+            "apparatus": [
+                {"id": "balance", "name": "托盘天平", "icon": "秤"},
+                {"id": "beaker", "name": "锥形瓶（塞紧）", "icon": "瓶"},
+                {"id": "rod", "name": "小试管（盛硫酸铜）", "icon": "管"},
+                {"id": "paper", "name": "称量纸", "icon": "纸"},
+                {"id": "lamp", "name": "酒精灯", "icon": "灯"},
+            ],
+            "reagents": [
+                {"id": "fe", "name": "打磨过的铁丝", "color": "#94a3b8"},
+                {"id": "cuso4", "name": "硫酸铜溶液", "color": "#2563eb"},
+                {"id": "hcl", "name": "稀盐酸", "color": "#22c55e"},
+            ],
+        },
+        "required_apparatus": ["balance", "beaker", "rod"],
+        "required_reagents": ["fe", "cuso4"],
+        "steps": [
+            {
+                "id": "pick",
+                "need": "select",
+                "title": "选取仪器与药品",
+                "hint": "天平、塞紧的锥形瓶、盛硫酸铜的小试管；铁丝和硫酸铜溶液。本方案不加热，不用酒精灯。",
+            },
+            {
+                "id": "weigh1",
+                "need": "action",
+                "title": "反应前称量",
+                "action_label": "铁丝放在锥形瓶底，小试管盛硫酸铜，塞紧后放上天平，记下 m₁",
+                "hint": "必须密闭。如果敞口，生成或逸出的气体会让质量对不上。",
+                "phenomenon": "记录反应前总质量 m₁。",
+                "scene": {"metal": True, "liquid": "blue"},
+            },
+            {
+                "id": "mix",
+                "need": "action",
+                "title": "倾斜混合",
+                "action_label": "取下锥形瓶，倾斜使硫酸铜流入，观察后再称量",
+                "hint": "铁把铜从硫酸铜溶液里置换出来。",
+                "phenomenon": "铁丝表面出现红色的铜，溶液由蓝逐渐变浅。",
+                "scene": {"metal": True, "liquid": "blue", "acid_bubbles": False},
+            },
+            {
+                "id": "weigh2",
+                "need": "choice",
+                "title": "比较 m₁ 和 m₂",
+                "hint": "参加反应的各物质质量总和，等于生成物质量总和。",
+                "choices": [
+                    {"id": "same", "label": "密闭装置中 m₂ 等于 m₁，总质量不变", "correct": True,
+                     "ok": "铜和硫酸亚铁仍在瓶内，没有物质跑掉，所以总质量相等。这就是质量守恒定律。"},
+                    {"id": "light", "label": "生成了铜，铜比铁轻，所以 m₂ 一定变小", "correct": False,
+                     "hazard": "铁减少的质量和铜、硫酸亚铁增加的质量加在一起仍然相等。不能只看一种生成物。"},
+                    {"id": "open", "label": "应该打开瓶塞再称，否则气体胀破瓶子", "correct": False,
+                     "hazard": "这个反应没有气体逸出。若换成碳酸钠和盐酸敞口称量，二氧化碳跑掉，质量会减小。"},
+                ],
+            },
+        ],
+        "complete": {
+            "title": "实验完成",
+            "summary": "在密闭容器中，铁与硫酸铜反应前后总质量相等。参加反应的各物质质量总和等于生成物质量总和。",
+        },
+    }
+
+
+def build_metal_displace() -> dict:
+    return {
+        "id": "metal_displace",
+        "scene": "metal_acid",
+        "title": "铁与硫酸铜的置换反应",
+        "subtitle": "铁钉插入硫酸铜 · 表面覆铜 · 溶液由蓝变浅",
+        "equation": "Fe + CuSO₄ → Cu + FeSO₄",
+        "goal": "观察铁把铜从硫酸铜溶液中置换出来，认识金属活动性：铁比铜强。",
+        "badge": "初中化学 · 金属活动性",
+        "inventory": {
+            "apparatus": [
+                {"id": "goggles", "name": "护目镜", "icon": "镜"},
+                {"id": "beaker", "name": "烧杯", "icon": "杯"},
+                {"id": "rod", "name": "铁钉或铁丝", "icon": "钉"},
+                {"id": "lamp", "name": "酒精灯", "icon": "灯"},
+            ],
+            "reagents": [
+                {"id": "cuso4", "name": "硫酸铜溶液", "color": "#2563eb"},
+                {"id": "hcl", "name": "稀盐酸", "color": "#22c55e"},
+                {"id": "agno3", "name": "硝酸银溶液", "color": "#f8fafc"},
+            ],
+        },
+        "required_apparatus": ["goggles", "beaker", "rod"],
+        "required_reagents": ["cuso4"],
+        "steps": [
+            {
+                "id": "pick",
+                "need": "select",
+                "title": "选取仪器与药品",
+                "hint": "护目镜、烧杯、打磨过的铁钉；硫酸铜溶液。本实验不加热。",
+            },
+            {
+                "id": "dip",
+                "need": "action",
+                "title": "浸入硫酸铜",
+                "action_label": "把打磨光亮的铁钉浸入硫酸铜溶液",
+                "hint": "铁的活动性比铜强，能把铜置换出来。",
+                "phenomenon": "铁钉表面逐渐覆盖一层红色的铜，溶液蓝色变浅（生成浅绿色硫酸亚铁）。",
+                "scene": {"liquid": "blue", "metal": True},
+            },
+            {
+                "id": "why",
+                "need": "choice",
+                "title": "这说明什么",
+                "hint": "比较铁和铜谁更容易失去电子、谁更能把对方从盐溶液里换出来。",
+                "choices": [
+                    {"id": "fe", "label": "铁的活动性比铜强，发生了置换反应", "correct": True,
+                     "ok": "一种单质和一种化合物反应，生成另一种单质和另一种化合物，这就是置换反应。"},
+                    {"id": "cu", "label": "铜的活动性比铁强，所以铜会镀到铁上", "correct": False,
+                     "hazard": "如果铜更活泼，应该是铜把铁从溶液里置换出来，铁钉不会变红。"},
+                    {"id": "mix", "label": "只是铁钉沾上了蓝色的硫酸铜，没有新物质", "correct": False,
+                     "hazard": "红色固体是铜单质，溶液成分也变成了硫酸亚铁，有新物质生成。"},
+                ],
+            },
+        ],
+        "complete": {
+            "title": "实验完成",
+            "summary": "铁能把铜从硫酸铜溶液中置换出来：Fe + CuSO₄ → Cu + FeSO₄。铁的金属活动性比铜强。",
+        },
+    }
+
+
+def build_iron_rust() -> dict:
+    return {
+        "id": "iron_rust",
+        "scene": "iron_rust",
+        "title": "探究铁钉生锈的条件",
+        "subtitle": "对照实验 · 既要水也要氧气",
+        "equation": "4Fe + 3O₂ + xH₂O → 2Fe₂O₃·xH₂O",
+        "goal": "用三支试管对照：水和空气、隔绝空气的水、干燥空气，判断铁生锈的条件。",
+        "badge": "初中化学 · 金属资源保护",
+        "inventory": {
+            "apparatus": [
+                {"id": "tube", "name": "试管（三支）", "icon": "试管"},
+                {"id": "beaker", "name": "烧杯", "icon": "杯"},
+                {"id": "lamp", "name": "酒精灯（煮沸蒸馏水）", "icon": "灯"},
+            ],
+            "reagents": [
+                {"id": "fe", "name": "洁净无锈的铁钉", "color": "#94a3b8"},
+                {"id": "water", "name": "蒸馏水", "color": "#38bdf8"},
+                {"id": "oil", "name": "植物油", "color": "#ca8a04"},
+                {"id": "cacl2", "name": "氯化钙（干燥剂）", "color": "#f8fafc"},
+            ],
+        },
+        "required_apparatus": ["tube"],
+        "required_reagents": ["fe", "water"],
+        "steps": [
+            {
+                "id": "pick",
+                "need": "select",
+                "title": "选取仪器与药品",
+                "hint": "三支试管和洁净铁钉；还要用蒸馏水。植物油、氯化钙用来做对照。",
+            },
+            {
+                "id": "setup",
+                "need": "choice",
+                "title": "怎样控制变量",
+                "hint": "一次只改变一个条件：有没有水、有没有氧气。",
+                "choices": [
+                    {"id": "three", "label": "①铁钉+水和空气 ②煮沸冷却的水+油封 ③干燥剂+棉花（干燥空气）", "correct": True,
+                     "ok": "第一支既有水又有氧气；第二支有水但隔绝空气；第三支有空气但干燥。",
+                     "scene": {"rust_setup": True}},
+                    {"id": "one", "label": "三支试管都放铁钉和水，一起观察就行", "correct": False,
+                     "hazard": "条件都一样，看不出生锈到底需要水还是需要氧气。"},
+                ],
+            },
+            {
+                "id": "wait",
+                "need": "action",
+                "title": "观察一周后的结果",
+                "action_label": "快进到放置约一周后（真实实验需提前一周开始）",
+                "hint": "课本要求连续观察约一周。虚拟实验把时间压缩，对照关系不变。",
+                "phenomenon": "只有与水和空气同时接触的铁钉明显生锈；油封的和干燥的几乎不生锈。",
+                "scene": {"rust_setup": True, "rust": True},
+            },
+            {
+                "id": "why",
+                "need": "choice",
+                "title": "铁生锈需要什么",
+                "hint": "对比三支试管：谁生锈、谁不生锈。",
+                "choices": [
+                    {"id": "both", "label": "铁生锈需要水和氧气同时存在", "correct": True,
+                     "ok": "所以防锈可以保持干燥，或隔绝空气（涂油、镀层）。铁锈主要成分是 Fe₂O₃·xH₂O。"},
+                    {"id": "water", "label": "只要有水就会生锈，和氧气无关", "correct": False,
+                     "hazard": "油封那支也有水，却几乎不生锈，说明还缺氧气。"},
+                    {"id": "air", "label": "只要接触空气就会生锈，和水无关", "correct": False,
+                     "hazard": "放了干燥剂的那支有空气却几乎不生锈，说明还缺水。"},
+                ],
+            },
+        ],
+        "complete": {
+            "title": "实验完成",
+            "summary": "铁生锈需要水和氧气同时存在。保持干燥或隔绝空气都可以防锈。",
+        },
+    }
+
+
+def build_combustion_conditions() -> dict:
+    return {
+        "id": "combustion_conditions",
+        "scene": "combustion_conditions",
+        "title": "探究燃烧的条件",
+        "subtitle": "白磷 / 红磷对照 · 可燃物 · 氧气 · 着火点",
+        "equation": "（探究实验，结论为燃烧三条件）",
+        "goal": "用热水、铜片上的白磷和红磷、水中白磷通氧气，归纳燃烧需要的三个条件。",
+        "badge": "初中化学 · 燃烧与灭火",
+        "inventory": {
+            "apparatus": [
+                {"id": "beaker", "name": "烧杯（热水）", "icon": "杯"},
+                {"id": "cover", "name": "薄铜片", "icon": "片"},
+                {"id": "lamp", "name": "酒精灯", "icon": "灯"},
+            ],
+            "reagents": [
+                {"id": "p_white", "name": "白磷", "color": "#f8fafc"},
+                {"id": "p_red", "name": "红磷", "color": "#dc2626"},
+                {"id": "o2", "name": "氧气", "color": "#38bdf8"},
+            ],
+        },
+        "required_apparatus": ["beaker", "cover"],
+        "required_reagents": ["p_white", "p_red"],
+        "steps": [
+            {
+                "id": "pick",
+                "need": "select",
+                "title": "选取仪器与药品",
+                "hint": "烧杯盛热水、薄铜片；白磷和红磷。白磷剧毒，真实实验由教师在通风橱演示。",
+            },
+            {
+                "id": "plate",
+                "need": "action",
+                "title": "铜片上的对照",
+                "action_label": "热水上盖铜片：一端放干燥红磷，另一端放吸去表面水的白磷",
+                "hint": "铜片温度相同，都接触空气，只有可燃物种类不同。",
+                "phenomenon": "铜片上的白磷燃烧，红磷不燃烧；热水中的白磷不燃烧。",
+                "scene": {"hot_water": True, "wp_air": True, "rp_air": True, "wp_water": True},
+            },
+            {
+                "id": "temp",
+                "need": "choice",
+                "title": "白磷燃、红磷不燃说明什么",
+                "hint": "白磷着火点约 40 ℃，红磷约 260 ℃。热水能把铜片加热到四十多度，到不了二百多度。",
+                "choices": [
+                    {"id": "ign", "label": "燃烧需要温度达到可燃物的着火点", "correct": True,
+                     "ok": "同样是可燃物、同样有空气，温度够的白磷才燃烧。"},
+                    {"id": "kind", "label": "红磷根本不是可燃物", "correct": False,
+                     "hazard": "红磷可以燃烧，只是着火点更高。空气中的红磷实验就能点燃。"},
+                ],
+            },
+            {
+                "id": "oxygen",
+                "need": "choice",
+                "title": "水里的白磷为什么不燃",
+                "hint": "热水已超过白磷着火点，它也是可燃物。",
+                "choices": [
+                    {"id": "o2", "label": "水把白磷和氧气隔开了，燃烧还需要氧气（或空气）", "correct": True,
+                     "ok": "可燃物、温度够，缺氧气就不能燃烧。"},
+                    {"id": "cold", "label": "水太凉，没有达到白磷着火点", "correct": False,
+                     "hazard": "烧杯里是热水，铜片上的白磷就是靠这壶热水达到着火点的。"},
+                ],
+            },
+            {
+                "id": "blow",
+                "need": "action",
+                "title": "向水中白磷通氧气",
+                "action_label": "用导管向热水中的白磷通入少量氧气",
+                "hint": "补上刚才缺少的那个条件。",
+                "phenomenon": "热水中的白磷燃烧。",
+                "scene": {"hot_water": True, "wp_air": True, "rp_air": True, "wp_water": True, "wp_o2": True, "flame": True},
+            },
+            {
+                "id": "sum",
+                "need": "choice",
+                "title": "燃烧需要哪些条件",
+                "hint": "把三次对照合在一起。",
+                "choices": [
+                    {"id": "three", "label": "可燃物、氧气（或空气）、温度达到着火点，三者缺一不可", "correct": True,
+                     "ok": "灭火就是破坏其中至少一个条件：移走可燃物、隔绝空气或降低到着火点以下。"},
+                    {"id": "two", "label": "只要有可燃物和氧气就会燃烧，温度无所谓", "correct": False,
+                     "hazard": "铜片上的红磷有空气却不燃，就是因为没达到着火点。"},
+                ],
+            },
+        ],
+        "complete": {
+            "title": "实验完成",
+            "summary": "燃烧需要：可燃物、氧气（或空气）、温度达到着火点。白磷着火点低，红磷着火点高；隔绝氧气则不能燃烧。",
+        },
+    }
+
+
+def build_acid_indicator() -> dict:
+    return {
+        "id": "acid_indicator",
+        "scene": "neutralization",
+        "title": "酸碱指示剂变色",
+        "subtitle": "石蕊：酸红碱蓝 · 酚酞：遇碱变红",
+        "equation": "（指示剂变色，无新的化合方程式）",
+        "goal": "向稀盐酸、氢氧化钠溶液中分别滴加紫色石蕊和无色酚酞，记住标准颜色。",
+        "badge": "初中化学 · 溶液的酸碱性",
+        "inventory": {
+            "apparatus": [
+                {"id": "goggles", "name": "护目镜", "icon": "镜"},
+                {"id": "beaker", "name": "试管或烧杯", "icon": "杯"},
+                {"id": "dropper", "name": "胶头滴管", "icon": "滴管"},
+                {"id": "rod", "name": "玻璃棒", "icon": "棒"},
+            ],
+            "reagents": [
+                {"id": "hcl", "name": "稀盐酸", "color": "#38bdf8"},
+                {"id": "naoh", "name": "氢氧化钠溶液", "color": "#a3e635"},
+                {"id": "litmus", "name": "紫色石蕊溶液", "color": "#7c3aed"},
+                {"id": "phen", "name": "无色酚酞溶液", "color": "#f8fafc"},
+            ],
+        },
+        "required_apparatus": ["goggles", "beaker", "dropper"],
+        "required_reagents": ["hcl", "naoh"],
+        "steps": [
+            {
+                "id": "pick",
+                "need": "select",
+                "title": "选取仪器与药品",
+                "hint": "护目镜、烧杯或试管、胶头滴管；稀盐酸和氢氧化钠。石蕊、酚酞在下一步滴加。",
+            },
+            {
+                "id": "litmus_acid",
+                "need": "action",
+                "title": "石蕊遇酸",
+                "action_label": "向稀盐酸中滴加紫色石蕊溶液",
+                "hint": "石蕊只有红、紫、蓝，没有彩虹色。",
+                "phenomenon": "紫色石蕊溶液变成红色。",
+                "scene": {"liquid": "pink", "dripping": True},
+            },
+            {
+                "id": "litmus_base",
+                "need": "action",
+                "title": "石蕊遇碱",
+                "action_label": "向氢氧化钠溶液中滴加紫色石蕊溶液",
+                "hint": "碱使石蕊变蓝。",
+                "phenomenon": "紫色石蕊溶液变成蓝色。",
+                "scene": {"liquid": "blue", "dripping": True},
+            },
+            {
+                "id": "phen",
+                "need": "choice",
+                "title": "酚酞怎么变",
+                "hint": "无色酚酞遇酸仍为无色，遇碱变红。",
+                "choices": [
+                    {"id": "ok", "label": "稀盐酸中酚酞仍无色；氢氧化钠中酚酞变红", "correct": True,
+                     "ok": "记住：石蕊酸红碱蓝；酚酞遇碱红、遇酸无色。不能用万能指示剂的彩虹色冒充石蕊或酚酞。",
+                     "scene": {"liquid": "pink"}},
+                    {"id": "both", "label": "酚酞遇酸变红，遇碱也变红", "correct": False,
+                     "hazard": "酚酞在酸性溶液里是无色的。变红是碱的特征。"},
+                    {"id": "rainbow", "label": "石蕊在不同 pH 会变成彩虹的七种颜色", "correct": False,
+                     "hazard": "那是 pH 试纸或万能指示剂。石蕊只有红、紫、蓝。"},
+                ],
+            },
+        ],
+        "complete": {
+            "title": "实验完成",
+            "summary": "紫色石蕊遇酸变红、遇碱变蓝；无色酚酞遇酸无色、遇碱变红。可用来检验溶液的酸碱性。",
+        },
+    }
+
+
+def build_dilute_h2so4() -> dict:
+    return {
+        "id": "dilute_h2so4",
+        "scene": "neutralization",
+        "title": "稀释浓硫酸",
+        "subtitle": "酸入水 · 沿壁慢注 · 玻璃棒搅拌",
+        "equation": "（稀释操作，放出大量热）",
+        "goal": "按规范把浓硫酸稀释成稀硫酸：酸沿器壁注入水中并不断搅拌，切不可把水倒进浓硫酸。",
+        "badge": "初中化学 · 常见的酸",
+        "inventory": {
+            "apparatus": [
+                {"id": "goggles", "name": "护目镜", "icon": "镜"},
+                {"id": "beaker", "name": "烧杯（先盛水）", "icon": "杯"},
+                {"id": "rod", "name": "玻璃棒", "icon": "棒"},
+                {"id": "dropper", "name": "胶头滴管", "icon": "滴管"},
+            ],
+            "reagents": [
+                {"id": "h2so4", "name": "浓硫酸", "color": "#e2e8f0"},
+                {"id": "water", "name": "水", "color": "#38bdf8"},
+                {"id": "hcl", "name": "浓盐酸", "color": "#86efac"},
+            ],
+        },
+        "required_apparatus": ["goggles", "beaker", "rod"],
+        "required_reagents": ["h2so4", "water"],
+        "steps": [
+            {
+                "id": "pick",
+                "need": "select",
+                "title": "选取仪器与药品",
+                "hint": "必须戴护目镜。烧杯、玻璃棒；浓硫酸和水。不要用浓盐酸代替。",
+            },
+            {
+                "id": "order",
+                "need": "choice",
+                "title": "谁倒进谁",
+                "hint": "浓硫酸密度比水大，溶解时放出大量热。",
+                "choices": [
+                    {"id": "acid_in_water", "label": "把浓硫酸沿烧杯内壁缓慢注入水中，同时用玻璃棒搅拌", "correct": True,
+                     "ok": "酸沉到水底并被搅拌散开，热量被水吸收，不易飞溅。",
+                     "scene": {"liquid": "clear", "dripping": True}},
+                    {"id": "water_in_acid", "label": "把水倒进盛有浓硫酸的烧杯，溶解得更快", "correct": False,
+                     "hazard": "水浮在酸面上，局部沸腾，酸滴向四周飞溅，非常危险。"},
+                ],
+            },
+            {
+                "id": "heat",
+                "need": "action",
+                "title": "搅拌并观察温度",
+                "action_label": "不断搅拌，用手在烧杯外壁感受温度（不要用手触碰液体）",
+                "hint": "稀释过程明显放热。",
+                "phenomenon": "烧杯外壁发烫，溶液仍澄清。",
+                "scene": {"liquid": "clear", "heat": True},
+            },
+            {
+                "id": "skin",
+                "need": "choice",
+                "title": "万一沾到皮肤",
+                "hint": "浓硫酸有强腐蚀性和脱水性。",
+                "choices": [
+                    {"id": "wash", "label": "立即用大量水冲洗，再涂 3%~5% 的碳酸氢钠溶液", "correct": True,
+                     "ok": "先冲水稀释并降温，再用弱碱中和残留酸。不要先擦或用布吸。"},
+                    {"id": "wipe", "label": "用布把酸擦掉，再涂牙膏", "correct": False,
+                     "hazard": "擦会扩大灼伤面。必须先大量水冲洗。"},
+                ],
+            },
+        ],
+        "complete": {
+            "title": "实验完成",
+            "summary": "稀释浓硫酸：酸入水，沿壁慢注，玻璃棒搅拌。切不可把水倒入浓硫酸。",
+        },
+    }
+
+
 REGISTRY = {
     "prep_oxygen_kmno4": build_prep_oxygen_kmno4,
     "prep_hydrogen": build_prep_hydrogen,
@@ -1134,7 +2003,18 @@ REGISTRY = {
     "evaporation": build_evaporation,
     "nh4hco3_decomp": build_nh4hco3_decomp,
     "iron_in_oxygen": build_iron_in_oxygen,
+    "charcoal_in_oxygen": build_charcoal_in_oxygen,
+    "sulfur_in_oxygen": build_sulfur_in_oxygen,
+    "air_oxygen": build_air_oxygen,
+    "charcoal_reduce_cuo": build_charcoal_reduce_cuo,
+    "mass_conservation": build_mass_conservation,
+    "metal_displace": build_metal_displace,
+    "iron_rust": build_iron_rust,
+    "combustion_conditions": build_combustion_conditions,
+    "acid_indicator": build_acid_indicator,
+    "dilute_h2so4": build_dilute_h2so4,
     "solution_prep": build_solution_prep,
+    "co2_candles": build_co2_candles,
 }
 
 TITLES = {k: fn()["title"] for k, fn in REGISTRY.items()}

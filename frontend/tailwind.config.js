@@ -21,7 +21,7 @@ export default {
         danger:  { 500: '#ef4444', 600: '#dc2626' },
       },
       fontFamily: {
-        sans: ['"PingFang SC"', '"Microsoft YaHei"', 'system-ui', 'sans-serif'],
+        sans: ['"Outfit Variable"', '"PingFang SC"', '"Hiragino Sans GB"', '"Noto Sans SC"', '"Microsoft YaHei"', 'system-ui', 'sans-serif'],
       },
     },
   },

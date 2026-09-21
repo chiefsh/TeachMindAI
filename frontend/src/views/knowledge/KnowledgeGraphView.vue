@@ -56,19 +56,19 @@
     </div>
 
     <!-- 图 -->
-    <div class="card !p-0 overflow-hidden h-[55vh] sm:h-[60vh] lg:h-[calc(100vh-260px)]">
+    <div class="card kg-stage !p-0 overflow-hidden">
       <div v-if="!graph.nodes.length && !loading"
         class="h-full flex flex-col items-center justify-center text-slate-400 gap-2">
         <el-icon class="text-4xl"><Share /></el-icon>
         <p>暂无知识点。生成课件或点击「从课本抽取」即可自动构建图谱。</p>
       </div>
-      <div v-else class="relative h-full">
+      <div v-else class="relative w-full h-full">
         <p class="absolute top-2.5 left-3 z-10 text-[11px] text-slate-400 pointer-events-none">
           {{ chartHint }}
         </p>
-        <VChart ref="chartRef" :option="chartOption" :update-options="{ notMerge: true }"
-          autoresize v-loading="loading" style="height:100%"
-          @click="onChartClick" @finished="onChartFinished" @graphRoam="onGraphRoam" />
+        <VChart ref="chartRef" class="kg-chart" :option="chartOption" :update-options="{ notMerge: true }"
+          autoresize v-loading="loading"
+          @click="onChartClick" @finished="onChartFinished" @graphroam="onGraphRoam" />
       </div>
     </div>
 
@@ -231,6 +231,7 @@ const viewMode = ref<'core' | 'all'>('core')
 const focusedId = ref<string | null>(null)
 const pendingHighlight = ref<string | null>(null)
 let extraLabelsOn = false
+let freezeTimer: ReturnType<typeof setTimeout> | null = null
 
 const subjectOptions = computed(() =>
   edu.selectedGradeId ? edu.subjectsOfGrade(edu.selectedGradeId) : edu.filteredSubjects)
@@ -489,6 +490,8 @@ async function load() {
     ])
     graph.value = g
     stats.value = s
+    await nextTick()
+    try { chartInst()?.resize?.() } catch { /* ignore */ }
   } catch (e: any) {
     if (e?.response?.status === 503) ElMessage.warning('知识图谱功能未启用')
   } finally {
@@ -514,7 +517,25 @@ const drawerVisible = ref(false)
 const current = ref<KgNode | null>(null)
 
 function chartInst() {
-  return chartRef.value as any
+  const c = chartRef.value as any
+  if (!c) return null
+  return c.chart?.value ?? c.chart ?? c
+}
+
+function clearFreezeTimer() {
+  if (freezeTimer) {
+    clearTimeout(freezeTimer)
+    freezeTimer = null
+  }
+}
+
+function freezeLayoutIfSettled() {
+  const inst = chartInst()
+  const data = inst?.getOption?.()?.series?.[0]?.data
+  if (!Array.isArray(data) || !data.length) return
+  const ready = data.every((d: any) => Number.isFinite(d?.x) && Number.isFinite(d?.y))
+  if (!ready) return
+  try { inst.setOption({ series: [{ layout: 'none' }] }, { lazyUpdate: true }) } catch { /* ignore */ }
 }
 
 function highlightNode(id: string) {
@@ -528,8 +549,8 @@ function highlightNode(id: string) {
 }
 
 function onChartFinished() {
-  const chart = chartInst()
-  try { chart?.setOption?.({ series: [{ layout: 'none' }] }, { lazyUpdate: true }) } catch { /* ignore */ }
+  clearFreezeTimer()
+  freezeTimer = setTimeout(freezeLayoutIfSettled, 1200)
   if (pendingHighlight.value) {
     highlightNode(pendingHighlight.value)
     pendingHighlight.value = null
@@ -707,6 +728,20 @@ onMounted(() => {
   loadTextbooks()
 })
 onBeforeUnmount(() => {
-  try { chartInst()?.dispose?.() } catch { /* ignore */ }
+  clearFreezeTimer()
 })
 </script>
+
+<style scoped>
+.kg-stage {
+  height: min(62vh, calc(100vh - 260px));
+  min-height: 360px;
+}
+.kg-chart,
+.kg-stage :deep(x-vue-echarts) {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 360px;
+}
+</style>

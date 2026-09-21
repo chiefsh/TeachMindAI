@@ -1,5 +1,6 @@
 <template>
-  <div class="flex h-screen overflow-hidden" style="background: var(--canvas)">
+  <div class="flex h-dvh overflow-hidden" style="background: var(--canvas)">
+    <a href="#main-content" class="skip-link">跳到内容</a>
     <aside
       v-if="isDesktop"
       class="flex-shrink-0 w-60 flex flex-col overflow-hidden"
@@ -40,7 +41,7 @@
     <div class="flex-1 flex flex-col min-w-0 overflow-hidden">
       <header
         class="min-h-[56px] md:h-[60px] flex items-center
-               px-3 sm:px-4 md:px-6 gap-2 sm:gap-3 flex-shrink-0 flex-wrap py-2 md:py-0"
+               px-3 sm:px-4 md:px-6 gap-2 sm:gap-3 flex-shrink-0 flex-wrap py-2 md:py-0 z-10"
         style="background: var(--surface); border-bottom: 1px solid var(--border-subtle)"
       >
         <el-button
@@ -97,7 +98,7 @@
         <ThemeToggle />
       </header>
 
-      <main class="flex-1 overflow-y-auto overflow-x-hidden">
+      <main id="main-content" class="flex-1 overflow-y-auto overflow-x-hidden" tabindex="-1">
         <router-view />
       </main>
     </div>
@@ -235,7 +236,7 @@ async function handleLogout() {
   .ctx-select { width: 90px; }
 }
 .ctx-pill {
-  @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs;
+  @apply inline-flex items-center px-2 py-0.5 rounded-md text-xs;
   background: var(--pill-bg);
   color: var(--ink-secondary);
 }

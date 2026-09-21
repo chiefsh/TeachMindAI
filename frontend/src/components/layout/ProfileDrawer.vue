@@ -2,7 +2,7 @@
   <el-drawer v-model="open" title="个人信息" size="400px" class="profile-drawer">
     <div class="space-y-6">
       <div class="flex items-center gap-3 p-3 rounded-xl" style="background: var(--pill-bg)">
-        <el-avatar :size="48" class="!bg-indigo-500 text-white">
+        <el-avatar :size="48" class="text-white">
           {{ auth.teacher?.real_name?.charAt(0) || '师' }}
         </el-avatar>
         <div>
@@ -60,7 +60,7 @@
       <div>
         <p class="text-sm font-semibold mb-2" style="color: var(--ink)">教学范围</p>
         <div v-for="ts in mySubjects" :key="ts.id" class="text-sm py-1" style="color: var(--ink-secondary)">
-          {{ ts.grade.name }} · {{ ts.subject.name }}
+          {{ ts.grade.name }} / {{ ts.subject.name }}
         </div>
         <el-empty v-if="!mySubjects.length" :image-size="48" description="由管理员在用户管理中绑定" />
       </div>

@@ -4,6 +4,7 @@ import ElementPlus from 'element-plus'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import 'element-plus/dist/index.css'
 import 'katex/dist/katex.min.css'
+import '@fontsource-variable/outfit'
 import './assets/main.css'
 
 // 仅注册实际用到的图标，避免全量 @element-plus/icons-vue 拖慢首屏

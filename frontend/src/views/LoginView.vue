@@ -1,6 +1,5 @@
 <template>
-  <div class="min-h-screen grid lg:grid-cols-2" style="background: var(--canvas)">
-    <!-- 品牌侧：桌面端 -->
+  <div class="min-h-[100dvh] grid lg:grid-cols-2" style="background: var(--canvas)">
     <aside class="relative hidden lg:flex flex-col justify-center overflow-hidden px-14 py-12 login-brand">
       <div class="login-orb login-orb-a" />
       <div class="login-orb login-orb-b" />
@@ -8,28 +7,28 @@
 
       <div class="relative z-10 max-w-md">
         <div class="login-lockup">
-          <img src="@/assets/logo-mark.png" alt="" class="login-mark" />
+          <img src="@/assets/logo-mark.png" alt="知序台" class="login-mark" />
           <div>
             <p class="login-name">知序台</p>
             <p class="login-tagline">让知识与教学变得有序</p>
           </div>
         </div>
         <p class="mt-10 text-[15px] leading-relaxed" style="color: var(--ink-secondary)">
-          备课、出题、阅卷分析与知识图谱，集中在一个安静好用的工作台。
+          备课、出题、阅卷分析与知识图谱，<br />
+          集中在一个安静好用的工作台。
         </p>
-        <ul class="mt-8 space-y-3.5">
+        <ul class="mt-8 space-y-4">
           <li v-for="item in highlights" :key="item.title" class="flex items-start gap-3">
-            <span class="login-dot" />
+            <span class="login-mark-bar" />
             <div>
               <p class="text-sm font-medium" style="color: var(--ink)">{{ item.title }}</p>
-              <p class="text-[13px] mt-0.5" style="color: var(--ink-muted)">{{ item.desc }}</p>
+              <p class="text-[13px] mt-0.5 leading-relaxed" style="color: var(--ink-muted)">{{ item.desc }}</p>
             </div>
           </li>
         </ul>
       </div>
     </aside>
 
-    <!-- 表单侧 -->
     <div class="relative flex items-center justify-center p-5 sm:p-8">
       <div class="absolute top-3 right-3 sm:top-5 sm:right-5">
         <ThemeToggle />
@@ -37,7 +36,7 @@
       <div class="w-full max-w-[400px]">
         <div class="lg:hidden text-center mb-8">
           <div class="login-lockup login-lockup-center">
-            <img src="@/assets/logo-mark.png" alt="" class="login-mark-mobile" />
+            <img src="@/assets/logo-mark.png" alt="知序台" class="login-mark-mobile" />
             <div>
               <p class="login-name">知序台</p>
               <p class="login-tagline">让知识与教学变得有序</p>
@@ -46,36 +45,34 @@
         </div>
 
         <div class="hidden lg:block mb-8">
-          <h2 class="text-2xl font-semibold tracking-tight" style="color: var(--ink)">教师登录</h2>
+          <h1 class="text-2xl font-semibold tracking-tight" style="color: var(--ink); letter-spacing: -0.03em">教师登录</h1>
           <p class="mt-1.5 text-sm" style="color: var(--ink-muted)">使用学校账号进入工作台</p>
         </div>
 
         <div class="card !p-6 sm:!p-8">
           <h2 class="lg:hidden text-lg font-semibold mb-5" style="color: var(--ink)">教师登录</h2>
-          <el-form :model="form" :rules="rules" ref="formRef" @submit.prevent="handleLogin">
-            <el-form-item prop="username">
+          <el-form :model="form" :rules="rules" ref="formRef" label-position="top" hide-required-asterisk @submit.prevent="handleLogin">
+            <el-form-item prop="username" label="用户名">
               <el-input
                 v-model="form.username"
-                placeholder="用户名"
                 size="large"
-                :prefix-icon="User"
+                autocomplete="username"
               />
             </el-form-item>
-            <el-form-item prop="password">
+            <el-form-item prop="password" label="密码">
               <el-input
                 v-model="form.password"
                 type="password"
-                placeholder="密码"
                 size="large"
+                autocomplete="current-password"
                 show-password
-                :prefix-icon="Lock"
                 @keyup.enter="handleLogin"
               />
             </el-form-item>
             <el-button
               type="primary"
               size="large"
-              class="w-full !h-11 !rounded-xl !text-[15px] mt-1"
+              class="w-full !h-11 !rounded-[10px] !text-[15px] mt-1"
               :loading="loading"
               @click="handleLogin"
             >
@@ -125,7 +122,6 @@ import { useAuthStore } from '@/stores/auth'
 import { useEducationStore } from '@/stores/education'
 import { authApi } from '@/api/modules'
 import { ElMessage } from 'element-plus'
-import { User, Lock } from '@element-plus/icons-vue'
 import ThemeToggle from '@/components/layout/ThemeToggle.vue'
 
 const router = useRouter()
@@ -223,21 +219,21 @@ onMounted(async () => {
 .login-name {
   font-size: 26px;
   font-weight: 650;
-  letter-spacing: 0.04em;
+  letter-spacing: -0.03em;
   line-height: 1.15;
   color: var(--ink);
 }
 .login-tagline {
-  margin-top: 14px;
+  margin-top: 6px;
   font-size: 13px;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.02em;
   color: var(--ink-muted);
 }
-.login-dot {
-  width: 6px;
-  height: 6px;
-  margin-top: 7px;
-  border-radius: 9999px;
+.login-mark-bar {
+  width: 2px;
+  height: 14px;
+  margin-top: 4px;
+  border-radius: 99px;
   flex-shrink: 0;
   background: var(--el-color-primary);
   opacity: 0.55;
@@ -271,5 +267,11 @@ onMounted(async () => {
   background-size: 48px 48px;
   mask-image: radial-gradient(ellipse at 30% 40%, black 20%, transparent 70%);
   pointer-events: none;
+}
+:deep(.el-form--label-top .el-form-item__label) {
+  color: var(--ink-secondary);
+  font-weight: 500;
+  margin-bottom: 4px !important;
+  line-height: 1.4;
 }
 </style>

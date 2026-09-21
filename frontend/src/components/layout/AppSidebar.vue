@@ -1,10 +1,10 @@
 <template>
   <div class="h-full flex flex-col" style="background: var(--sidebar-bg); color: var(--sidebar-text)">
-    <div class="h-[60px] flex items-center px-4 gap-2.5 flex-shrink-0">
-      <img src="@/assets/logo-mark.png" alt="" class="w-8 h-8 flex-shrink-0 object-contain" />
+    <div class="h-[60px] flex items-center px-4 gap-2.5 flex-shrink-0" style="border-bottom: 1px solid var(--border-subtle)">
+      <img src="@/assets/logo-mark.png" alt="知序台" class="w-8 h-8 flex-shrink-0 object-contain" />
       <div class="min-w-0">
-        <p class="font-semibold text-[15px] tracking-wide leading-none" style="color: var(--sidebar-text-active)">知序台</p>
-        <p class="text-[10px] truncate mt-1.5 leading-none" style="color: var(--ink-muted)">让知识与教学变得有序</p>
+        <p class="font-semibold text-[15px] tracking-tight leading-none" style="color: var(--sidebar-text-active)">知序台</p>
+        <p class="text-[11px] truncate mt-1.5 leading-none" style="color: var(--ink-muted)">让教学变得有序</p>
       </div>
     </div>
 
@@ -64,7 +64,7 @@
           class="flex items-center gap-2.5 flex-1 min-w-0 text-left"
           @click="$emit('profile')"
         >
-          <el-avatar :size="32" class="!bg-indigo-500 text-white flex-shrink-0 text-sm">
+          <el-avatar :size="32" class="text-white flex-shrink-0 text-sm">
             {{ auth.teacher?.real_name?.charAt(0) || '师' }}
           </el-avatar>
           <div class="flex-1 min-w-0">
@@ -114,8 +114,9 @@ const auth = useAuthStore()
 
 <style scoped>
 .nav-item {
-  @apply flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm mb-0.5 transition-colors duration-150;
+  @apply flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm mb-0.5;
   color: var(--sidebar-text);
+  transition: background 160ms ease, color 160ms ease, box-shadow 160ms ease;
 }
 .nav-item:hover {
   background: var(--hover);
@@ -125,11 +126,15 @@ const auth = useAuthStore()
   background: var(--el-color-primary-light-9);
   color: var(--el-color-primary-dark-2);
   font-weight: 600;
+  box-shadow: inset 3px 0 0 var(--el-color-primary);
 }
 .nav-item .el-icon { @apply text-base; }
 .nav-group-on {
   color: var(--el-color-primary-dark-2);
   font-weight: 600;
+}
+.user-row {
+  transition: background 160ms ease;
 }
 .user-row:hover {
   background: var(--hover);

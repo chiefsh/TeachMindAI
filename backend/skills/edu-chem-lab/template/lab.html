@@ -326,12 +326,14 @@
       });
     }
     function phFromScene() {
+      if (scene.ph_unknown) return "—";
+      if (scene.ph != null && isFinite(Number(scene.ph))) return Number(scene.ph).toFixed(1);
+      if (scene.liquid === "red") return "1.5";
       if (scene.liquid === "pink") return "10.2";
       if (scene.liquid === "pale") return "8.4";
       if (scene.liquid === "blue") return "4.2";
       if (scene.acid_bubbles || scene.acid) return "1.5";
       if (scene.liquid === "clear" && (selectedR.hcl || selectedR.h2so4)) return "1.8";
-      if (scene.done) return "7.0";
       return "7.0";
     }
     function updateMeters() {
@@ -564,8 +566,15 @@
       finished = true;
       lockedSelect = true;
       playing = false;
+      heatC = 25;
+      $("heat").value = "25";
       $("btn-play").textContent = "▶";
-      applyScene({});
+      applyScene({
+        flame: false, heat: false, bubbles: false, acid_bubbles: false,
+        sparks: false, jet_flame: false, pop: false, dripping: false,
+        sulfur_flame: false, charcoal_glow: false, white_smoke: false,
+        splint_on: false, pouring: false
+      });
       renderGuide();
       report(DATA.title, "完成实验", true);
       toast("实验完成", "ok");
@@ -801,6 +810,6 @@
     setMode("3d");
   })();
   </script>
-  <!-- edu-lab:12 -->
+  <!-- edu-lab:14 -->
 </body>
 </html>

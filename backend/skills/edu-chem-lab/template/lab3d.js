@@ -4,6 +4,7 @@
   if (!THREE) { console.error("THREE missing"); return; }
 
   var renderer, scene, camera, canvas, raycaster, pointer;
+  var currentExpId = "";
   var root, slots = {}, pieces = {}, fx = {};
   var yaw = 0.42, pitch = 0.38, dist = 4.4;
   var lookY = 1.18, orbiting = false, lastX = 0, lastY = 0;
@@ -203,6 +204,9 @@
     var powder = sph(0.042, mat(0x1e293b, { roughness: 0.8 }), 12, 10);
     powder.scale.set(1, 0.45, 1);
     fx.powder = add(g, powder, 0, 0.08, 0);
+    var copper = sph(0.038, mat(0xb45309, { roughness: 0.55, metalness: 0.45 }), 12, 10);
+    copper.scale.set(1.15, 0.34, 0.9);
+    fx.copper = add(g, copper, 0.012, 0.087, 0.005);
     var zinc = box(0.05, 0.028, 0.036, mat(0xa8b0bb, { metalness: 0.55, roughness: 0.35 }));
     fx.zinc = add(g, zinc, 0.01, 0.09, 0);
     var marble = sph(0.024, mat(0xf8fafc, { roughness: 0.45 }));
@@ -215,7 +219,7 @@
       b.visible = false;
       fx.tubeBubbles.push(add(g, b, (Math.random() - 0.5) * 0.06, 0.12 + Math.random() * 0.12, (Math.random() - 0.5) * 0.06));
     }
-    powder.visible = zinc.visible = marble.visible = acid.visible = false;
+    powder.visible = copper.visible = zinc.visible = marble.visible = acid.visible = false;
     fx.cotton = add(g, sph(0.032, mat(0xf8fafc, { roughness: 0.85 })), 0, 0.5, 0);
     fx.cotton.visible = false;
     if (tilt) g.rotation.z = tilt;
@@ -313,6 +317,11 @@
   function buildSplint(g) {
     add(g, box(0.022, 0.34, 0.022, mat(0xb45309, { roughness: 0.7 })), 0, 0.2, 0);
     fx.splintGlow = add(g, sph(0.038, mat(0xfbbf24, { emissive: 0xf59e0b, emissiveIntensity: 0.55 })), 0, 0.4, 0);
+    fx.splintFlame = add(g, new THREE.Mesh(
+      new THREE.ConeGeometry(0.035, 0.13, 14),
+      mat(0xfff3a3, { emissive: 0xff8a00, emissiveIntensity: 1.8, transparent: true, opacity: 0.94 })
+    ), 0, 0.48, 0);
+    fx.splintFlame.visible = false;
   }
   function buildBeaker(g) {
     add(g, lathe([[0.16, 0], [0.18, 0.02], [0.19, 0.36], [0.205, 0.38], [0.17, 0.38]], glass(0xd4eefc), 40), 0, 0, 0);
@@ -357,7 +366,92 @@
     fx.filterPaper.visible = fx.residue.visible = false;
   }
   function buildPaper(g) {
-    add(g, box(0.16, 0.004, 0.22, mat(0xfffbeb, { roughness: 0.9 })), 0, 0.02, 0);
+    fx.testPaper = add(g, box(0.16, 0.004, 0.22, mat(0xfca5a5, { roughness: 0.9 })), 0, 0.02, 0);
+  }
+  function buildSpoon(g) {
+    var steel = mat(0xcbd5e1, { metalness: 0.72, roughness: 0.24 });
+    var handle = cyl(0.009, 0.009, 0.36, steel, 10);
+    handle.rotation.z = Math.PI / 2;
+    add(g, handle, 0.16, 0.12, 0);
+    var bowl = sph(0.052, steel, 20, 12);
+    bowl.scale.set(1.25, 0.3, 0.8);
+    add(g, bowl, -0.04, 0.12, 0);
+  }
+  function buildTweezers(g) {
+    var steel = mat(0xb8c0cc, { metalness: 0.78, roughness: 0.22 });
+    [-1, 1].forEach(function (side) {
+      var arm = box(0.42, 0.012, 0.018, steel);
+      arm.rotation.z = side * 0.07;
+      add(g, arm, 0.16, 0.13 + side * 0.018, 0);
+    });
+    add(g, box(0.06, 0.045, 0.026, steel), -0.04, 0.13, 0);
+  }
+  function buildCotton(g) {
+    var cotton = new THREE.Group();
+    for (var i = 0; i < 7; i++) {
+      add(cotton, sph(0.035, mat(0xffffff, { roughness: 0.95 }), 12, 8),
+        (i % 3 - 1) * 0.035, 0.04 + Math.floor(i / 3) * 0.025, (i % 2) * 0.025);
+    }
+    g.add(cotton);
+  }
+  function buildTestTube(g) {
+    add(g, lathe([
+      [0, 0.02], [0.042, 0.02], [0.047, 0.07], [0.047, 0.38], [0.053, 0.4], [0.035, 0.41]
+    ], glass(0xcfefff), 32), 0, 0, 0);
+  }
+  function buildAbsorber(g) {
+    add(g, lathe([[0.11, 0], [0.13, 0.02], [0.13, 0.3], [0.06, 0.36], [0.05, 0.46]],
+      glass(0xdbeafe), 32), 0, 0, 0);
+    add(g, cyl(0.105, 0.11, 0.12, liquidMat(0x93c5fd), 20), 0, 0.09, 0);
+    buildDeliveryPath(g, [[-0.03, 0.46, 0], [-0.03, 0.12, 0], [0.08, 0.12, 0]]);
+  }
+  function buildSpringClamp(g) {
+    var steel = mat(0x94a3b8, { metalness: 0.8, roughness: 0.24 });
+    add(g, box(0.18, 0.025, 0.035, steel), 0, 0.1, 0);
+    var a = box(0.13, 0.018, 0.025, steel); a.rotation.z = 0.28; add(g, a, -0.08, 0.13, 0);
+    var b = box(0.13, 0.018, 0.025, steel); b.rotation.z = -0.28; add(g, b, 0.08, 0.13, 0);
+    add(g, new THREE.Mesh(new THREE.TorusGeometry(0.035, 0.008, 8, 18), steel), 0, 0.1, 0);
+  }
+  function buildConicalFlask(g) {
+    add(g, lathe([[0.12, 0], [0.2, 0.04], [0.14, 0.32], [0.055, 0.48], [0.052, 0.58]],
+      glass(0xdbeafe), 36), 0, 0, 0);
+    fx.massLiquid = add(g, cyl(0.13, 0.17, 0.12, liquidMat(0x2563eb), 24), 0, 0.1, 0);
+    fx.massLiquid.visible = false;
+    var inner = new THREE.Group();
+    add(inner, cyl(0.038, 0.038, 0.25, glass(0xdbeafe), 16), 0, 0.14, 0);
+    fx.innerLiquid = add(inner, cyl(0.031, 0.031, 0.1, liquidMat(0x2563eb), 14), 0, 0.08, 0);
+    inner.rotation.z = -0.48;
+    inner.position.set(0.03, 0.23, 0);
+    g.add(inner);
+    add(g, cyl(0.06, 0.06, 0.055, mat(0x7c2d12, { roughness: 0.8 }), 18), 0, 0.58, 0);
+    fx.massIron = add(g, box(0.025, 0.19, 0.025, mat(0x94a3b8, { metalness: 0.68 })), -0.1, 0.16, 0);
+    fx.massCopper = add(g, box(0.034, 0.11, 0.032, mat(0xb45309, { metalness: 0.48 })), -0.1, 0.13, 0.002);
+    fx.massCopper.visible = false;
+  }
+  function buildIndicatorSet(g) {
+    function cup(x, z, label) {
+      var cupGroup = new THREE.Group();
+      add(cupGroup, lathe([[0.08, 0], [0.09, 0.02], [0.09, 0.25], [0.1, 0.27], [0.08, 0.27]],
+        glass(0xdbeafe), 24), 0, 0, 0);
+      var liq = add(cupGroup, cyl(0.077, 0.075, 0.1, liquidMat(0x7dd3fc), 18), 0, 0.08, 0);
+      var lab = labelSprite(label, "#e2e8f0"); lab.scale.set(0.38, 0.1, 1); lab.position.set(0, 0.34, 0);
+      cupGroup.add(lab); cupGroup.position.set(x, 0, z); g.add(cupGroup);
+      return liq;
+    }
+    fx.indAcidLitmus = cup(-0.42, 0, "盐酸+石蕊");
+    fx.indBaseLitmus = cup(-0.14, 0, "碱+石蕊");
+    fx.indAcidPhen = cup(0.18, 0, "盐酸+酚酞");
+    fx.indBasePhen = cup(0.46, 0, "碱+酚酞");
+  }
+  function buildBurnSpoon(g, substance) {
+    buildSpoon(g);
+    var sampleColor = substance === "sulfur" ? 0xeab308 : (substance === "phosphorus" ? 0xdc2626 : 0x1e293b);
+    fx.burnSample = add(g, sph(0.035, mat(sampleColor, { roughness: 0.8 })),
+      -0.04, 0.145, 0);
+    fx.burnFlame = add(g, new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.18, 18),
+      mat(0x60a5fa, { emissive: 0x3b82f6, emissiveIntensity: 2, transparent: true, opacity: 0.92 })),
+      -0.04, 0.25, 0);
+    fx.burnFlame.visible = false;
   }
   function buildDish(g) {
     add(g, lathe([[0.08, 0], [0.2, 0.02], [0.18, 0.06], [0.12, 0.07]], mat(0xcbd5e1, { roughness: 0.35, metalness: 0.15 }), 28), 0, 0, 0);
@@ -564,6 +658,16 @@
       s.visible = false;
       fx.sparks.push(add(root, s, 1.1, 1.4, 0));
     }
+    fx.smoke = [];
+    for (i = 0; i < 10; i++) {
+      var sm = sph(0.035 + (i % 3) * 0.008,
+        mat(0xffffff, { transparent: true, opacity: 0.34, roughness: 1 }), 10, 8);
+      sm.visible = false;
+      fx.smoke.push(add(root, sm, 0.05 + (i % 2) * 0.03, 1.48 + (i % 5) * 0.06, 0.06));
+    }
+    fx.charcoalLight = new THREE.PointLight(0xffffff, 0, 2.8);
+    fx.charcoalLight.position.set(0.05, 1.55, 0.06);
+    root.add(fx.charcoalLight);
     fx.jet = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.12, 10), mat(0x38bdf8, { emissive: 0x38bdf8, emissiveIntensity: 0.6 }));
     fx.jet.position.set(-0.55, 1.45, 0.1);
     fx.jet.visible = false;
@@ -614,9 +718,9 @@
         /* 固体加热：灯在闭口端下，试管口略向下，导管通入水槽倒扣集气瓶。 */
         var sx = -1.65, sz = 0;
         var clampX = sx + 0.46, clampY = y + 0.42;
-        var tilt = -1.55;
+        var tilt = -1.66;
         var tx = clampX - 0.28, ty = clampY - 0.006, tz = sz;
-        var mouth = [tx + 0.53, ty + 0.011, tz];
+        var mouth = [tx + 0.53, ty - 0.047, tz];
         var troughX = 0.22, troughZ = 0.08;
         fx.collectAt = { x: troughX, y: 1.18, z: troughZ };
         S("stand", "铁架台", sx, sz);
@@ -625,6 +729,8 @@
         S("trough", "水槽", troughX, 0.22, 0x0ea5e9);
         S("bottle", "集气瓶", troughX, -0.2, 0x38bdf8);
         S("splint", "木条", 1.45, -0.28, 0xf59e0b);
+        S("spoon", "药匙", -1.18, -0.42, 0xcbd5e1);
+        S("cotton", "棉花", -0.86, -0.42, 0xf8fafc);
         S("reagent", "药品", sx, -0.38, 0xa78bfa);
         pieceGroup("stand", buildStand, sx, y, sz);
         pieceGroup("tube", tiltTube(tilt), tx, ty, tz);
@@ -638,13 +744,15 @@
         pieceGroup("trough", buildTrough, troughX, y, troughZ);
         pieceGroup("bottle", invertBottle, troughX, y + 0.12, troughZ);
         pieceGroup("splint", buildSplint, 1.45, y, -0.28);
+        pieceGroup("spoon", buildSpoon, -1.18, y, -0.42);
+        pieceGroup("cotton", buildCotton, -0.86, y, -0.42);
       },
       nh4hco3_decomp: function () {
         var sx = -1.45, sz = 0;
         var clampX = sx + 0.46, clampY = y + 0.42;
-        var tilt = -1.55;
+        var tilt = -1.66;
         var tx = clampX - 0.28, ty = clampY - 0.006, tz = sz;
-        var mouth = [tx + 0.53, ty + 0.011, tz];
+        var mouth = [tx + 0.53, ty - 0.047, tz];
         S("stand", "铁架台", sx, sz);
         S("tube", "试管", tx, tz, 0x38bdf8);
         S("lamp", "酒精灯", tx + 0.02, 0.08, 0xf59e0b);
@@ -656,6 +764,12 @@
         pieceGroup("lamp", buildLamp, tx + 0.02, y, 0.08);
         pieceGroup("paper", buildPaper, mouth[0] + 0.08, y + 0.08, -0.12);
         pieceGroup("lime_beaker", buildLime, mouth[0] + 0.38, y, 0.08);
+        placeHose("delivery", [
+          mouth,
+          [mouth[0] + 0.2, mouth[1] - 0.02, 0.03],
+          [mouth[0] + 0.38, y + 0.24, 0.08],
+          [mouth[0] + 0.38, y + 0.08, 0.08]
+        ]);
       },
       prep_hydrogen: function () {
         /* 固液不加热：试管直立夹在铁架台，导管通入水槽倒扣集气瓶。 */
@@ -669,6 +783,7 @@
         S("trough", "水槽", troughX, 0.22, 0x0ea5e9);
         S("bottle", "集气瓶", troughX, -0.2, 0x38bdf8);
         S("splint", "木条", 1.4, -0.28, 0xf59e0b);
+        S("test_tube", "验纯试管", 1.08, 0.12, 0x38bdf8);
         S("reagent", "药品", sx, -0.38, 0xa78bfa);
         pieceGroup("stand", buildStand, sx, y, sz);
         pieceGroup("tube", tiltTube(0), tubeX, y, sz);
@@ -681,6 +796,7 @@
         pieceGroup("trough", buildTrough, troughX, y, troughZ);
         pieceGroup("bottle", invertBottle, troughX, y + 0.12, troughZ);
         pieceGroup("splint", buildSplint, 1.4, y, -0.28);
+        pieceGroup("test_tube", buildTestTube, 1.08, y, 0.12);
       },
       prep_co2: function () {
         /* 向上排空气：试管直立，导管伸入正放集气瓶底部，瓶口盖玻璃片，石灰水烧杯在右侧。 */
@@ -772,12 +888,14 @@
         S("stand", "铁架台", sx, sz);
         S("funnel", "漏斗", fx_, -0.2, 0x38bdf8);
         S("paper", "滤纸", 0.95, -0.22, 0xcbd5e1);
+        S("source_beaker", "浊液烧杯", -1.05, -0.12, 0xa8a29e);
         S("beaker", "烧杯", fx_, 0.22, 0x94a3b8);
         S("rod", "玻璃棒", fx_ + 0.12, -0.12, 0x94a3b8);
         S("reagent", "浊液", 0.95, 0.12, 0xa78bfa);
         pieceGroup("stand", buildStand, sx, y, sz);
         pieceGroup("funnel", buildFunnel, fx_, y, sz);
         pieceGroup("paper", buildPaper, 0.95, y, -0.22);
+        pieceGroup("source_beaker", buildBeaker, -1.05, y, -0.12);
         pieceGroup("beaker", function (g) { buildBeaker(g); fx.filtrate = fx.liquid; }, fx_, y, sz);
         pieceGroup("rod", buildRod, fx_ - 0.08, y + 0.28, -0.06);
       },
@@ -800,15 +918,17 @@
         pieceGroup("rod", buildRod, 0.38, y + 0.32, -0.06);
       },
       metal_oxide_acid: function () {
-        var tilt = -0.55;
+        var tilt = -0.92;
         var tx = 0.02, ty = y + 0.12, tz = 0.06;
         S("tube", "试管", tx, tz, 0x38bdf8);
-        S("lamp", "酒精灯", tx - 0.35, 0.22, 0xf59e0b);
+        S("lamp", "酒精灯", tx, 0.22, 0xf59e0b);
         S("rod", "试管夹", tx + 0.35, -0.18, 0x94a3b8);
+        S("spoon", "药匙或纸槽", 0.82, -0.2, 0x94a3b8);
         S("reagent", "药品", -0.95, 0.08, 0xa78bfa);
         pieceGroup("lamp", buildLamp, tx, y, tz);
         pieceGroup("tube", tiltTube(tilt), tx, ty, tz);
         pieceGroup("rod", buildClamp, tx + 0.15, ty + 0.24, tz);
+        pieceGroup("spoon", buildSpoon, 0.82, y, -0.2);
       },
       co2_candles: function () {
         S("bottle", "二氧化碳", -0.95, 0.08, 0x64748b);
@@ -821,22 +941,134 @@
         S("wire", "燃烧匙", 0.02, -0.22, 0xfb7185);
         S("bottle", "集气瓶", 0.02, 0.08, 0x38bdf8);
         S("beaker", "烧杯", 0.85, 0.1, 0x0ea5e9);
+        S("delivery", "密闭导管", 0.43, 0.08, 0x94a3b8);
+        S("clamp", "弹簧夹", 0.48, -0.16, 0xcbd5e1);
         S("reagent", "红磷", -1.05, -0.35, 0xa78bfa);
         pieceGroup("lamp", buildLamp, -1.05, y, 0.1);
-        pieceGroup("bottle", buildBottle, 0.02, y, 0.06);
-        pieceGroup("wire", buildWire, 0.02, y + 0.12, 0.06);
+        pieceGroup("bottle", function (g) {
+          buildBottle(g);
+          for (var i = 1; i < 5; i++) {
+            var mark = new THREE.Mesh(new THREE.TorusGeometry(0.132, 0.003, 6, 32),
+              mat(0x0f766e, { emissive: 0x0f766e, emissiveIntensity: 0.3 }));
+            mark.rotation.x = Math.PI / 2;
+            add(g, mark, 0, 0.08 + i * 0.065, 0);
+          }
+        }, 0.02, y, 0.06);
+        pieceGroup("wire", function (g) { buildBurnSpoon(g, "phosphorus"); }, 0.02, y + 0.12, 0.06);
         pieceGroup("beaker", buildBeaker, 0.85, y, 0.08);
+        placeHose("delivery", [
+          [0.02, y + 0.47, 0.06],
+          [0.42, y + 0.48, 0.06],
+          [0.85, y + 0.28, 0.08],
+          [0.85, y + 0.1, 0.08]
+        ]);
+        pieceGroup("clamp", buildSpringClamp, 0.48, y + 0.32, 0.06);
         fx.collectAt = { x: 0.02, y: 1.4, z: 0.06 };
       },
       combustion_conditions: function () {
         S("beaker", "烧杯", 0.05, 0.08, 0x38bdf8);
         S("cover", "薄铜片", 0.05, -0.18, 0xb45309);
+        S("delivery", "通氧导管", -0.62, 0.08, 0x94a3b8);
+        S("tweezers", "镊子", 0.82, -0.2, 0x94a3b8);
+        S("reagent", "磷和氧气", -1.0, -0.24, 0xa78bfa);
         pieceGroup("beaker", buildConditionBeaker, 0.05, y, 0.08);
         pieceGroup("cover", buildCover, 0.72, y, -0.18);
+        pieceGroup("tweezers", buildTweezers, 0.82, y, -0.2);
+        placeHose("delivery", [
+          [-0.72, y + 0.42, 0.08],
+          [-0.42, y + 0.42, 0.08],
+          [0.05, y + 0.2, 0.08],
+          [0.05, y + 0.1, 0.08]
+        ]);
+      },
+      charcoal_in_oxygen: function () {
+        S("lamp", "酒精灯", -1.05, 0.08, 0xf59e0b);
+        S("wire", "坩埚钳", 0.02, -0.2, 0x94a3b8);
+        S("bottle", "氧气瓶", 0.02, 0.08, 0x38bdf8);
+        S("lime_beaker", "石灰水", 0.86, 0.08, 0xe2e8f0);
+        S("reagent", "木炭和氧气", -1.05, -0.34, 0xa78bfa);
+        pieceGroup("lamp", buildLamp, -1.05, y, 0.08);
+        pieceGroup("bottle", buildBottle, 0.02, y, 0.06);
+        pieceGroup("wire", function (g) { buildBurnSpoon(g, "charcoal"); }, 0.02, y + 0.18, 0.06);
+        pieceGroup("lime_beaker", buildLime, 0.86, y, 0.08);
+        fx.collectAt = { x: 0.02, y: 1.45, z: 0.06 };
+      },
+      sulfur_in_oxygen: function () {
+        S("lamp", "酒精灯", -1.18, 0.08, 0xf59e0b);
+        S("wire", "燃烧匙", -0.12, -0.18, 0x94a3b8);
+        S("bottle", "氧气瓶", -0.12, 0.08, 0x38bdf8);
+        S("goggles", "护目镜", 0.72, -0.2, 0x2dd4bf);
+        S("absorber", "尾气吸收瓶", 0.95, 0.1, 0x60a5fa);
+        S("reagent", "硫和氧气", -1.18, -0.34, 0xa78bfa);
+        pieceGroup("lamp", buildLamp, -1.18, y, 0.08);
+        pieceGroup("bottle", buildBottle, -0.12, y, 0.06);
+        pieceGroup("wire", function (g) { buildBurnSpoon(g, "sulfur"); }, -0.12, y + 0.18, 0.06);
+        pieceGroup("goggles", buildGoggles, 0.72, y, -0.2);
+        pieceGroup("absorber", buildAbsorber, 0.95, y, 0.1);
+      },
+      charcoal_reduce_cuo: function () {
+        var sx = -1.42, tx = -1.22, ty = y + 0.42, tilt = -1.66;
+        var mouth = [tx + 0.53, ty - 0.047, 0.02];
+        S("stand", "铁架台", sx, 0.02);
+        S("tube", "反应试管", tx, 0.02, 0x38bdf8);
+        S("lamp", "酒精灯", tx - 0.05, 0.14, 0xf59e0b);
+        S("delivery", "导管", -0.28, 0.02, 0x94a3b8);
+        S("lime_beaker", "石灰水", 0.45, 0.08, 0xe2e8f0);
+        S("reagent", "混合粉末", sx, -0.38, 0xa78bfa);
+        pieceGroup("stand", buildStand, sx, y, 0.02);
+        pieceGroup("tube", tiltTube(tilt), tx, ty, 0.02);
+        pieceGroup("lamp", buildLamp, tx - 0.05, y, 0.14);
+        pieceGroup("lime_beaker", buildLime, 0.45, y, 0.08);
+        placeHose("delivery", [
+          mouth, [-0.45, mouth[1], 0.02], [0.45, y + 0.25, 0.08], [0.45, y + 0.08, 0.08]
+        ]);
+      },
+      mass_conservation: function () {
+        S("balance", "天平", -0.72, 0.08, 0xf59e0b);
+        S("beaker", "密闭锥形瓶", 0.12, 0.08, 0x38bdf8);
+        S("reagent", "铁和硫酸铜", 1.05, -0.24, 0xa78bfa);
+        pieceGroup("balance", buildBalance, -0.72, y, 0.08);
+        pieceGroup("beaker", buildConicalFlask, 0.12, y + 0.1, 0.08);
+      },
+      metal_displace: function () {
+        S("goggles", "护目镜", -1.05, -0.2, 0x2dd4bf);
+        S("beaker", "硫酸铜烧杯", 0.02, 0.08, 0x38bdf8);
+        S("rod", "打磨铁钉", 0.15, 0.06, 0x94a3b8);
+        S("reagent", "硫酸铜", 0.92, -0.24, 0xa78bfa);
+        pieceGroup("goggles", buildGoggles, -1.05, y, -0.2);
+        pieceGroup("beaker", buildBeaker, 0.02, y, 0.08);
+        pieceGroup("rod", function (g) {
+          fx.displaceIron = add(g, box(0.025, 0.36, 0.025, mat(0x94a3b8, { metalness: 0.68 })), 0, 0.24, 0);
+          fx.displaceCopper = add(g, box(0.033, 0.2, 0.032, mat(0xb45309, { metalness: 0.48 })), 0, 0.17, 0);
+          fx.displaceCopper.visible = false;
+        }, 0.08, y + 0.08, 0.08);
+      },
+      acid_indicator: function () {
+        S("goggles", "护目镜", -1.16, -0.2, 0x2dd4bf);
+        S("beaker", "两组容器", 0.05, 0.08, 0x38bdf8);
+        S("dropper", "专用滴管", 0.05, -0.24, 0xf87171);
+        S("reagent", "酸碱和指示剂", 1.02, -0.24, 0xa78bfa);
+        pieceGroup("goggles", buildGoggles, -1.16, y, -0.2);
+        pieceGroup("beaker", buildIndicatorSet, 0.05, y, 0.08);
+        pieceGroup("dropper", buildDropper, 0.05, y + 0.42, 0.08);
+      },
+      dilute_h2so4: function () {
+        S("goggles", "护目镜", -1.18, -0.2, 0x2dd4bf);
+        S("beaker", "盛水烧杯", 0.02, 0.08, 0x38bdf8);
+        S("rod", "玻璃棒", 0.18, 0.08, 0x94a3b8);
+        S("reagent", "浓硫酸和水", 0.94, -0.24, 0xa78bfa);
+        pieceGroup("goggles", buildGoggles, -1.18, y, -0.2);
+        pieceGroup("beaker", buildBeaker, 0.02, y, 0.08);
+        pieceGroup("rod", buildRod, 0.17, y + 0.06, 0.08);
       },
       iron_rust: function () {
         S("tube", "对照试管", 0, 0.06, 0x38bdf8);
+        S("lamp", "酒精灯", -0.9, 0.08, 0xf59e0b);
+        S("cotton", "棉花", 0.78, -0.2, 0xcbd5e1);
+        S("reagent", "铁钉、水等", 1.05, -0.24, 0xa78bfa);
         pieceGroup("tube", buildRustTubes, 0, y, 0.06);
+        pieceGroup("lamp", buildLamp, -0.9, y, 0.08);
+        pieceGroup("cotton", buildCotton, 0.78, y, -0.2);
       }
     };
     L.oxygen = L.prep_oxygen_kmno4;
@@ -916,6 +1148,16 @@
       s.position.y = cy0 + 0.18 + Math.cos(now * 0.03 + i) * 0.1;
       s.position.z = cz;
     });
+    (fx.smoke || []).forEach(function (s, i) {
+      if (!s.visible) return;
+      s.position.y += 0.0025 + (i % 3) * 0.0005;
+      s.position.x += Math.sin(now * 0.003 + i) * 0.0007;
+      if (s.position.y > 1.95) s.position.y = 1.46;
+      s.material.opacity = 0.2 + Math.sin(now * 0.006 + i) * 0.09;
+    });
+    if (fx.burnFlame && fx.burnFlame.visible) {
+      fx.burnFlame.scale.y = 0.9 + Math.sin(now * 0.028) * 0.16;
+    }
     if (pour.on) tickPour(0.016);
     if (mix.on) tickMix(0.016);
     for (var i = pops.length - 1; i >= 0; i--) {
@@ -992,6 +1234,7 @@
 
   function init(el, sceneKey, expId) {
     canvas = el;
+    currentExpId = expId || sceneKey || "";
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0x8fb7d4);
     scene.fog = new THREE.Fog(0x8fb7d4, 9, 18);
@@ -1065,7 +1308,12 @@
   }
   function applyEffects(st) {
     st = st || {};
-    if (fx.powder) fx.powder.visible = (!!st.powder || !!st.oxide) && st.liquid !== "blue";
+    if (fx.powder) {
+      fx.powder.visible = (!!st.powder || !!st.oxide) && st.liquid !== "blue";
+      var powderColors = { purple: 0x3b0764, white: 0xf8fafc, black: 0x111827 };
+      fx.powder.material.color.setHex(powderColors[st.powder_color] || 0x1e293b);
+    }
+    if (fx.copper) fx.copper.visible = !!st.copper;
     if (fx.zinc) fx.zinc.visible = !!st.zinc;
     if (fx.marble) fx.marble.visible = !!st.marble;
     if (fx.cotton) fx.cotton.visible = !!st.cotton;
@@ -1077,6 +1325,29 @@
     if (fx.flame) fx.flame.visible = lit;
     if (fx.flameInner) fx.flameInner.visible = lit;
     if (fx.flameLight) fx.flameLight.intensity = lit ? 1.6 : 0;
+    if (fx.splintFlame) fx.splintFlame.visible = !!st.splint_on;
+    if (fx.splintGlow) {
+      fx.splintGlow.visible = true;
+      fx.splintGlow.material.emissiveIntensity = st.splint_on ? 2.4 : 0.55;
+    }
+    if (fx.burnFlame) {
+      var sulfur = st.sulfur_flame;
+      fx.burnFlame.visible = !!sulfur || !!st.charcoal_glow;
+      if (st.charcoal_glow) {
+        fx.burnFlame.material.color.setHex(0xffffff);
+        fx.burnFlame.material.emissive.setHex(0xffffff);
+        fx.burnFlame.material.emissiveIntensity = 3;
+        fx.burnFlame.scale.set(1.35, 1.3, 1.35);
+      } else if (sulfur) {
+        var pale = sulfur === "pale_blue";
+        fx.burnFlame.material.color.setHex(pale ? 0x93c5fd : 0x6d28d9);
+        fx.burnFlame.material.emissive.setHex(pale ? 0x60a5fa : 0x4338ca);
+        fx.burnFlame.material.emissiveIntensity = pale ? 1.7 : 2.8;
+        fx.burnFlame.scale.set(pale ? 0.8 : 1.15, pale ? 0.85 : 1.25, pale ? 0.8 : 1.15);
+      }
+    }
+    if (fx.charcoalLight) fx.charcoalLight.intensity = st.charcoal_glow ? 2.8 : 0;
+    (fx.smoke || []).forEach(function (s) { s.visible = !!st.white_smoke; });
     (fx.bubbles || []).forEach(function (b) { b.visible = !!st.bubbles; });
     (fx.tubeBubbles || []).forEach(function (b) { b.visible = !!st.acid_bubbles || !!st.oxide_bubbles || !!st.bubbles; });
     if (fx.gas) fx.gas.visible = (!!st.collected && !st.air_collect) || !!st.co2_fill;
@@ -1116,6 +1387,35 @@
     }
     if (fx.drip) fx.drip.visible = !!st.dripping;
     if (fx.metal) fx.metal.visible = !!st.metal;
+    if (fx.testPaper) fx.testPaper.material.color.setHex(st.wet_paper && st.lime_milky ? 0x2563eb : 0xf87171);
+    if (currentExpId === "metal_displace" && fx.displaceCopper) {
+      fx.displaceCopper.visible = !!st.metal;
+      if (fx.liquid && st.metal) fx.liquid.material.color.setHex(0x60a5fa);
+    }
+    if (currentExpId === "mass_conservation" && fx.massLiquid) {
+      var reacted = !!st.mass_reacted;
+      fx.massLiquid.material.color.setHex(reacted ? 0x86b7a7 : 0x2563eb);
+      fx.massLiquid.visible = reacted;
+      if (fx.innerLiquid) fx.innerLiquid.visible = !reacted;
+      if (fx.massIron) fx.massIron.visible = !reacted;
+      if (fx.massCopper) fx.massCopper.visible = reacted;
+    }
+    if (currentExpId === "acid_indicator" && fx.indAcidLitmus) {
+      fx.indAcidLitmus.material.color.setHex(0x7c3aed);
+      fx.indBaseLitmus.material.color.setHex(0x7c3aed);
+      fx.indAcidPhen.material.color.setHex(0x7dd3fc);
+      fx.indBasePhen.material.color.setHex(0x7dd3fc);
+      if (st.liquid === "red") fx.indAcidLitmus.material.color.setHex(0xdc2626);
+      if (st.liquid === "blue") {
+        fx.indAcidLitmus.material.color.setHex(0xdc2626);
+        fx.indBaseLitmus.material.color.setHex(0x2563eb);
+      }
+      if (st.liquid === "pink") {
+        fx.indAcidLitmus.material.color.setHex(0xdc2626);
+        fx.indBaseLitmus.material.color.setHex(0x2563eb);
+        fx.indBasePhen.material.color.setHex(0xec4899);
+      }
+    }
     (fx.beakerBubbles || []).forEach(function (b) { b.visible = !!st.acid_bubbles; });
     if (fx.h2) fx.h2.visible = !!st.gases;
     if (fx.o2) fx.o2.visible = !!st.gases;

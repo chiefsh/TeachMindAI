@@ -71,10 +71,12 @@ def build_prep_oxygen_kmno4() -> dict:
                 {"id": "stand", "name": "铁架台", "icon": "支架"},
                 {"id": "tube", "name": "试管", "icon": "试管"},
                 {"id": "lamp", "name": "酒精灯", "icon": "灯"},
-                {"id": "delivery", "name": "导管", "icon": "管"},
+                {"id": "delivery", "name": "带单孔橡皮塞的导管", "icon": "管"},
                 {"id": "trough", "name": "水槽", "icon": "槽"},
                 {"id": "bottle", "name": "集气瓶", "icon": "瓶"},
                 {"id": "splint", "name": "带火星木条", "icon": "木条"},
+                {"id": "spoon", "name": "药匙", "icon": "匙"},
+                {"id": "cotton", "name": "棉花", "icon": "棉"},
                 {"id": "beaker", "name": "烧杯", "icon": "杯"},
             ],
             "reagents": [
@@ -83,48 +85,48 @@ def build_prep_oxygen_kmno4() -> dict:
                 {"id": "naoh", "name": "氢氧化钠", "color": "#a3e635"},
             ],
         },
-        "required_apparatus": ["stand", "tube", "lamp", "delivery", "trough", "bottle", "splint"],
+        "required_apparatus": ["stand", "tube", "lamp", "delivery", "trough", "bottle", "splint", "spoon", "cotton"],
         "required_reagents": ["kmno4"],
         "steps": [
             {
                 "id": "pick",
                 "need": "select",
                 "title": "选取仪器与药品",
-                "hint": "点选制氧气需要的仪器：铁架台、试管、酒精灯、导管、水槽、集气瓶、带火星木条；药品选高锰酸钾。试管口还要放棉花（下一步会问到）。",
+                "hint": "需要铁架台、试管、酒精灯、带单孔橡皮塞的导管、水槽、集气瓶、带火星木条、药匙和棉花；药品选高锰酸钾。",
             },
             {
-                "id": "assemble",
+                "id": "airtight",
                 "need": "choice",
-                "title": "组装发生装置",
-                "hint": "固体加热制气时，试管口方向关系到冷凝水会不会倒流。",
+                "title": "检查装置气密性",
+                "hint": "装药前先连接装置，把导管末端浸入水中，用手紧握试管；导管口有气泡才说明气密性良好。",
                 "choices": [
-                    {"id": "tilt_down", "label": "试管口略向下倾斜", "correct": True,
-                     "ok": "冷凝水能流向管口，热试管不会因倒流而炸裂。"},
-                    {"id": "tilt_up", "label": "试管口向上倾斜", "correct": False,
-                     "hazard": "冷凝水倒流到灼热试管底部，试管炸裂。"},
-                ],
-            },
-            {
-                "id": "cotton",
-                "need": "choice",
-                "title": "试管口的棉花",
-                "hint": "高锰酸钾是粉末，加热时粉末会进入导管。",
-                "choices": [
-                    {"id": "plug", "label": "试管口放一团棉花，再塞导管", "correct": True,
-                     "ok": "棉花拦住粉末，避免高锰酸钾进入水槽，收集的氧气更纯。",
-                     "scene": {"cotton": True}},
-                    {"id": "none", "label": "不放棉花，让气体出得更畅快", "correct": False,
-                     "hazard": "粉末会随气流进入导管和水槽，堵塞导管，氧气也不纯。"},
+                    {"id": "check", "label": "装药前先检查气密性，确认导管口有气泡", "correct": True,
+                     "ok": "装置不漏气，可以拆开试管继续装药。"},
+                    {"id": "skip", "label": "先装药并加热，没气泡时再检查", "correct": False,
+                     "hazard": "加热后不能再用手握法检查；装置漏气会导致收集失败。"},
                 ],
             },
             {
                 "id": "add",
                 "need": "action",
                 "title": "加入药品",
-                "action_label": "把高锰酸钾装入试管",
-                "hint": "药品平铺在试管底部，方便均匀受热。",
+                "action_label": "用药匙把高锰酸钾送到试管底部",
+                "hint": "试管横放，用药匙或纸槽把药品送到底部，再慢慢竖起，避免粉末沾在管壁。",
                 "phenomenon": "试管底部铺上一层紫黑色固体。",
-                "scene": {"powder": True, "cotton": True},
+                "scene": {"powder": True, "powder_color": "purple"},
+            },
+            {
+                "id": "cotton",
+                "need": "choice",
+                "title": "放棉花并固定试管",
+                "hint": "高锰酸钾是粉末；装药后在试管口放一团疏松棉花，再塞紧带导管的单孔橡皮塞。",
+                "choices": [
+                    {"id": "plug", "label": "管口放疏松棉花，塞紧橡皮塞，试管口略向下固定", "correct": True,
+                     "ok": "棉花用于阻挡高锰酸钾粉末进入导管；管口略向下可防冷凝水倒流。",
+                     "scene": {"cotton": True, "tilt_down": True}},
+                    {"id": "none", "label": "不放棉花，并让试管口向上", "correct": False,
+                     "hazard": "粉末可能进入导管；冷凝水还可能倒流到热的试管底部。"},
+                ],
             },
             {
                 "id": "heat",
@@ -163,7 +165,8 @@ def build_prep_oxygen_kmno4() -> dict:
                 "hint": "导管还插在水里时熄灯，水会倒吸入热试管。",
                 "choices": [
                     {"id": "tube_first", "label": "先把导管移出水面，再熄灭酒精灯", "correct": True,
-                     "ok": "装置内气压下降时导管已离开水面，不会倒吸。"},
+                     "ok": "装置内气压下降时导管已离开水面，不会倒吸。",
+                     "scene": {"flame": False, "heat": False, "bubbles": False}},
                     {"id": "lamp_first", "label": "先熄灭酒精灯，再撤导管", "correct": False,
                      "hazard": "水槽中的水倒吸入热试管，试管炸裂。"},
                 ],
@@ -181,9 +184,9 @@ def build_neutralization() -> dict:
         "id": "neutralization",
         "scene": "neutralization",
         "title": "酸碱中和（酚酞指示剂）",
-        "subtitle": "滴加 · 搅拌 · 观察褪色终点",
+        "subtitle": "滴加 · 搅拌 · 观察酸碱反应",
         "equation": "HCl + NaOH → NaCl + H₂O",
-        "goal": "向氢氧化钠溶液中滴加稀盐酸，用酚酞指示中和终点。",
+        "goal": "向氢氧化钠溶液中逐滴加入稀盐酸，用酚酞观察溶液由碱性逐渐减弱的过程。",
         "badge": "初中化学 · 酸碱盐",
         "inventory": {
             "apparatus": [
@@ -232,7 +235,7 @@ def build_neutralization() -> dict:
                 "id": "indicator",
                 "need": "choice",
                 "title": "滴加指示剂",
-                "hint": "酚酞遇碱变红，遇酸无色，适合指示中和终点。",
+                "hint": "酚酞在碱性溶液中呈红色，在中性或酸性溶液中无色，可用来观察碱性逐渐减弱。",
                 "choices": [
                     {"id": "phth", "label": "滴入几滴酚酞试液", "correct": True,
                      "ok": "溶液变为浅红色，说明烧杯中呈碱性。",
@@ -253,12 +256,12 @@ def build_neutralization() -> dict:
             {
                 "id": "end",
                 "need": "choice",
-                "title": "判断终点",
-                "hint": "酚酞红色刚好褪去，说明酸碱恰好完全反应。",
+                "title": "控制滴加量",
+                "hint": "红色刚好褪去时停止滴加，说明溶液已离开酚酞的碱性变色范围；本实验不能据此严格断定恰好等物质的量反应。",
                 "choices": [
                     {"id": "colorless", "label": "溶液由红刚好变为无色，停止滴加", "correct": True,
-                     "ok": "到达中和终点，生成氯化钠和水。",
-                     "scene": {"liquid": "clear", "done": True}},
+                     "ok": "及时停止滴加，观察到酸碱反应使溶液碱性降低。",
+                     "scene": {"liquid": "clear", "done": True, "ph_unknown": True}},
                     {"id": "keep", "label": "继续大量加入盐酸，让反应更彻底", "correct": False,
                      "hazard": "盐酸过量后溶液呈酸性，已经不是恰好中和。"},
                     {"id": "taste", "label": "用玻璃棒蘸取溶液尝尝是否还有碱性", "correct": False,
@@ -280,7 +283,7 @@ def build_neutralization() -> dict:
         ],
         "complete": {
             "title": "实验完成",
-            "summary": "你完成了酸碱中和：酚酞变红→滴加盐酸褪色，并掌握了护目与冲洗的安全操作。",
+            "summary": "你观察了酸碱中和：酚酞在碱中变红，逐滴加入盐酸后褪色；褪色表示离开酚酞变色范围，不等同于精密滴定终点。",
         },
     }
 
@@ -298,9 +301,10 @@ def build_prep_hydrogen() -> dict:
         "inventory": {
             "apparatus": [
                 {"id": "tube", "name": "试管", "icon": "试管"},
-                {"id": "delivery", "name": "导管", "icon": "管"},
+                {"id": "delivery", "name": "带单孔橡皮塞的导管", "icon": "管"},
                 {"id": "trough", "name": "水槽", "icon": "槽"},
                 {"id": "bottle", "name": "集气瓶", "icon": "瓶"},
+                {"id": "test_tube", "name": "验纯用小试管", "icon": "试管"},
                 {"id": "splint", "name": "燃着的木条", "icon": "木条"},
                 {"id": "lamp", "name": "酒精灯", "icon": "灯"},
                 {"id": "stand", "name": "铁架台", "icon": "支架"},
@@ -311,14 +315,14 @@ def build_prep_hydrogen() -> dict:
                 {"id": "kmno4", "name": "高锰酸钾", "color": "#6b21a8"},
             ],
         },
-        "required_apparatus": ["stand", "tube", "delivery", "trough", "bottle", "splint"],
+        "required_apparatus": ["stand", "tube", "delivery", "trough", "bottle", "test_tube", "splint"],
         "required_reagents": ["zn", "hcl"],
         "steps": [
             {
                 "id": "pick",
                 "need": "select",
                 "title": "选取仪器与药品",
-                "hint": "固液不加热制氢气：铁架台、试管、导管、水槽、集气瓶、燃着的木条；药品为锌粒和稀盐酸。不要选酒精灯。",
+                "hint": "固液不加热制氢气：铁架台、试管、带单孔塞的导管、水槽、集气瓶、验纯用小试管和火源；药品为锌粒和稀盐酸。不要选酒精灯。",
             },
             {
                 "id": "add_zn",
@@ -334,7 +338,7 @@ def build_prep_hydrogen() -> dict:
                 "need": "action",
                 "title": "加入稀盐酸",
                 "action_label": "沿管壁倒入稀盐酸",
-                "hint": "反应立即开始，不要用拇指堵住管口。",
+                "hint": "塞紧带导管的橡皮塞，反应开始后先让气体逸出一段时间，以排尽装置内空气；不要堵住发生装置。",
                 "phenomenon": "锌粒表面冒出气泡，有无色气体放出。",
                 "scene": {"acid": True, "bubbles": True},
             },
@@ -357,10 +361,10 @@ def build_prep_hydrogen() -> dict:
                 "title": "点燃前验纯",
                 "hint": "不纯氢气点燃会爆炸，必须先验纯。",
                 "choices": [
-                    {"id": "test", "label": "用拇指堵住管口，移近火焰听是否有尖锐爆鸣", "correct": True,
-                     "ok": "声音很小说明已较纯，可以在导管口点燃。安静的「噗」声为纯氢。",
+                    {"id": "test", "label": "用小试管管口向下收集一管气体，移离装置后靠近火焰检验", "correct": True,
+                     "ok": "若有尖锐爆鸣，继续排气后重新验纯；只有轻微「噗」声才说明氢气较纯。",
                      "scene": {"pop": True}},
-                    {"id": "direct", "label": "气体一产生就在发生装置口点燃", "correct": False,
+                    {"id": "direct", "label": "堵住发生装置管口，直接移近火焰", "correct": False,
                      "hazard": "装置内是氢空气混合物，直接点燃可能爆炸。"},
                 ],
             },
@@ -369,7 +373,7 @@ def build_prep_hydrogen() -> dict:
                 "need": "action",
                 "title": "导管口点燃",
                 "action_label": "在导管口点燃验纯后的氢气",
-                "hint": "纯净氢气安静燃烧，火焰呈淡蓝色。",
+                "hint": "确认气流连续并且再次验纯合格后，才可在导管口点燃。纯净氢气安静燃烧，火焰呈淡蓝色。",
                 "phenomenon": "导管口出现淡蓝色火焰，杯壁上有水雾。",
                 "scene": {"pop": False, "jet_flame": True},
             },
@@ -407,7 +411,7 @@ def build_prep_co2() -> dict:
             "apparatus": [
                 {"id": "stand", "name": "铁架台", "icon": "支架"},
                 {"id": "tube", "name": "试管 / 锥形瓶", "icon": "瓶"},
-                {"id": "delivery", "name": "导管", "icon": "管"},
+                {"id": "delivery", "name": "带单孔橡皮塞的导管", "icon": "管"},
                 {"id": "bottle", "name": "集气瓶", "icon": "瓶"},
                 {"id": "lime_beaker", "name": "盛石灰水的烧杯", "icon": "杯"},
                 {"id": "splint", "name": "燃着的木条", "icon": "木条"},
@@ -428,7 +432,7 @@ def build_prep_co2() -> dict:
                 "id": "pick",
                 "need": "select",
                 "title": "选取仪器与药品",
-                "hint": "铁架台、试管、导管、集气瓶、澄清石灰水、燃着的木条；药品为大理石和稀盐酸。不要用水槽（二氧化碳能溶于水）。不要用稀硫酸。",
+                "hint": "铁架台、试管、带单孔橡皮塞的导管、集气瓶、澄清石灰水、燃着的木条；药品为大理石和稀盐酸。装药前先检查气密性。不要用水槽或稀硫酸。",
             },
             {
                 "id": "add",
@@ -664,6 +668,7 @@ def build_metal_oxide_acid() -> dict:
                 {"id": "tube", "name": "试管"},
                 {"id": "lamp", "name": "酒精灯"},
                 {"id": "rod", "name": "试管夹"},
+                {"id": "spoon", "name": "药匙或纸槽"},
                 {"id": "beaker", "name": "烧杯"},
             ],
             "reagents": [
@@ -672,7 +677,7 @@ def build_metal_oxide_acid() -> dict:
                 {"id": "naoh", "name": "氢氧化钠", "color": "#a3e635"},
             ],
         },
-        "required_apparatus": ["tube", "lamp", "rod"],
+        "required_apparatus": ["tube", "lamp", "rod", "spoon"],
         "required_reagents": ["cuo", "h2so4"],
         "steps": [
             {
@@ -680,7 +685,7 @@ def build_metal_oxide_acid() -> dict:
                 "need": "select",
                 "guide": "准备",
                 "title": "取用仪器与药品",
-                "hint": "试管、酒精灯、试管夹；氧化铜和稀硫酸。不要用氢氧化钠。",
+                "hint": "试管、酒精灯、试管夹、药匙或纸槽；氧化铜和稀硫酸。不要用氢氧化钠。",
             },
             {
                 "id": "oxide",
@@ -688,7 +693,7 @@ def build_metal_oxide_acid() -> dict:
                 "guide": "准备",
                 "title": "取用氧化铜",
                 "action_label": "向试管中加入氧化铜粉末",
-                "hint": "氧化铜是黑色粉末，用药匙沿试管内壁送入。",
+                "hint": "试管横放，用药匙或纸槽把黑色氧化铜粉末送到试管底部，再慢慢竖起，避免粉末沾在管壁。",
                 "phenomenon": "试管底部出现黑色氧化铜粉末。",
                 "scene": {"oxide": True, "upright": True},
             },
@@ -722,7 +727,7 @@ def build_metal_oxide_acid() -> dict:
                     {"id": "lamp", "label": "用试管夹夹持，酒精灯外焰加热", "correct": True,
                      "ok": "黑色氧化铜逐渐溶解，溶液变成蓝色。",
                      "scene": {"oxide": True, "oxide_acid": True, "heat": True, "flame": True,
-                               "liquid": "blue", "upright": True}},
+                               "liquid": "blue", "tube_heating": True}},
                     {"id": "seal", "label": "塞紧橡皮塞再加热，防止酸液蒸发", "correct": False,
                      "hazard": "密闭加热会使压强骤增，试管可能爆裂。"},
                     {"id": "mouth", "label": "凑近试管口闻一下，确认是不是硫酸味", "correct": False,
@@ -737,7 +742,7 @@ def build_metal_oxide_acid() -> dict:
                 "action_label": "记录溶液颜色",
                 "hint": "蓝色来自 Cu²⁺，不是硫酸本身的颜色。",
                 "phenomenon": "黑色粉末消失，得到蓝色硫酸铜溶液。",
-                "scene": {"oxide_acid": True, "liquid": "blue", "heat": True, "upright": True},
+                "scene": {"oxide_acid": True, "liquid": "blue", "heat": True, "tube_heating": True},
             },
         ],
         "complete": {
@@ -761,7 +766,8 @@ def build_filtration() -> dict:
                 {"id": "funnel", "name": "漏斗", "icon": "斗"},
                 {"id": "paper", "name": "滤纸", "icon": "纸"},
                 {"id": "rod", "name": "玻璃棒", "icon": "棒"},
-                {"id": "beaker", "name": "烧杯", "icon": "杯"},
+                {"id": "source_beaker", "name": "盛浊液的烧杯", "icon": "杯"},
+                {"id": "beaker", "name": "接收滤液的烧杯", "icon": "杯"},
                 {"id": "stand", "name": "铁架台", "icon": "支架"},
                 {"id": "lamp", "name": "酒精灯", "icon": "灯"},
             ],
@@ -770,23 +776,23 @@ def build_filtration() -> dict:
                 {"id": "hcl", "name": "稀盐酸", "color": "#38bdf8"},
             ],
         },
-        "required_apparatus": ["funnel", "paper", "rod", "beaker", "stand"],
+        "required_apparatus": ["funnel", "paper", "rod", "source_beaker", "beaker", "stand"],
         "required_reagents": ["mix"],
         "steps": [
             {
                 "id": "pick",
                 "need": "select",
                 "title": "选取仪器与药品",
-                "hint": "漏斗、滤纸、玻璃棒、烧杯、铁架台；样品是浊液。过滤不需要酒精灯，也不要加盐酸。",
+                "hint": "漏斗、滤纸、玻璃棒、两个烧杯、铁架台；一个烧杯盛浊液，另一个接收滤液。过滤不需要酒精灯，也不要加盐酸。",
             },
             {
                 "id": "paper",
                 "need": "choice",
                 "title": "安放滤纸",
-                "hint": "滤纸紧贴漏斗内壁，中间不要留气泡。",
+                "hint": "滤纸紧贴漏斗内壁且低于漏斗边缘，中间不要留气泡。",
                 "choices": [
                     {"id": "wet", "label": "滤纸对折后放入漏斗，用水润湿使它紧贴内壁", "correct": True,
-                     "ok": "「一贴」：滤纸紧贴漏斗内壁。",
+                     "ok": "「一贴」：滤纸紧贴漏斗内壁；「一低」：滤纸边缘低于漏斗边缘。",
                      "scene": {"paper": True}},
                     {"id": "hole", "label": "在滤纸上戳一个洞，让液体流得更快", "correct": False,
                      "hazard": "戳洞会使固体漏下去，过滤失败。"},
@@ -799,7 +805,7 @@ def build_filtration() -> dict:
                 "hint": "玻璃棒引流，液面低于滤纸边缘。",
                 "choices": [
                     {"id": "drain", "label": "用玻璃棒引流，液面低于滤纸边缘", "correct": True,
-                     "ok": "「二低三靠」：液面低、烧杯口靠棒、棒靠三层滤纸、漏斗下端靠烧杯壁。",
+                     "ok": "「二低三靠」：液面低于滤纸边缘；烧杯口靠玻璃棒、玻璃棒下端靠三层滤纸、漏斗下端靠接收烧杯内壁。",
                      "scene": {"drain": True, "residue": True, "filtrate": True}},
                     {"id": "dump", "label": "把浊液直接倒进漏斗，倒满到漏斗口", "correct": False,
                      "hazard": "液体漫过滤纸边缘，固体会从缝隙流下。"},
@@ -912,6 +918,7 @@ def build_nh4hco3_decomp() -> dict:
                 {"id": "lamp", "name": "酒精灯", "icon": "灯"},
                 {"id": "paper", "name": "湿润红色石蕊试纸", "icon": "纸"},
                 {"id": "lime_beaker", "name": "盛石灰水的烧杯", "icon": "杯"},
+                {"id": "delivery", "name": "带单孔橡皮塞的导管", "icon": "管"},
                 {"id": "trough", "name": "水槽", "icon": "槽"},
             ],
             "reagents": [
@@ -920,14 +927,14 @@ def build_nh4hco3_decomp() -> dict:
                 {"id": "hcl", "name": "稀盐酸", "color": "#38bdf8"},
             ],
         },
-        "required_apparatus": ["stand", "tube", "lamp", "paper", "lime_beaker"],
+        "required_apparatus": ["stand", "tube", "lamp", "paper", "lime_beaker", "delivery"],
         "required_reagents": ["nh4", "lime"],
         "steps": [
             {
                 "id": "pick",
                 "need": "select",
                 "title": "选取仪器与药品",
-                "hint": "铁架台、试管、酒精灯、湿润红色石蕊试纸、澄清石灰水；药品是碳酸氢铵。不要用水槽收集。",
+                "hint": "铁架台、试管、酒精灯、带单孔塞的导管、湿润红色石蕊试纸、澄清石灰水；药品是碳酸氢铵。不要用水槽收集。",
             },
             {
                 "id": "assemble",
@@ -946,9 +953,9 @@ def build_nh4hco3_decomp() -> dict:
                 "need": "action",
                 "title": "加入药品并加热",
                 "action_label": "放入碳酸氢铵，用酒精灯加热",
-                "hint": "固体逐渐消失，有刺激性气味气体放出。",
-                "phenomenon": "白色固体减少，管口有水雾，能闻到氨的气味。",
-                "scene": {"powder": True, "flame": True, "wet_paper": True},
+                "hint": "在通风良好处由教师演示，不主动嗅闻生成的气体。",
+                "phenomenon": "白色固体减少，管口有水雾，有气体生成。",
+                "scene": {"powder": True, "powder_color": "white", "flame": True, "wet_paper": True},
             },
             {
                 "id": "test",
@@ -966,11 +973,12 @@ def build_nh4hco3_decomp() -> dict:
             {
                 "id": "safety",
                 "need": "choice",
-                "title": "气味与加热",
-                "hint": "氨有刺激性，不能凑近去闻；加热后先把导管移开再熄灯（若接了导管）。",
+                "title": "安全收尾",
+                "hint": "氨有强刺激性，不把鼻子靠近，也不安排主动扇闻；结束时先把导管移出石灰水再停止加热。",
                 "choices": [
-                    {"id": "fan", "label": "用手轻轻扇闻，试管口不对着人", "correct": True,
-                     "ok": "实验室闻气体一律扇闻，不要把鼻子凑到管口。"},
+                    {"id": "fan", "label": "不闻气体，先移出导管再停止加热，并保持通风", "correct": True,
+                     "ok": "避免吸入氨，也防止石灰水倒吸进热试管。",
+                     "scene": {"flame": False, "heat": False}},
                     {"id": "sniff", "label": "把鼻子凑到试管口深吸一口确认是氨", "correct": False,
                      "hazard": "氨气刺激眼鼻，浓氨还会灼伤黏膜。"},
                 ],
@@ -1033,8 +1041,8 @@ def build_iron_in_oxygen() -> dict:
                 "id": "heat",
                 "need": "action",
                 "title": "预热铁丝",
-                "action_label": "在酒精灯上烧至铁丝红热，迅速伸入氧气瓶",
-                "hint": "铁丝绕成螺旋可增大受热面积；瓶口用玻璃片稍作遮挡。",
+                "action_label": "点燃铁丝下端的火柴，待火柴快燃尽时伸入氧气瓶",
+                "hint": "铁丝绕成螺旋，下端系一根火柴帮助引燃；待火柴快燃尽时自上而下缓慢伸入氧气瓶。",
                 "phenomenon": "铁丝剧烈燃烧，火星四射，生成黑色固体。",
                 "scene": {"flame": True, "sparks": True, "air_collect": True, "bottle_water": True},
             },
@@ -1122,7 +1130,7 @@ def build_solution_prep() -> dict:
                 "hint": "量筒读数时视线与凹液面最低处相平。",
                 "choices": [
                     {"id": "eye", "label": "量水时平视凹液面最低处，再转移到烧杯", "correct": True,
-                     "ok": "俯视读数偏小、仰视偏大，都会使溶质质量分数不准。"},
+                     "ok": "量筒内液面不变时，俯视读数偏大、仰视读数偏小，都会使配制结果不准。"},
                     {"id": "heat", "label": "用酒精灯加热量筒，让固体溶得更快", "correct": False,
                      "hazard": "量筒不能加热。需要加速溶解应在烧杯中搅拌，必要时水浴。"},
                 ],
@@ -1142,7 +1150,7 @@ def build_co2_candles() -> dict:
         "scene_init": {"co2_fill": True},
         "title": "倾倒二氧化碳熄灭蜡烛",
         "subtitle": "密度比空气大 · 不支持燃烧 · 低处先灭",
-        "equation": "（物理性质，无化学方程式）CO₂ 密度比空气大，不能燃烧也不支持燃烧",
+        "equation": "CO₂ 密度比空气大（物理性质），不能燃烧且不支持燃烧（化学性质）",
         "goal": "把二氧化碳沿杯壁缓慢倒入，观察高低两支蜡烛熄灭的先后，并说明灭火原理。",
         "badge": "初中化学 · 二氧化碳的性质",
         "inventory": {
@@ -1246,6 +1254,8 @@ def build_air_oxygen() -> dict:
                 {"id": "wire", "name": "燃烧匙", "icon": "匙"},
                 {"id": "lamp", "name": "酒精灯", "icon": "灯"},
                 {"id": "beaker", "name": "烧杯（盛水）", "icon": "杯"},
+                {"id": "delivery", "name": "带橡皮塞的导管", "icon": "管"},
+                {"id": "clamp", "name": "弹簧夹", "icon": "夹"},
                 {"id": "cover", "name": "玻璃片", "icon": "片"},
             ],
             "reagents": [
@@ -1254,14 +1264,14 @@ def build_air_oxygen() -> dict:
                 {"id": "hcl", "name": "稀盐酸", "color": "#38bdf8"},
             ],
         },
-        "required_apparatus": ["bottle", "wire", "lamp", "beaker"],
+        "required_apparatus": ["bottle", "wire", "lamp", "beaker", "delivery", "clamp"],
         "required_reagents": ["p_red"],
         "steps": [
             {
                 "id": "pick",
                 "need": "select",
                 "title": "选取仪器与药品",
-                "hint": "集气瓶、燃烧匙、酒精灯、盛水的烧杯；药品用红磷。不要用高锰酸钾或盐酸。",
+                "hint": "集气瓶、燃烧匙、酒精灯、盛水的烧杯、带橡皮塞的导管和弹簧夹；药品用红磷。装置必须气密，不要用高锰酸钾或盐酸。",
             },
             {
                 "id": "mark",
@@ -1283,7 +1293,7 @@ def build_air_oxygen() -> dict:
                 "action_label": "点燃足量红磷，立即伸入瓶中并塞紧",
                 "hint": "红磷必须足量，才能把瓶里的氧气几乎耗尽。塞紧后气体不能进出。",
                 "phenomenon": "红磷剧烈燃烧，产生五氧化二磷白烟，随后火焰熄灭。",
-                "scene": {"air_collect": True, "bottle_water": True, "flame": True, "sparks": True},
+                "scene": {"air_collect": True, "bottle_water": True, "flame": True, "white_smoke": True},
             },
             {
                 "id": "cool",
@@ -1292,7 +1302,8 @@ def build_air_oxygen() -> dict:
                 "hint": "燃烧时气体受热膨胀。要测的是冷却后减少的体积。",
                 "choices": [
                     {"id": "wait", "label": "待红磷熄灭并冷却到室温，再打开弹簧夹", "correct": True,
-                     "ok": "温度回到室温后，减少的体积才等于被消耗的氧气体积。"},
+                     "ok": "温度回到室温后，减少的体积才等于被消耗的氧气体积。",
+                     "scene": {"flame": False, "white_smoke": False}},
                     {"id": "now", "label": "火焰一灭立刻打开，趁热观察", "correct": False,
                      "hazard": "瓶内气体还热、压强偏大，吸入的水偏少，测得氧气含量会偏低。"},
                 ],
@@ -1342,7 +1353,7 @@ def build_charcoal_in_oxygen() -> dict:
                 {"id": "wire", "name": "坩埚钳", "icon": "钳"},
                 {"id": "lamp", "name": "酒精灯", "icon": "灯"},
                 {"id": "cover", "name": "玻璃片", "icon": "片"},
-                {"id": "lime_beaker", "name": "澄清石灰水", "icon": "杯"},
+                {"id": "lime_beaker", "name": "盛澄清石灰水的烧杯", "icon": "杯"},
             ],
             "reagents": [
                 {"id": "c", "name": "木炭", "color": "#1e293b"},
@@ -1350,7 +1361,7 @@ def build_charcoal_in_oxygen() -> dict:
                 {"id": "hcl", "name": "稀盐酸", "color": "#22c55e"},
             ],
         },
-        "required_apparatus": ["bottle", "wire", "lamp"],
+        "required_apparatus": ["bottle", "wire", "lamp", "lime_beaker"],
         "required_reagents": ["c", "o2"],
         "steps": [
             {
@@ -1375,7 +1386,7 @@ def build_charcoal_in_oxygen() -> dict:
                 "action_label": "把燃着的木炭迅速插入盛氧气的集气瓶",
                 "hint": "氧气比空气含氧多，燃烧会更剧烈。",
                 "phenomenon": "木炭剧烈燃烧，发出白光，放出热量。",
-                "scene": {"air_collect": True, "flame": True, "sparks": True},
+                "scene": {"air_collect": True, "flame": True, "charcoal_glow": True},
             },
             {
                 "id": "test",
@@ -1385,7 +1396,7 @@ def build_charcoal_in_oxygen() -> dict:
                 "choices": [
                     {"id": "lime", "label": "向瓶中倒入澄清石灰水，振荡", "correct": True,
                      "ok": "石灰水变浑浊，说明生成了二氧化碳：CO₂ + Ca(OH)₂ → CaCO₃↓ + H₂O。",
-                     "scene": {"air_collect": True, "lime_milky": True}},
+                     "scene": {"air_collect": True, "lime_milky": True, "flame": False, "charcoal_glow": False}},
                     {"id": "pop", "label": "用燃着的木条伸入瓶口听爆鸣", "correct": False,
                      "hazard": "那是检验氢气的方法。二氧化碳不能燃烧也不支持燃烧。"},
                 ],
@@ -1415,6 +1426,7 @@ def build_sulfur_in_oxygen() -> dict:
                 {"id": "lamp", "name": "酒精灯", "icon": "灯"},
                 {"id": "cover", "name": "玻璃片", "icon": "片"},
                 {"id": "goggles", "name": "护目镜", "icon": "镜"},
+                {"id": "absorber", "name": "盛氢氧化钠溶液的吸收瓶", "icon": "瓶"},
             ],
             "reagents": [
                 {"id": "s", "name": "硫粉", "color": "#eab308"},
@@ -1422,14 +1434,14 @@ def build_sulfur_in_oxygen() -> dict:
                 {"id": "c", "name": "木炭", "color": "#1e293b"},
             ],
         },
-        "required_apparatus": ["bottle", "wire", "lamp"],
+        "required_apparatus": ["bottle", "wire", "lamp", "goggles", "absorber"],
         "required_reagents": ["s", "o2"],
         "steps": [
             {
                 "id": "pick",
                 "need": "select",
                 "title": "选取仪器与药品",
-                "hint": "盛氧气的集气瓶、燃烧匙、酒精灯；硫和氧气。本实验应在通风处进行。",
+                "hint": "盛氧气的集气瓶、燃烧匙、酒精灯、护目镜和尾气吸收装置；硫和氧气。本实验由教师在通风橱中演示。",
             },
             {
                 "id": "air",
@@ -1438,7 +1450,7 @@ def build_sulfur_in_oxygen() -> dict:
                 "action_label": "在燃烧匙里放少量硫，加热至燃烧",
                 "hint": "先看空气中的火焰，再伸进氧气瓶。",
                 "phenomenon": "硫在空气中燃烧，发出微弱的淡蓝色火焰。",
-                "scene": {"air_collect": True, "flame": True},
+                "scene": {"air_collect": True, "sulfur_flame": "pale_blue"},
             },
             {
                 "id": "oxy",
@@ -1447,16 +1459,17 @@ def build_sulfur_in_oxygen() -> dict:
                 "action_label": "把燃着的硫插入盛氧气的集气瓶",
                 "hint": "氧气中燃烧更旺，火焰颜色会改变。",
                 "phenomenon": "发出明亮的蓝紫色火焰，放出热量，产生有刺激性气味的气体。",
-                "scene": {"air_collect": True, "flame": True, "sparks": True},
+                "scene": {"air_collect": True, "sulfur_flame": "blue_violet"},
             },
             {
                 "id": "smell",
                 "need": "choice",
-                "title": "怎样闻气味",
-                "hint": "二氧化硫有刺激性，不能凑到瓶口去闻。",
+                "title": "怎样处理尾气",
+                "hint": "二氧化硫有毒且刺激呼吸道，不得用嗅闻方式鉴别，应在通风橱中吸收尾气。",
                 "choices": [
-                    {"id": "fan", "label": "用手在瓶口轻轻扇闻", "correct": True,
-                     "ok": "产物是二氧化硫。刺激性气体一律扇闻，不要对着瓶口深吸。"},
+                    {"id": "fan", "label": "不闻气体，把尾气通入氢氧化钠溶液吸收", "correct": True,
+                     "ok": "正确：通过反应式和燃烧现象判断产物，并用碱液吸收二氧化硫。",
+                     "scene": {"sulfur_flame": False}},
                     {"id": "nose", "label": "把鼻子凑到瓶口用力吸一下，才能闻清楚", "correct": False,
                      "hazard": "二氧化硫刺激呼吸道。课本要求扇闻，且本实验应在通风橱中演示。"},
                 ],
@@ -1464,7 +1477,7 @@ def build_sulfur_in_oxygen() -> dict:
         ],
         "complete": {
             "title": "实验完成",
-            "summary": "硫在空气中发出淡蓝色火焰，在氧气中发出蓝紫色火焰，生成有刺激性气味的二氧化硫。",
+            "summary": "硫在空气中发出淡蓝色火焰，在氧气中发出蓝紫色火焰，生成二氧化硫；实验在通风橱中进行并用碱液吸收尾气，不主动嗅闻。",
         },
     }
 
@@ -1484,6 +1497,7 @@ def build_charcoal_reduce_cuo() -> dict:
                 {"id": "tube", "name": "试管", "icon": "试管"},
                 {"id": "lamp", "name": "酒精灯", "icon": "灯"},
                 {"id": "lime_beaker", "name": "澄清石灰水", "icon": "杯"},
+                {"id": "delivery", "name": "带橡皮塞的导管", "icon": "管"},
                 {"id": "paper", "name": "纸（倒出产物）", "icon": "纸"},
             ],
             "reagents": [
@@ -1492,7 +1506,7 @@ def build_charcoal_reduce_cuo() -> dict:
                 {"id": "hcl", "name": "稀盐酸", "color": "#22c55e"},
             ],
         },
-        "required_apparatus": ["stand", "tube", "lamp", "lime_beaker"],
+        "required_apparatus": ["stand", "tube", "lamp", "lime_beaker", "delivery"],
         "required_reagents": ["cuo", "c"],
         "steps": [
             {
@@ -1520,8 +1534,8 @@ def build_charcoal_reduce_cuo() -> dict:
                 "title": "高温加热",
                 "action_label": "用酒精灯（可加网罩）加热混合物几分钟",
                 "hint": "这个反应需要较高温度。先加热，再观察石灰水。",
-                "phenomenon": "混合物由黑变红，澄清石灰水变浑浊。",
-                "scene": {"powder": True, "oxide": True, "flame": True, "lime_milky": True, "heat": True},
+                "phenomenon": "黑色混合物中出现红色固体，澄清石灰水变浑浊。",
+                "scene": {"powder": True, "oxide": True, "flame": True, "lime_milky": True, "heat": True, "copper": True},
             },
             {
                 "id": "stop",
@@ -1531,7 +1545,7 @@ def build_charcoal_reduce_cuo() -> dict:
                 "choices": [
                     {"id": "out", "label": "先撤出导管，再停止加热，冷却后把粉末倒在纸上", "correct": True,
                      "ok": "防止石灰水倒吸进热试管。冷却后能看到红色的铜。",
-                     "scene": {"metal": True, "lime_milky": True}},
+                     "scene": {"metal": True, "copper": True, "lime_milky": True, "flame": False, "heat": False}},
                     {"id": "fire", "label": "先灭酒精灯，导管继续留在石灰水里冷却", "correct": False,
                      "hazard": "试管内气压下降，石灰水倒吸，热试管会炸裂。"},
                 ],
@@ -1556,8 +1570,7 @@ def build_mass_conservation() -> dict:
         "inventory": {
             "apparatus": [
                 {"id": "balance", "name": "托盘天平", "icon": "秤"},
-                {"id": "beaker", "name": "锥形瓶（塞紧）", "icon": "瓶"},
-                {"id": "rod", "name": "小试管（盛硫酸铜）", "icon": "管"},
+                {"id": "beaker", "name": "密闭锥形瓶（内置盛硫酸铜的小试管）", "icon": "瓶"},
                 {"id": "paper", "name": "称量纸", "icon": "纸"},
                 {"id": "lamp", "name": "酒精灯", "icon": "灯"},
             ],
@@ -1567,7 +1580,7 @@ def build_mass_conservation() -> dict:
                 {"id": "hcl", "name": "稀盐酸", "color": "#22c55e"},
             ],
         },
-        "required_apparatus": ["balance", "beaker", "rod"],
+        "required_apparatus": ["balance", "beaker"],
         "required_reagents": ["fe", "cuso4"],
         "steps": [
             {
@@ -1581,9 +1594,9 @@ def build_mass_conservation() -> dict:
                 "need": "action",
                 "title": "反应前称量",
                 "action_label": "铁丝放在锥形瓶底，小试管盛硫酸铜，塞紧后放上天平，记下 m₁",
-                "hint": "必须密闭。如果敞口，生成或逸出的气体会让质量对不上。",
+                "hint": "本方案塞紧瓶口，是为了保证称量过程中没有溶液洒失；本反应不产生气体，并非所有质量守恒实验都必须密闭。",
                 "phenomenon": "记录反应前总质量 m₁。",
-                "scene": {"metal": True, "liquid": "blue"},
+                "scene": {"metal": True, "liquid": "blue", "mass_reacted": False},
             },
             {
                 "id": "mix",
@@ -1592,7 +1605,7 @@ def build_mass_conservation() -> dict:
                 "action_label": "取下锥形瓶，倾斜使硫酸铜流入，观察后再称量",
                 "hint": "铁把铜从硫酸铜溶液里置换出来。",
                 "phenomenon": "铁丝表面出现红色的铜，溶液由蓝逐渐变浅。",
-                "scene": {"metal": True, "liquid": "blue", "acid_bubbles": False},
+                "scene": {"metal": True, "liquid": "blue", "mass_reacted": True},
             },
             {
                 "id": "weigh2",
@@ -1684,7 +1697,7 @@ def build_iron_rust() -> dict:
         "scene": "iron_rust",
         "title": "探究铁钉生锈的条件",
         "subtitle": "对照实验 · 既要水也要氧气",
-        "equation": "4Fe + 3O₂ + xH₂O → 2Fe₂O₃·xH₂O",
+        "equation": "铁 + 氧气 + 水 → 铁锈（主要成分为 Fe₂O₃·xH₂O，组成复杂）",
         "goal": "用三支试管对照：水和空气、隔绝空气的水、干燥空气，判断铁生锈的条件。",
         "badge": "初中化学 · 金属资源保护",
         "inventory": {
@@ -1692,6 +1705,7 @@ def build_iron_rust() -> dict:
                 {"id": "tube", "name": "试管（三支）", "icon": "试管"},
                 {"id": "beaker", "name": "烧杯", "icon": "杯"},
                 {"id": "lamp", "name": "酒精灯（煮沸蒸馏水）", "icon": "灯"},
+                {"id": "cotton", "name": "棉花", "icon": "棉"},
             ],
             "reagents": [
                 {"id": "fe", "name": "洁净无锈的铁钉", "color": "#94a3b8"},
@@ -1700,14 +1714,14 @@ def build_iron_rust() -> dict:
                 {"id": "cacl2", "name": "氯化钙（干燥剂）", "color": "#f8fafc"},
             ],
         },
-        "required_apparatus": ["tube"],
-        "required_reagents": ["fe", "water"],
+        "required_apparatus": ["tube", "lamp", "cotton"],
+        "required_reagents": ["fe", "water", "oil", "cacl2"],
         "steps": [
             {
                 "id": "pick",
                 "need": "select",
                 "title": "选取仪器与药品",
-                "hint": "三支试管和洁净铁钉；还要用蒸馏水。植物油、氯化钙用来做对照。",
+                "hint": "三支试管、洁净铁钉、蒸馏水、植物油、氯化钙干燥剂和棉花；酒精灯只用于预先煮沸蒸馏水，装置放置观察时不再加热。",
             },
             {
                 "id": "setup",
@@ -1766,6 +1780,8 @@ def build_combustion_conditions() -> dict:
             "apparatus": [
                 {"id": "beaker", "name": "烧杯（热水）", "icon": "杯"},
                 {"id": "cover", "name": "薄铜片", "icon": "片"},
+                {"id": "delivery", "name": "通入氧气的导管", "icon": "管"},
+                {"id": "tweezers", "name": "镊子", "icon": "夹"},
                 {"id": "lamp", "name": "酒精灯", "icon": "灯"},
             ],
             "reagents": [
@@ -1774,14 +1790,14 @@ def build_combustion_conditions() -> dict:
                 {"id": "o2", "name": "氧气", "color": "#38bdf8"},
             ],
         },
-        "required_apparatus": ["beaker", "cover"],
-        "required_reagents": ["p_white", "p_red"],
+        "required_apparatus": ["beaker", "cover", "delivery", "tweezers"],
+        "required_reagents": ["p_white", "p_red", "o2"],
         "steps": [
             {
                 "id": "pick",
                 "need": "select",
                 "title": "选取仪器与药品",
-                "hint": "烧杯盛热水、薄铜片；白磷和红磷。白磷剧毒，真实实验由教师在通风橱演示。",
+                "hint": "烧杯盛热水、薄铜片、通氧导管；白磷、红磷和氧气。白磷剧毒且易自燃，必须由教师在通风橱中水下取用，使用镊子夹取少量药品。",
             },
             {
                 "id": "plate",
@@ -1869,13 +1885,13 @@ def build_acid_indicator() -> dict:
             ],
         },
         "required_apparatus": ["goggles", "beaker", "dropper"],
-        "required_reagents": ["hcl", "naoh"],
+        "required_reagents": ["hcl", "naoh", "litmus", "phen"],
         "steps": [
             {
                 "id": "pick",
                 "need": "select",
                 "title": "选取仪器与药品",
-                "hint": "护目镜、烧杯或试管、胶头滴管；稀盐酸和氢氧化钠。石蕊、酚酞在下一步滴加。",
+                "hint": "护目镜、两组洁净试管或烧杯、专用胶头滴管；稀盐酸、氢氧化钠、紫色石蕊和无色酚酞。不同试剂不得共用滴管。",
             },
             {
                 "id": "litmus_acid",
@@ -1884,7 +1900,7 @@ def build_acid_indicator() -> dict:
                 "action_label": "向稀盐酸中滴加紫色石蕊溶液",
                 "hint": "石蕊只有红、紫、蓝，没有彩虹色。",
                 "phenomenon": "紫色石蕊溶液变成红色。",
-                "scene": {"liquid": "pink", "dripping": True},
+                "scene": {"liquid": "red", "dripping": True, "ph": 1.5},
             },
             {
                 "id": "litmus_base",
@@ -1893,7 +1909,7 @@ def build_acid_indicator() -> dict:
                 "action_label": "向氢氧化钠溶液中滴加紫色石蕊溶液",
                 "hint": "碱使石蕊变蓝。",
                 "phenomenon": "紫色石蕊溶液变成蓝色。",
-                "scene": {"liquid": "blue", "dripping": True},
+                "scene": {"liquid": "blue", "dripping": True, "ph": 12.5},
             },
             {
                 "id": "phen",
@@ -1903,7 +1919,7 @@ def build_acid_indicator() -> dict:
                 "choices": [
                     {"id": "ok", "label": "稀盐酸中酚酞仍无色；氢氧化钠中酚酞变红", "correct": True,
                      "ok": "记住：石蕊酸红碱蓝；酚酞遇碱红、遇酸无色。不能用万能指示剂的彩虹色冒充石蕊或酚酞。",
-                     "scene": {"liquid": "pink"}},
+                     "scene": {"liquid": "pink", "ph": 12.5}},
                     {"id": "both", "label": "酚酞遇酸变红，遇碱也变红", "correct": False,
                      "hazard": "酚酞在酸性溶液里是无色的。变红是碱的特征。"},
                     {"id": "rainbow", "label": "石蕊在不同 pH 会变成彩虹的七种颜色", "correct": False,

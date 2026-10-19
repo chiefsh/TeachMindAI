@@ -55,7 +55,7 @@
         '<rect x="197" y="42" width="15" height="38" rx="3" fill="#e2e8f0" stroke="#94a3b8" transform="rotate(5 204 61)"/>' +
         '<g class="fx-powder" visibility="hidden"><ellipse cx="35" cy="53" rx="17" ry="7" fill="#6b21a8"/><circle cx="29" cy="49" r="4" fill="#a855f7"/></g>' +
         '<g class="fx-copper" visibility="hidden"><ellipse cx="48" cy="55" rx="16" ry="6" fill="#b45309"/><circle cx="43" cy="51" r="4" fill="#ef8b45"/></g>' +
-        '<g class="fx-cotton" visibility="hidden"><ellipse cx="184" cy="61" rx="13" ry="9" fill="#f8fafc" stroke="#d6d3d1"/></g>'
+        '<g class="fx-cotton" visibility="hidden"><ellipse cx="176" cy="62" rx="11" ry="7" fill="#f8fafc" stroke="#d6d3d1"/></g>'
     },
     test_tube: {
       w: 54, h: 150, label: "小试管",
@@ -105,6 +105,21 @@
         '<path d="M18 20 H 214 V 268" fill="none" stroke="#e0f2fe" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>' +
         '<path d="M206 268 h16" fill="none" stroke="#475569" stroke-width="6" stroke-linecap="round"/>'
     },
+    /* 排水法：从试管口斜向下，末端伸进倒扣集气瓶的瓶口，不横穿瓶身。 */
+    delivery_water: {
+      w: 230, h: 110, label: "导管",
+      outline: "M8 6 h28 v22 H24 L214 102 h12 L40 16 H8z",
+      paint: '<circle cx="16" cy="18" r="9" fill="#7c2d12"/><circle cx="16" cy="18" r="4" fill="#1e293b"/>' +
+        '<path d="M22 18 L 206 96" fill="none" stroke="#94a3b8" stroke-width="9" stroke-linecap="round"/>' +
+        '<path d="M22 18 L 206 96" fill="none" stroke="#e0f2fe" stroke-width="5" stroke-linecap="round"/>'
+    },
+    delivery_h2: {
+      w: 200, h: 190, label: "导管",
+      outline: "M6 4 h28 v20 H22 L176 176 h12 L40 14 H6z",
+      paint: '<circle cx="14" cy="16" r="9" fill="#7c2d12"/><circle cx="14" cy="16" r="4" fill="#1e293b"/>' +
+        '<path d="M20 16 L 172 168" fill="none" stroke="#94a3b8" stroke-width="9" stroke-linecap="round"/>' +
+        '<path d="M20 16 L 172 168" fill="none" stroke="#e0f2fe" stroke-width="5" stroke-linecap="round"/>'
+    },
     delivery_down: {
       w: 180, h: 340, label: "导管",
       outline: "M4 6 h150 v28 H40 v290 H16 V42 H4z",
@@ -112,6 +127,14 @@
         '<path d="M18 20 H 148 V 320" fill="none" stroke="#94a3b8" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>' +
         '<path d="M18 20 H 148 V 320" fill="none" stroke="#e0f2fe" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>' +
         '<path d="M140 320 h16" fill="none" stroke="#475569" stroke-width="6" stroke-linecap="round"/>'
+    },
+    /* 瓶口水平引出，再向下伸进烧杯水面。 */
+    delivery_beaker: {
+      w: 250, h: 200, label: "导管",
+      outline: "M8 8 h230 v180 h-20 V28 H8z",
+      paint: '<circle cx="16" cy="20" r="9" fill="#7c2d12"/><circle cx="16" cy="20" r="4" fill="#1e293b"/>' +
+        '<path d="M22 20 H 230 V 186" fill="none" stroke="#94a3b8" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>' +
+        '<path d="M22 20 H 230 V 186" fill="none" stroke="#e0f2fe" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>'
     },
     delivery_air: {
       w: 220, h: 250, label: "导管",
@@ -351,7 +374,8 @@
       outline: "M30 12 h66 v20 h12 v124 H18 V32 h12z",
       paint: '<path d="M30 12 h66 v20 h12 v124 H18 V32 h12z" fill="url(#g-glass)" stroke="#64748b" stroke-width="1.5"/>' +
         '<rect x="26" y="112" width="74" height="36" fill="#a3e635" opacity=".35"/><ellipse cx="63" cy="112" rx="37" ry="6" fill="#d9f99d" opacity=".6"/>' +
-        '<path d="M44 16 v104 M82 16 v42" fill="none" stroke="#94a3b8" stroke-width="7"/><path d="M44 16 v104 M82 16 v42" fill="none" stroke="#e0f2fe" stroke-width="4"/>' +
+        '<path d="M-140 4 H 48 V 128" fill="none" stroke="#94a3b8" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>' +
+        '<path d="M-140 4 H 48 V 128" fill="none" stroke="#e0f2fe" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>' +
         '<circle cx="44" cy="128" r="3" fill="#fff"/><circle cx="44" cy="139" r="2" fill="#fff"/>'
     },
     sealed_flask: {
@@ -413,7 +437,6 @@
         '</g>' +
         '<g transform="translate(198,12)">' +
         '<rect x="18" y="8" width="36" height="120" rx="10" fill="url(#g-glass)" stroke="#64748b"/>' +
-        '<ellipse cx="36" cy="28" rx="10" ry="6" fill="#f8fafc"/>' +
         '<rect x="28" y="96" width="16" height="8" rx="2" fill="#94a3b8"/>' +
         '<text x="36" y="150" text-anchor="middle" font-size="11" fill="#0f172a" font-weight="700">干燥剂</text>' +
         '</g>'
@@ -428,30 +451,31 @@
     prep_oxygen_kmno4: [
       { id: "stand", x: 248, y: TABLE - 240, label: "铁架台" },
       { id: "tube", art: "heated_tube", x: 294, y: 142, label: "管口略向下的试管" },
-      { id: "lamp", x: 326, y: TABLE - 136, label: "酒精灯" },
-      { id: "delivery", x: 492, y: 176, s: 0.62, label: "带单孔塞导管" },
-      { id: "trough", x: 580, y: TABLE - 130, label: "水槽" },
-      { id: "bottle", art: "bottle_inv", x: 650, y: 142, label: "集气瓶" },
+      { id: "lamp", x: 276, y: TABLE - 136, label: "酒精灯" },
+      { id: "delivery", art: "delivery_water", x: 482, y: 185, label: "带单孔塞导管" },
+      { id: "trough", x: 540, y: TABLE - 130, label: "水槽" },
+      { id: "bottle", art: "bottle_inv", x: 638, y: 133, label: "集气瓶" },
       { id: "splint", x: 846, y: TABLE - 156, label: "带火星木条" },
       { id: "spoon", x: 142, y: 238, s: 0.72, label: "药匙" },
-      { id: "cotton", x: 168, y: 162, s: 0.72, label: "棉花" },
+      /* 疏松棉花在试管口、橡皮塞内侧，不落在桌面上。 */
+      { id: "cotton", x: 464, y: 198, s: 0.18, label: "试管口棉花" },
       { id: "reagent", x: 185, y: TABLE - 108, label: "药品" }
     ],
     nh4hco3_decomp: [
       { id: "stand", x: 248, y: TABLE - 240, label: "铁架台" },
       { id: "tube", art: "heated_tube", x: 294, y: 142, label: "管口略向下的试管" },
       { id: "lamp", x: 326, y: TABLE - 136, label: "酒精灯" },
-      { id: "delivery", x: 492, y: 176, s: 0.54, label: "导管" },
-      { id: "paper", x: 560, y: 116, s: 0.72, label: "湿润红色石蕊试纸" },
-      { id: "lime_beaker", x: 625, y: TABLE - 146, label: "石灰水" },
+      { id: "delivery", art: "delivery_water", x: 482, y: 185, label: "导管" },
+      { id: "paper", x: 492, y: 152, s: 0.46, label: "湿润红色石蕊试纸" },
+      { id: "lime_beaker", x: 616, y: TABLE - 158, label: "石灰水" },
       { id: "reagent", x: 180, y: TABLE - 108, label: "药品" }
     ],
     prep_hydrogen: [
       { id: "stand", x: 292, y: TABLE - 240, label: "铁架台" },
       { id: "tube", x: 338, y: 122, label: "试管" },
-      { id: "delivery", art: "delivery_down", x: 356, y: 108, s: 0.72, label: "导管" },
-      { id: "trough", x: 400, y: TABLE - 130, label: "水槽" },
-      { id: "bottle", art: "bottle_inv", x: 430, y: 140, label: "集气瓶" },
+      { id: "delivery", art: "delivery_h2", x: 356, y: 120, label: "导管" },
+      { id: "trough", x: 420, y: TABLE - 130, label: "水槽" },
+      { id: "bottle", art: "bottle_inv", x: 478, y: 140, label: "集气瓶" },
       { id: "test_tube", x: 690, y: TABLE - 150, label: "验纯用小试管" },
       { id: "splint", x: 820, y: TABLE - 156, label: "木条" },
       { id: "reagent", x: 210, y: TABLE - 108, label: "药品" }
@@ -547,8 +571,8 @@
       { id: "lamp", x: 185, y: TABLE - 136, label: "酒精灯" },
       { id: "wire", x: 405, y: 88, label: "燃烧匙" },
       { id: "bottle", x: 430, y: TABLE - 168, label: "密闭集气瓶" },
-      { id: "delivery", art: "delivery_air", x: 492, y: 154, s: 0.62, label: "密闭导管" },
-      { id: "clamp", art: "spring_clamp", x: 585, y: 162, s: 0.72, label: "弹簧夹" },
+      { id: "delivery", art: "delivery_beaker", x: 458, y: 164, label: "密闭导管" },
+      { id: "clamp", art: "spring_clamp", x: 544, y: 164, s: 0.72, label: "弹簧夹" },
       { id: "beaker", x: 660, y: TABLE - 146, label: "盛水烧杯" },
       { id: "reagent", x: 120, y: TABLE - 108, label: "红磷" }
     ],
@@ -562,15 +586,15 @@
     iron_rust: [
       { id: "tube", art: "rust_tubes", x: 360, y: TABLE - 180, label: "三支对照试管" },
       { id: "lamp", x: 700, y: TABLE - 136, label: "煮沸水用酒精灯" },
-      { id: "cotton", x: 790, y: TABLE - 64, label: "棉花" },
+      { id: "cotton", x: 581, y: 199, s: 0.3, label: "试管口棉花" },
       { id: "reagent", x: 250, y: TABLE - 108, label: "铁钉、水等" }
     ],
     charcoal_reduce_cuo: [
       { id: "stand", x: 248, y: TABLE - 240, label: "铁架台" },
       { id: "tube", art: "heated_tube", x: 294, y: 142, label: "管口略向下的试管" },
       { id: "lamp", x: 326, y: TABLE - 136, label: "高温加热" },
-      { id: "delivery", x: 492, y: 176, s: 0.54, label: "导管" },
-      { id: "lime_beaker", x: 625, y: TABLE - 146, label: "石灰水" },
+      { id: "delivery", art: "delivery_water", x: 482, y: 185, label: "导管" },
+      { id: "lime_beaker", x: 616, y: TABLE - 158, label: "石灰水" },
       { id: "reagent", x: 180, y: TABLE - 108, label: "木炭粉和氧化铜" }
     ],
     mass_conservation: [
@@ -665,11 +689,26 @@
     });
     fx.pop = [el("text", { x: 760, y: 120, "class": "fx-pop", fill: "#dc2626", "font-size": "28", "font-weight": "700", visibility: "hidden" }, "爆鸣！")];
     svg.appendChild(fx.pop[0]);
-    var jet = el("path", { d: "M210 128 q20 -28 8 -56", fill: "none", stroke: "#38bdf8", "stroke-width": "6", visibility: "hidden" });
+    var jet = el("path", { d: "M548 156 C 542 128, 566 124, 560 104 C 576 126, 570 146, 556 162", fill: "none", stroke: "#38bdf8", "stroke-width": "6", "stroke-linecap": "round", visibility: "hidden" });
     fx["fx-jet"] = [jet];
     svg.appendChild(jet);
+    if (sceneExp === "prep_hydrogen") {
+      var openTube = el("path", {
+        d: "M376 136 C 440 128, 510 150, 560 160",
+        fill: "none", stroke: "#94a3b8", "stroke-width": "9",
+        "stroke-linecap": "round", visibility: "hidden"
+      });
+      var openHi = el("path", {
+        d: "M376 136 C 440 128, 510 150, 560 160",
+        fill: "none", stroke: "#e0f2fe", "stroke-width": "5",
+        "stroke-linecap": "round", visibility: "hidden"
+      });
+      svg.appendChild(openTube);
+      svg.appendChild(openHi);
+      fx.h2Open = [openTube, openHi];
+    }
     var sparks = el("g", { visibility: "hidden" },
-      '<circle cx="560" cy="120" r="4" fill="#f97316"/><circle cx="580" cy="100" r="3" fill="#fbbf24"/><circle cx="540" cy="90" r="3" fill="#f97316"/>');
+      '<circle cx="520" cy="250" r="4" fill="#f97316"/><circle cx="548" cy="230" r="3" fill="#fbbf24"/><circle cx="500" cy="270" r="3" fill="#f97316"/>');
     fx["fx-sparks"] = [sparks];
     svg.appendChild(sparks);
     var steam = el("g", { visibility: "hidden" },
@@ -763,6 +802,23 @@
     vis("fx-crystals", !!st.crystals);
     vis("fx-steam", !!st.heat);
     vis("fx-jet", !!st.jet_flame);
+    if (sceneExp === "prep_hydrogen" && pieces.delivery) {
+      var placed = pieces.delivery.el.dataset.placed === "1";
+      var openAir = placed && (!!st.jet_flame || !!st.pop);
+      pieces.delivery.el.style.display = openAir ? "none" : (placed ? "" : "none");
+      (fx.h2Open || []).forEach(function (n) {
+        n.setAttribute("visibility", openAir ? "visible" : "hidden");
+      });
+      if (pieces.test_tube && pieces.test_tube.el.dataset.placed === "1") {
+        pieces.test_tube.el.setAttribute("transform", st.pop
+          ? "translate(533,16) rotate(180 27 75)"
+          : tf(pieces.test_tube.spec));
+      }
+      if (fx.pop && fx.pop[0]) {
+        fx.pop[0].setAttribute("x", st.pop ? "640" : "760");
+        fx.pop[0].setAttribute("y", st.pop ? "70" : "120");
+      }
+    }
     vis("fx-sparks", !!st.sparks);
     vis("fx-pop", !!st.pop);
     vis("fx-splint", !!st.splint_on);

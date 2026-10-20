@@ -1898,7 +1898,7 @@ async def _assemble_lesson_from_blueprint(
             if not html or not routed:
                 continue
             kind = routed.get("kind") or ""
-            is_lab = kind == "chem_lab" or routed.get("skill") == "edu-chem-lab"
+            is_lab = kind in ("chem_lab", "physics_lab") or routed.get("skill") == "edu-chem-lab"
             slides.append({
                 "index": idx,
                 "type": "interactive",

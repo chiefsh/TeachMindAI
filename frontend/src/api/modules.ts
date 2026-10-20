@@ -148,9 +148,14 @@ export const animationApi = {
   get: (id: number) => request.get<InteractiveAsset>(`/animations/${id}`),
   getHtml: (id: number) =>
     request.get<string>(`/animations/${id}/html`, { responseType: 'text', timeout: 120000 }),
-  create: (data: { template_key: string; title: string; keywords?: string[]; knowledge_tags?: string[] }) =>
+  create: (data: {
+    template_key: string; title: string; keywords?: string[]; knowledge_tags?: string[]
+    scene?: Record<string, unknown>
+  }) =>
     request.post<InteractiveAsset>('/animations', data),
-  update: (id: number, data: { title?: string; keywords?: string[]; knowledge_tags?: string[] }) =>
+  update: (id: number, data: {
+    title?: string; keywords?: string[]; knowledge_tags?: string[]; scene?: Record<string, unknown>
+  }) =>
     request.patch<InteractiveAsset>(`/animations/${id}`, data),
   rerender: (id: number) => request.post<InteractiveAsset>(`/animations/${id}/render`),
   delete: (id: number) => request.delete(`/animations/${id}`),

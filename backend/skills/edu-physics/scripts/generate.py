@@ -15,13 +15,37 @@ from pathlib import Path
 SKILL_DIR = Path(__file__).resolve().parent.parent
 TEMPLATE = SKILL_DIR / "template" / "explore.html"
 JS = SKILL_DIR / "template" / "explore.js"
+BENCH_TEMPLATE = SKILL_DIR / "template" / "bench.html"
+BENCH_ENGINES = {
+    "circuit": SKILL_DIR / "template" / "circuit.js",
+    "optics": SKILL_DIR / "template" / "optics.js",
+}
 
 
 def _inline_js(src: str) -> str:
     return src.replace("</script>", "<\\/script>").replace("</SCRIPT>", "<\\/SCRIPT>")
 
 
+def _json_for_script(data: dict) -> str:
+    return json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
+
+
+def render_bench_html(data: dict, out_path: Path) -> Path:
+    """实验台（器材库自由搭建）：共用 bench.html，按 engine 内联对应引擎脚本。"""
+    template = BENCH_TEMPLATE.read_text(encoding="utf-8")
+    if "__BENCH_DATA__" not in template or "__BENCH_JS__" not in template:
+        raise RuntimeError("模板缺少 __BENCH_DATA__ / __BENCH_JS__")
+    js = BENCH_ENGINES[data["engine"]].read_text(encoding="utf-8")
+    html = template.replace("__BENCH_JS__", _inline_js(js))
+    html = html.replace("__BENCH_DATA__", _json_for_script(data))
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(html, encoding="utf-8")
+    return out_path
+
+
 def render_html(data: dict, out_path: Path) -> Path:
+    if data.get("engine") in BENCH_ENGINES:
+        return render_bench_html(data, out_path)
     template = TEMPLATE.read_text(encoding="utf-8")
     if "__PHY_DATA__" not in template or "__PHY_JS__" not in template:
         raise RuntimeError("模板缺少 __PHY_DATA__ / __PHY_JS__")
@@ -862,7 +886,356 @@ def build_photo() -> dict:
     }
 
 
+# ── 电学实验台（自由搭建）：器材库 + 接线柱连线 + 节点电压法求解 ──────────
+# scene.parts: {id, type, x, y, rot, props}；wires: {a: [part_id, 接线柱], b: [...]}
+# steps[].check 由 circuit.js 判定：closed_loop / lit / series / parallel / ammeter /
+# voltmeter_across(target) / rheostat_in / records(min) / rated
+
+def _part(pid, type_, x, y, rot=0, **props):
+    return {"id": pid, "type": type_, "x": x, "y": y, "rot": rot, "props": props}
+
+
+def build_circuit_lab_diy() -> dict:
+    return {
+        "engine": "circuit",
+        "id": "circuit_lab_diy",
+        "title": "电学实验台（自由搭建）",
+        "subtitle": "从器材库取用器材，自由连接电路",
+        "intro": {
+            "purpose": "认识电路的基本组成，会用导线连接简单电路，会正确使用电流表和电压表。",
+            "apparatus": ["电池组", "开关", "小灯泡", "定值电阻", "滑动变阻器", "电流表", "电压表", "导线若干"],
+            "discussion": [
+                "把电流表直接接在电源两极上会怎样？",
+                "电压表串联在电路中，灯泡为什么不亮？",
+            ],
+        },
+        "library": None,
+        "scene": {"parts": [], "wires": []},
+        "steps": [
+            {"text": "从器材库拖出电池组、开关和小灯泡，连成闭合回路并闭合开关，让灯泡发光", "check": {"type": "lit", "min": 1},
+             "ok": "灯泡亮了：电路形成了闭合回路"},
+            {"text": "把电流表串联进电路，读出电流", "check": {"type": "ammeter"}, "ok": "电流表读数正常"},
+            {"text": "把电压表并联在小灯泡两端，读出灯泡电压", "check": {"type": "voltmeter_across", "target": "bulb"},
+             "ok": "电压表测到了灯泡两端电压"},
+        ],
+        "record": {"columns": ["U", "I", "R"]},
+    }
+
+
+def build_circuit_lab_series_parallel() -> dict:
+    return {
+        "engine": "circuit",
+        "id": "circuit_lab_series_parallel",
+        "title": "连接串联电路和并联电路",
+        "subtitle": "动手连线，比较两种电路的特点",
+        "intro": {
+            "purpose": "会连接串联电路和并联电路，观察开关在不同位置的控制作用，比较两种电路中灯泡的工作情况。",
+            "apparatus": ["电池组（3 V）", "开关 2 个", "小灯泡 2 个（2.5 V）", "导线若干"],
+            "discussion": [
+                "串联电路中取下一盏灯，另一盏还亮吗？并联呢？",
+                "并联电路中，干路开关和支路开关分别控制什么？",
+            ],
+        },
+        "library": ["battery", "switch", "bulb"],
+        "scene": {
+            "parts": [
+                _part("p1", "battery", 300, 600, emf=3),
+                _part("p2", "switch", 600, 600),
+                _part("p3", "bulb", 420, 300),
+                _part("p4", "bulb", 780, 300),
+                _part("p5", "switch", 900, 600),
+            ],
+            "wires": [],
+        },
+        "steps": [
+            {"text": "断开开关，把电池组、开关和灯 L1、L2 依次首尾相连，闭合开关让两灯同时发光（串联）",
+             "check": {"type": "series", "n": 2}, "ok": "串联成功：电流只有一条路径"},
+            {"text": "在串联电路中断开开关、或取下一盏灯，观察另一盏灯"},
+            {"text": "把两盏灯分别接在两条支路上，闭合开关让两灯都发光（并联）",
+             "check": {"type": "parallel", "n": 2}, "ok": "并联成功：两盏灯分别在两条支路上"},
+            {"text": "比较串联、并联时灯泡的亮度，并试试把开关接在干路和支路上"},
+        ],
+        "quiz": [
+            {
+                "q": "串联两盏相同的灯泡，与并联时相比，每盏灯的亮度？",
+                "options": [
+                    {"t": "串联时更暗", "ok": True},
+                    {"t": "串联时更亮", "ok": False, "why": "串联时每盏灯只分到一部分电压，功率变小。"},
+                    {"t": "一样亮", "ok": False, "why": "在实验台上分别接一次，看看灯泡亮度的差别。"},
+                ],
+                "explain": "串联时两灯平分电源电压，每盏灯的电压和功率都比并联时小，所以更暗。",
+            },
+            {
+                "q": "家里的电灯、电视机之间是怎样连接的？",
+                "options": [
+                    {"t": "并联", "ok": True},
+                    {"t": "串联", "ok": False, "why": "串联时一个用电器断开，其他都不能工作。"},
+                ],
+                "explain": "家庭电路中各用电器并联，互不影响，各自两端电压都是 220 V。",
+            },
+        ],
+    }
+
+
+def build_circuit_lab_ohm() -> dict:
+    return {
+        "engine": "circuit",
+        "id": "circuit_lab_ohm",
+        "title": "探究电流与电压的关系（伏安法）",
+        "subtitle": "保持电阻不变，改变电压，记录电流",
+        "intro": {
+            "purpose": "探究电阻一定时，通过导体的电流与导体两端电压的关系；学会用伏安法测电阻。",
+            "apparatus": ["电池组（4.5 V）", "开关", "定值电阻（10 Ω）", "滑动变阻器（20 Ω）", "电流表", "电压表", "导线若干"],
+            "discussion": [
+                "滑动变阻器在这个实验中起什么作用？",
+                "闭合开关前，滑片为什么要移到阻值最大处？",
+            ],
+        },
+        "library": ["battery", "switch", "resistor", "rheostat", "ammeter", "voltmeter"],
+        "scene": {
+            "parts": [
+                _part("p1", "battery", 300, 620, emf=4.5),
+                _part("p2", "switch", 560, 620),
+                _part("p3", "rheostat", 860, 600, Rmax="20", pos=1),
+                _part("p4", "resistor", 440, 340, R=10),
+                _part("p5", "ammeter", 780, 320),
+                _part("p6", "voltmeter", 440, 140),
+            ],
+            "wires": [],
+        },
+        "steps": [
+            {"text": "断开开关，把电池组、开关、定值电阻、滑动变阻器（一上一下）串联起来",
+             "check": {"type": "rheostat_in"}, "ok": "滑动变阻器接入正确"},
+            {"text": "把电流表串联进电路（电流从「0.6」流入，「−」流出），闭合开关", "check": {"type": "ammeter"},
+             "ok": "电流表接法正确"},
+            {"text": "把电压表并联在定值电阻两端", "check": {"type": "voltmeter_across", "target": "resistor"},
+             "ok": "电压表测的是定值电阻两端电压"},
+            {"text": "移动滑片改变电阻两端电压，至少记录 3 组 U、I 数据", "check": {"type": "records", "min": 3},
+             "ok": "数据够了，看看右下角的 I–U 图像"},
+        ],
+        "record": {"columns": ["U", "I", "R"], "chart": "linear"},
+        "quiz": [
+            {
+                "q": "电阻一定时，I–U 图像是什么形状？",
+                "options": [
+                    {"t": "一条过原点的直线", "ok": True},
+                    {"t": "一条曲线", "ok": False, "why": "看看记录的数据点，它们落在哪种线上？"},
+                    {"t": "一条水平线", "ok": False, "why": "电压变大时，电流也在变大。"},
+                ],
+                "explain": "电阻一定时，电流与电压成正比，图像是过原点的直线，斜率的倒数就是电阻。",
+            },
+        ],
+    }
+
+
+def build_circuit_lab_bulb_power() -> dict:
+    return {
+        "engine": "circuit",
+        "id": "circuit_lab_bulb_power",
+        "title": "测量小灯泡的电功率",
+        "subtitle": "调到额定电压，读出额定电流",
+        "intro": {
+            "purpose": "用伏安法测量小灯泡在不同电压下的电功率，测出额定功率，观察灯泡亮度与实际功率的关系。",
+            "apparatus": ["电池组（4.5 V）", "开关", "小灯泡（2.5 V 0.3 A）", "滑动变阻器（20 Ω）", "电流表", "电压表", "导线若干"],
+            "discussion": [
+                "小灯泡的亮度由什么决定？",
+                "为什么不能求几次功率的平均值作为额定功率？",
+            ],
+        },
+        "library": ["battery", "switch", "bulb", "rheostat", "ammeter", "voltmeter"],
+        "scene": {
+            "parts": [
+                _part("p1", "battery", 300, 620, emf=4.5),
+                _part("p2", "switch", 560, 620),
+                _part("p3", "rheostat", 860, 600, Rmax="20", pos=1),
+                _part("p4", "bulb", 440, 320, spec="2.5|0.3"),
+                _part("p5", "ammeter", 780, 320),
+                _part("p6", "voltmeter", 440, 120),
+            ],
+            "wires": [],
+        },
+        "steps": [
+            {"text": "断开开关，把电池组、开关、小灯泡、滑动变阻器（一上一下）串联，滑片置于阻值最大处",
+             "check": {"type": "rheostat_in"}, "ok": "滑动变阻器接入正确"},
+            {"text": "电流表串联、电压表并联在小灯泡两端", "check": {"type": "voltmeter_across", "target": "bulb"},
+             "ok": "电压表测的是小灯泡两端电压"},
+            {"text": "移动滑片使电压表示数为 2.5 V，记录数据（额定功率）", "check": {"type": "rated"},
+             "ok": "测到了额定状态下的数据"},
+            {"text": "再测略低于、略高于额定电压的两组数据，比较亮度", "check": {"type": "records", "min": 3},
+             "ok": "三组数据齐了，看看 I–U 图像"},
+        ],
+        "record": {"columns": ["U", "I", "P", "R"], "chart": "curve"},
+        "quiz": [
+            {
+                "q": "为什么小灯泡的 I–U 图像不是直线？",
+                "options": [
+                    {"t": "灯丝电阻随温度升高而增大", "ok": True},
+                    {"t": "电流表读数不准", "ok": False, "why": "每组数据的 R = U/I 都不一样，而且有规律。"},
+                    {"t": "电源电压不稳定", "ok": False, "why": "电压表测的就是灯泡两端的实际电压。"},
+                ],
+                "explain": "电压越高，灯丝温度越高，电阻越大，所以 U/I 逐渐变大，图像向电压轴弯曲。",
+            },
+        ],
+    }
+
+
+# ── 光学实验台：激光 / 蜡烛 / 透镜 / 平面镜 / 玻璃砖 / 光屏，二维光线追迹 ──────────
+# 长度单位 10 = 1 cm；rail 为光具座（其上的蜡烛、透镜、光屏只能左右移动）。
+# steps[].check：hit(target) / tir / image(kind=reduced|equal|enlarged|virtual) / records(min)
+
+_ANGLE_COLS_R = [{"k": "i", "label": "入射角 i / °"}, {"k": "r", "label": "反射角 r / °"}]
+_ANGLE_COLS_G = [{"k": "i", "label": "入射角 i / °"}, {"k": "g", "label": "折射角 γ / °"}]
+
+
+def build_optics_lab_reflection() -> dict:
+    return {
+        "engine": "optics",
+        "id": "optics_lab_reflection",
+        "title": "探究光的反射定律",
+        "subtitle": "改变入射角，比较反射角与入射角",
+        "intro": {
+            "purpose": "探究反射光线、入射光线与法线的位置关系，以及反射角与入射角的大小关系。",
+            "apparatus": ["激光笔", "平面镜", "量角（显示法线与角度）"],
+            "discussion": ["如果让光逆着反射光线射向镜面，会怎样？", "入射角增大时，反射角怎样变化？"],
+        },
+        "library": ["laser", "mirror"],
+        "scene": {"parts": [
+            _part("p1", "mirror", 600, 540),
+            _part("p2", "laser", 330, 300, rot=40),
+        ]},
+        "steps": [
+            {"text": "让激光射到平面镜上，打开「法线与角度」观察反射光", "check": {"type": "hit", "target": "mirror"},
+             "ok": "看到了反射光线"},
+            {"text": "旋转或移动激光笔改变入射角，记录至少 3 组入射角和反射角", "check": {"type": "records", "min": 3},
+             "ok": "数据够了，比较两列数据"},
+            {"text": "比较反射角与入射角的大小，归纳反射定律"},
+        ],
+        "record": {"mode": "angles", "columns": _ANGLE_COLS_R},
+        "quiz": [{
+            "q": "入射角为 35° 时，反射角是多少？",
+            "options": [
+                {"t": "35°", "ok": True},
+                {"t": "55°", "ok": False, "why": "55° 是入射光线与镜面的夹角，入射角是与法线的夹角。"},
+                {"t": "70°", "ok": False, "why": "70° 是入射光线与反射光线的夹角。"},
+            ],
+            "explain": "反射角等于入射角；入射角、反射角都是光线与法线的夹角。",
+        }],
+    }
+
+
+def build_optics_lab_refraction() -> dict:
+    return {
+        "engine": "optics",
+        "id": "optics_lab_refraction",
+        "title": "探究光的折射与全反射",
+        "subtitle": "光从空气斜射入玻璃，再从玻璃射向空气",
+        "intro": {
+            "purpose": "观察光从空气斜射入玻璃时的折射现象，比较折射角与入射角；用半圆形玻璃砖观察全反射。",
+            "apparatus": ["激光笔", "玻璃砖", "半圆形玻璃砖"],
+            "discussion": ["光垂直射入玻璃砖时传播方向改变吗？", "发生全反射需要满足哪两个条件？"],
+        },
+        "library": ["laser", "block", "semi"],
+        "scene": {"parts": [
+            _part("p1", "block", 620, 480, n=1.5),
+            _part("p2", "laser", 360, 270, rot=40),
+        ]},
+        "steps": [
+            {"text": "让激光斜射入玻璃砖，观察折射光线和微弱的反射光线", "check": {"type": "hit", "target": "block"},
+             "ok": "光进入玻璃后传播方向发生了偏折"},
+            {"text": "改变入射角，记录至少 3 组入射角和折射角", "check": {"type": "records", "min": 3},
+             "ok": "比较一下：折射角比入射角大还是小？"},
+            {"text": "从器材库取出半圆形玻璃砖，让光沿半径射向圆心，增大入射角直到折射光消失",
+             "check": {"type": "tir"}, "ok": "发生了全反射！"},
+        ],
+        "record": {"mode": "angles", "columns": _ANGLE_COLS_G},
+        "quiz": [{
+            "q": "光从空气斜射入玻璃时，折射角与入射角相比？",
+            "options": [
+                {"t": "折射角小于入射角", "ok": True},
+                {"t": "折射角大于入射角", "ok": False, "why": "看记录表：玻璃中的光线更靠近法线。"},
+                {"t": "两者相等", "ok": False, "why": "只有垂直入射时方向不变。"},
+            ],
+            "explain": "光从空气斜射入玻璃、水等介质时，折射光线向法线偏折，折射角小于入射角。",
+        }],
+    }
+
+
+def build_optics_lab_convex() -> dict:
+    return {
+        "engine": "optics",
+        "id": "optics_lab_convex",
+        "title": "探究凸透镜成像的规律",
+        "subtitle": "改变物距，移动光屏找清晰的像",
+        "intro": {
+            "purpose": "探究凸透镜成像时，像的大小、正倒、虚实与物距的关系。",
+            "apparatus": ["光具座", "蜡烛", "凸透镜（f = 10 cm）", "光屏"],
+            "discussion": ["照相机、投影仪、放大镜分别利用了哪种成像情况？", "蜡烛燃短后，光屏上的像会向哪里移动？"],
+        },
+        "library": ["candle", "convex", "screen"],
+        "rail": {"y": 400, "x0": 100, "len_cm": 100},
+        "showNormal": False,
+        "scene": {"parts": [
+            _part("p1", "candle", 200, 400),
+            _part("p2", "convex", 600, 400, f=10),
+            _part("p3", "screen", 950, 400),
+        ]},
+        "steps": [
+            {"text": "物距大于 2 倍焦距（u > 2f），移动光屏得到清晰的像", "check": {"type": "image", "kind": "reduced"},
+             "ok": "倒立、缩小的实像——照相机"},
+            {"text": "把蜡烛放在 2 倍焦距处（u = 2f），再找清晰的像", "check": {"type": "image", "kind": "equal"},
+             "ok": "倒立、等大的实像"},
+            {"text": "物距在 f 与 2f 之间，找清晰的像", "check": {"type": "image", "kind": "enlarged"},
+             "ok": "倒立、放大的实像——投影仪"},
+            {"text": "物距小于焦距（u < f），光屏上还能承接到像吗？", "check": {"type": "image", "kind": "virtual"},
+             "ok": "成正立、放大的虚像——放大镜"},
+            {"text": "每得到一次清晰的像就记录一次，至少 3 组", "check": {"type": "records", "min": 3}, "ok": "数据记录完成"},
+        ],
+        "record": {"mode": "lens", "columns": [
+            {"k": "u", "label": "物距 u / cm"}, {"k": "v", "label": "像距 v / cm"}, {"k": "kind", "label": "像的性质"},
+        ]},
+        "quiz": [{
+            "q": "用照相机拍照时，被拍物体应在镜头的？",
+            "options": [
+                {"t": "2 倍焦距以外", "ok": True},
+                {"t": "1 倍与 2 倍焦距之间", "ok": False, "why": "这时成放大的实像，是投影仪的原理。"},
+                {"t": "1 倍焦距以内", "ok": False, "why": "这时成虚像，是放大镜的原理。"},
+            ],
+            "explain": "u > 2f 时成倒立、缩小的实像，像距在 f 与 2f 之间，照相机就是这样工作的。",
+        }],
+    }
+
+
+def build_optics_lab_diy() -> dict:
+    return {
+        "engine": "optics",
+        "id": "optics_lab_diy",
+        "title": "光学实验台（自由搭建）",
+        "subtitle": "激光、透镜、平面镜、玻璃砖任意组合",
+        "intro": {
+            "purpose": "自由组合光学器材，观察光的反射、折射和透镜对光的作用。",
+            "apparatus": ["激光笔", "蜡烛", "凸透镜", "凹透镜", "平面镜", "玻璃砖", "半圆形玻璃砖", "光屏"],
+            "discussion": ["用两块平面镜能做一个潜望镜吗？", "几束平行光经过凸透镜和凹透镜分别会怎样？"],
+        },
+        "library": None,
+        "scene": {"parts": []},
+        "steps": [
+            {"text": "用激光照射平面镜，观察反射", "check": {"type": "hit", "target": "mirror"}, "ok": "观察到了反射"},
+            {"text": "让激光穿过玻璃砖，观察折射", "check": {"type": "hit", "target": "block"}, "ok": "观察到了折射"},
+            {"text": "让激光通过凸透镜，看光线怎样偏折", "check": {"type": "hit", "target": "convex"}, "ok": "凸透镜对光有会聚作用"},
+        ],
+        "record": {"mode": "angles", "columns": _ANGLE_COLS_R},
+    }
+
+
 REGISTRY = {
+    "optics_lab_reflection": build_optics_lab_reflection,
+    "optics_lab_refraction": build_optics_lab_refraction,
+    "optics_lab_convex": build_optics_lab_convex,
+    "optics_lab_diy": build_optics_lab_diy,
+    "circuit_lab_diy": build_circuit_lab_diy,
+    "circuit_lab_series_parallel": build_circuit_lab_series_parallel,
+    "circuit_lab_ohm": build_circuit_lab_ohm,
+    "circuit_lab_bulb_power": build_circuit_lab_bulb_power,
     "magnetic_field": build_magnetic_field,
     "electromagnetic_induction": build_emi,
     "circuit_series_parallel": build_circuit,

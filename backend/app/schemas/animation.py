@@ -1,5 +1,17 @@
+import json
+
 from pydantic import BaseModel, Field, field_validator
 from datetime import datetime
+
+SCENE_MAX_BYTES = 200_000
+
+
+def _check_scene(v: dict | None) -> dict | None:
+    if v is None:
+        return None
+    if len(json.dumps(v, ensure_ascii=False)) > SCENE_MAX_BYTES:
+        raise ValueError("场景数据过大")
+    return v
 
 
 class AnimationOut(BaseModel):
@@ -27,6 +39,12 @@ class AnimationCreate(BaseModel):
     title: str = Field(..., min_length=1, max_length=256)
     keywords: list[str] = []
     knowledge_tags: list[str] = []
+    scene: dict | None = None
+
+    @field_validator("scene")
+    @classmethod
+    def _scene(cls, v: dict | None) -> dict | None:
+        return _check_scene(v)
 
     @field_validator("title")
     @classmethod
@@ -54,6 +72,12 @@ class AnimationUpdate(BaseModel):
     title: str | None = Field(None, min_length=1, max_length=256)
     keywords: list[str] | None = None
     knowledge_tags: list[str] | None = None
+    scene: dict | None = None
+
+    @field_validator("scene")
+    @classmethod
+    def _scene(cls, v: dict | None) -> dict | None:
+        return _check_scene(v)
 
     @field_validator("title")
     @classmethod

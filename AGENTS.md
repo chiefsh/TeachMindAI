@@ -104,7 +104,9 @@ tasks/<队列>.py      → Celery 包装（薄，真正逻辑在 service）
 
 - 后端：`api/v1/animation.py`、`schemas/animation.py`、`models/animation.py`、`services/animation_service.py`
 - 前端：`views/animation/AnimationsView.vue`；侧栏「AI 生成 → 互动动画」
-- 系统预置来自 `animation_service.system_catalog`（化学 `LAB_CATALOG` + 数学探究台 + 分子 3D + 生物 `BIO_CATALOG` + 物理 `PHYSICS_CATALOG`；启动 `ensure_system_labs` 补缺失行并同步系统元数据，不覆盖标题/HTML）；教师可从模板另存。出课勾选后写 `animation_keys`，生成时引用库 HTML，不要每次重跑 CLI。自动匹配须标签打中知识点或关键词足够强；对不上本课核心点不要塞实验台，化学不再兜底制氧。
+- 系统预置来自 `animation_service.system_catalog`（化学 `LAB_CATALOG` + 数学探究台 + 分子 3D + 生物 `BIO_CATALOG` + 物理 `PHYSICS_CATALOG`；启动 `ensure_system_labs` 补缺失行并同步系统元数据，不覆盖标题/HTML）；教师可从模板另存。
+- 统一外壳（NOBOOK 式）：`backend/skills/_shell/nb-shell.{css,js}`，由 `animation_service.decorate_html` / `served_html` 在出 HTML 时注入（库内存的是原始 HTML）。教师预览与分享带顶栏（简介 / 画笔 / 重置 / 全屏），课件引用 `chrome=False` 只保留协议。协议：宿主 postMessage `{nb:'call', id, method}`（`config` / `getData` / `setData` / `reset` / `info`），页面回 `{nb:'reply'}` 与事件 `{nb:'event', type:'onload'|'onChange'}`；页面引擎用 `NB.register({...})` 接入。
+- 可搭建类型（`SCENE_KINDS`，目前 `physics_lab` 物理实验台：电学、光学）：预览里「保存搭建」写 `spec.scene`（`PATCH /animations/{id}` 带 `scene`，系统行须先另存），「另存为我的（含搭建）」走 `POST /animations` 带 `scene`。出课勾选后写 `animation_keys`，生成时引用库 HTML，不要每次重跑 CLI。自动匹配须标签打中知识点或关键词足够强；对不上本课核心点不要塞实验台，化学不再兜底制氧。
 
 ### 作业 / 试卷
 
@@ -153,7 +155,7 @@ tasks/<队列>.py      → Celery 包装（薄，真正逻辑在 service）
 | `edu-chem-reaction` | 化学/生物 | `lib/reaction_kernel.py` |
 | `edu-chem-lab` | 化学/科学 | 宏观实验台 `template/lab.html` + `lab2d.js` / `lab3d.js`（试剂架、2D/3D、讲解演示；制气、电解水、中和、金属与酸、氧化铜与酸、铵盐分解、铁丝燃烧、过滤、蒸发、配制溶液） |
 | `edu-bio` | 生物 | 探究页 `template/explore.html`（点击细胞器/器官看功能，或分阶段播放有丝分裂；细胞、人体系统、光合作用、DNA） |
-| `edu-physics` | 物理 | 探究页 `template/explore.html`（PhET 风格：拖动物体、滑条改 U/R/力/密度/角度，仪表即时反馈；力学含抛体/单摆/碰撞/圆周/斜面/杠杆/压强/机械能/弹簧/滑轮/万有引力，电磁含磁场/感应/安培力/库仑/电容/变压器，光学含反射折射/凸透镜，另有物态/理想气体/机械波/多普勒/光电效应） |
+| `edu-physics` | 物理 | 实验台 `template/bench.html` + 引擎（NOBOOK 式，`kind=physics_lab`）：`circuit.js` 电学（器材库自由搭建、接线柱连线、节点电压法求解、实物图/电路图、数据记录）、`optics.js` 光学（激光/透镜/平面镜/玻璃砖光线追迹、光具座凸透镜成像）；探究页 `template/explore.html`（PhET 风格：拖动物体、滑条改 U/R/力/密度/角度，仪表即时反馈；力学含抛体/单摆/碰撞/圆周/斜面/杠杆/压强/机械能/弹簧/滑轮/万有引力，电磁含磁场/感应/安培力/库仑/电容/变压器，光学含反射折射/凸透镜，另有物态/理想气体/机械波/多普勒/光电效应） |
 
 除各 skill 的固定解题题型外，两个数学 skill 还有**通用兜底题型**，供没有具体题面的概念课出 3D / 画板：
 `solid_explore`（可旋转多面体：cube / cuboid / quad_pyramid / tetrahedron / tri_prism，讲底面与高、

@@ -346,7 +346,7 @@ async def _build_payload(link: ShareLink, db: AsyncSession) -> dict:
         row = await db.get(InteractiveAsset, link.resource_id)
         if not row:
             raise HTTPException(status_code=404, detail="分享内容已不可用")
-        html = await anim_svc.html_for_row(db, row)
+        html = await anim_svc.served_html(db, row)
         if not html:
             raise HTTPException(status_code=404, detail="分享内容已不可用")
         return {

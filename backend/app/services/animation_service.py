@@ -1,9 +1,12 @@
-"""互动动画库：系统预置（实验台 / 数学探究 / 分子 3D）+ 教师另存，供课件引用。"""
+"""互动动画库：系统预置（实验台 / 数学探究 / 分子 3D）+ 教师另存，供课件引用。
+输出 HTML 时套统一外壳（`skills/_shell`），实验台类可保存教师搭好的场景（spec.scene）。"""
 from __future__ import annotations
 
 import json
 import logging
 import secrets
+from functools import lru_cache
+from pathlib import Path
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy import select, or_
 from sqlalchemy.orm import load_only
@@ -249,7 +252,64 @@ KIND_SUBTITLE = {
     "chem_reaction": "动画 · 分子 3D 反应",
     "bio_explore": "动画 · 点击结构 · 看功能",
     "physics_explore": "动画 · 拖动物体 · 调参看规律",
+    "physics_lab": "实验台 · 器材库 · 自由连线",
 }
+
+# 可在页面内搭建并保存场景（spec.scene）的类型
+SCENE_KINDS = {"physics_lab"}
+
+_SHELL_DIR = Path(__file__).resolve().parents[2] / "skills" / "_shell"
+_SHELL_MARK = 'id="nb-shell-css"'
+
+
+@lru_cache(maxsize=1)
+def _shell_assets() -> tuple[str, str]:
+    css = (_SHELL_DIR / "nb-shell.css").read_text(encoding="utf-8")
+    js = (_SHELL_DIR / "nb-shell.js").read_text(encoding="utf-8")
+    return css, js.replace("</script>", "<\\/script>")
+
+
+def _script_json(val) -> str:
+    return json.dumps(val, ensure_ascii=False, default=str).replace("</", "<\\/")
+
+
+def decorate_html(html: str, row: InteractiveAsset, *, chrome: bool = True) -> str:
+    """给动画页套统一外壳（顶栏：简介 / 画笔 / 重置 / 全屏）并注入场景协议与已保存场景。"""
+    if not html or _SHELL_MARK in html:
+        return html
+    try:
+        css, js = _shell_assets()
+    except OSError as e:
+        logger.warning("外壳资源缺失：%s", e)
+        return html
+    spec = row.spec or {}
+    cfg = {
+        "title": row.title,
+        "subject": row.subject,
+        "group": row.group,
+        "chrome": chrome,
+        "info": {"tags": list(row.knowledge_tags or [])},
+        "scene": spec.get("scene") if row.kind in SCENE_KINDS else None,
+    }
+    head = (
+        f'<style {_SHELL_MARK}>{css}</style>'
+        f"<script>window.__NB_CFG__={_script_json(cfg)};</script>"
+        f"<script>{js}</script>"
+    )
+    low = html[:4000].lower()
+    pos = low.find("<head>")
+    if pos >= 0:
+        cut = pos + len("<head>")
+        return html[:cut] + head + html[cut:]
+    pos = low.find("<html")
+    if pos >= 0:
+        cut = html.find(">", pos) + 1
+        return html[:cut] + "<head>" + head + "</head>" + html[cut:]
+    return head + html
+
+
+async def served_html(db: AsyncSession, row: InteractiveAsset, *, chrome: bool = True) -> str:
+    return decorate_html(await html_for_row(db, row), row, chrome=chrome)
 
 
 def _lab_rows() -> list[dict]:
@@ -301,7 +361,7 @@ def _physics_rows() -> list[dict]:
             "title": e["title"],
             "subject": "物理",
             "group": e["group"],
-            "kind": "physics_explore",
+            "kind": e.get("kind") or "physics_explore",
             "origin": "system",
             "keywords": list(e.get("keywords") or ()),
             "knowledge_tags": list(e.get("knowledge_tags") or []),
@@ -477,6 +537,8 @@ async def html_for_row(db: AsyncSession, row: InteractiveAsset) -> str:
         stale = not row.html or "edu-sim:1" not in row.html
     elif row.kind == "physics_explore":
         stale = not row.html or "edu-sim:3" not in row.html
+    elif row.kind == "physics_lab":
+        stale = not row.html or "edu-bench:1" not in row.html
     elif row.kind == "chem_lab":
         stale = not row.html or "edu-lab:24" not in row.html
     if row.html and not stale:
@@ -496,7 +558,7 @@ async def payload_for_key(key: str) -> tuple[str, dict | None]:
         row = await get_by_key(db, key)
         if not row:
             return "", None
-        html = await html_for_row(db, row)
+        html = await served_html(db, row, chrome=False)
         if not html:
             return "", None
         return html, {
@@ -512,11 +574,17 @@ async def payload_for_key(key: str) -> tuple[str, dict | None]:
 async def duplicate_from_template(
     db: AsyncSession, teacher_id: int, template_key: str, title: str,
     keywords: list[str], knowledge_tags: list[str],
+    scene: dict | None = None,
 ) -> InteractiveAsset:
     await ensure_system_labs(db)
     src = await get_by_key(db, template_key)
     if not src:
         raise ValueError("模板不存在")
+    spec = dict(src.spec or {})
+    if scene is not None:
+        if src.kind not in SCENE_KINDS:
+            raise ValueError("该动画不支持保存搭建场景")
+        spec["scene"] = scene
     new_key = f"u{teacher_id}_{src.problem_type}_{secrets.token_hex(3)}"
     row = InteractiveAsset(
         key=new_key,
@@ -530,7 +598,7 @@ async def duplicate_from_template(
         knowledge_tags=knowledge_tags or list(src.knowledge_tags or []),
         skill=src.skill,
         problem_type=src.problem_type,
-        spec=dict(src.spec or {}),
+        spec=spec,
         html=src.html,
     )
     db.add(row)
@@ -587,7 +655,7 @@ def pick_catalog_keys(points: list[dict], title: str, subject_name: str, limit: 
         explain_parts.append(str(p.get("activity_goal") or ""))
     explain_blob = " ".join(explain_parts)
     pref = demo_preference(name_blob + " " + explain_blob)
-    lab_kinds = {"chem_lab"}
+    lab_kinds = {"chem_lab", "physics_lab"}
     anim_kinds = {
         "chem_reaction", "solid_explore", "curve_explore",
         "bio_explore", "physics_explore",

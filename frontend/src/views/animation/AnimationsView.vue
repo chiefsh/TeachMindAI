@@ -3,7 +3,7 @@
     <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between mb-4 sm:mb-6">
       <div>
         <h1 class="page-title">互动动画</h1>
-        <p class="page-subtitle">按知识点预置的实验台、数学探究、分子反应、生物与物理示意图。可单独预览，生成课件时手动引入或自动匹配。</p>
+        <p class="page-subtitle">按知识点预置的实验台、数学探究、分子反应、生物与物理示意图。物理实验台（电学、光学）可从器材库自由搭建，另存为我的后能保存搭建结果。可单独预览，生成课件时手动引入或自动匹配。</p>
       </div>
       <el-button v-if="auth.can('animation.edit')" type="primary" :icon="Plus" @click="openCreate">
         从模板创建
@@ -74,6 +74,18 @@
       <template #header>
         <div class="flex items-center gap-2 w-full pr-6">
           <span class="font-semibold truncate flex-1">{{ previewItem?.title || '预览' }}</span>
+          <template v-if="sceneEditable && previewItem">
+            <el-button
+              v-if="canEdit(previewItem)"
+              size="small" type="success" :loading="savingScene"
+              @click="saveScene"
+            >保存搭建</el-button>
+            <el-button
+              v-if="auth.can('animation.edit')"
+              size="small" :loading="savingScene"
+              @click="saveSceneAs"
+            >另存为我的（含搭建）</el-button>
+          </template>
           <el-button size="small" :disabled="!previewUrl || previewing" @click="openShare(previewItem)">分享链接</el-button>
           <el-button size="small" type="primary" :disabled="!previewUrl || previewing" @click="enterPresent">全屏演示</el-button>
         </div>
@@ -81,6 +93,7 @@
       <div v-if="previewing" class="text-sm text-slate-400 py-16 text-center">正在加载动画，首次生成可能需要几十秒…</div>
       <iframe
         v-else-if="previewUrl"
+        ref="previewFrame"
         class="w-full border-0 rounded-lg bg-white"
         style="min-height: 78vh; height: 78vh"
         :src="previewUrl"
@@ -98,9 +111,15 @@
         <div class="h-11 shrink-0 flex items-center gap-3 px-4 bg-black/80 text-white">
           <span class="truncate flex-1 text-sm">{{ previewItem?.title }}</span>
           <span class="text-xs text-white/50">Esc 退出全屏</span>
+          <el-button
+            v-if="sceneEditable && previewItem && canEdit(previewItem)"
+            size="small" type="success" :loading="savingScene"
+            @click="saveScene"
+          >保存搭建</el-button>
           <el-button size="small" @click="exitPresent">退出</el-button>
         </div>
         <iframe
+          ref="presentFrame"
           class="flex-1 w-full border-0 bg-black"
           :src="previewUrl"
           sandbox="allow-scripts allow-same-origin"
@@ -177,8 +196,14 @@ const form = reactive({
   keywords: [] as string[],
   knowledge_tags: [] as string[],
 })
+const previewFrame = ref<HTMLIFrameElement | null>(null)
+const presentFrame = ref<HTMLIFrameElement | null>(null)
+const sceneEditable = ref(false)
+const savingScene = ref(false)
+const pendingScene = ref<Record<string, unknown> | null>(null)
 
 const KIND_LABEL: Record<string, string> = {
+  physics_lab: '物理实验台',
   chem_lab: '实验台',
   solid_explore: '立体探究',
   curve_explore: '曲线画板',
@@ -241,6 +266,84 @@ function onSubjectChange() {
 function revokePreview() {
   if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
   previewUrl.value = ''
+  sceneEditable.value = false
+}
+
+/* 动画页外壳协议：iframe 内 NB 外壳收 {nb:'call'}，回 {nb:'reply'} / {nb:'event'} */
+let callSeq = 0
+const pendingCalls = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>()
+
+function activeFrame(): HTMLIFrameElement | null {
+  return (presenting.value ? presentFrame.value : previewFrame.value) || previewFrame.value || presentFrame.value
+}
+
+function isOurFrame(src: MessageEventSource | null) {
+  return !!src && [previewFrame.value, presentFrame.value].some(f => f?.contentWindow === src)
+}
+
+function onFrameMessage(e: MessageEvent) {
+  const m = e.data
+  if (!m || typeof m !== 'object' || !isOurFrame(e.source)) return
+  if (m.nb === 'event' && m.type === 'onload') {
+    sceneEditable.value = !!m.data?.sceneEditable
+  } else if (m.nb === 'reply' && pendingCalls.has(m.id)) {
+    const p = pendingCalls.get(m.id)!
+    pendingCalls.delete(m.id)
+    if (m.error) p.reject(new Error(m.error))
+    else p.resolve(m.result)
+  }
+}
+
+function callFrame<T = unknown>(method: string, args?: unknown): Promise<T> {
+  const win = activeFrame()?.contentWindow
+  if (!win) return Promise.reject(new Error('动画未加载'))
+  const id = ++callSeq
+  return new Promise<T>((resolve, reject) => {
+    pendingCalls.set(id, { resolve: resolve as (v: unknown) => void, reject })
+    win.postMessage({ nb: 'call', id, method, args }, '*')
+    setTimeout(() => {
+      if (pendingCalls.delete(id)) reject(new Error('动画无响应'))
+    }, 5000)
+  })
+}
+
+async function readScene(): Promise<Record<string, unknown> | null> {
+  try {
+    const scene = await callFrame<Record<string, unknown> | null>('getData')
+    if (scene && typeof scene === 'object') return scene
+    ElMessage.error('当前动画没有可保存的搭建')
+  } catch (e) {
+    ElMessage.error(e instanceof Error ? e.message : '读取搭建失败')
+  }
+  return null
+}
+
+async function saveScene() {
+  const item = previewItem.value
+  if (!item) return
+  savingScene.value = true
+  try {
+    const scene = await readScene()
+    if (!scene) return
+    await animationApi.update(item.id, { scene })
+    ElMessage.success('已保存当前搭建，下次打开和出课引用都会使用它')
+  } finally {
+    savingScene.value = false
+  }
+}
+
+async function saveSceneAs() {
+  const item = previewItem.value
+  if (!item) return
+  savingScene.value = true
+  try {
+    const scene = await readScene()
+    if (!scene) return
+    openSaveAs(item)
+    pendingScene.value = scene
+  } finally {
+    savingScene.value = false
+  }
 }
 
 function openShare(item: InteractiveAsset | null) {
@@ -307,6 +410,7 @@ function onPresentKey(e: KeyboardEvent) {
 function openCreate() {
   formMode.value = 'create'
   editingId.value = null
+  pendingScene.value = null
   form.template_key = templates.value[0]?.key || ''
   form.title = ''
   form.keywords = []
@@ -317,6 +421,7 @@ function openCreate() {
 function openSaveAs(item: InteractiveAsset) {
   formMode.value = 'create'
   editingId.value = null
+  pendingScene.value = null
   form.template_key = item.origin === 'system' ? item.key : item.problem_type
   form.title = `${item.title}（我的）`
   form.keywords = [...(item.keywords || [])]
@@ -351,7 +456,9 @@ async function submitForm() {
         title: form.title.trim(),
         keywords: form.keywords,
         knowledge_tags: form.knowledge_tags,
+        ...(pendingScene.value ? { scene: pendingScene.value } : {}),
       })
+      pendingScene.value = null
       ElMessage.success('已创建')
     } else if (editingId.value) {
       await animationApi.update(editingId.value, {
@@ -378,9 +485,11 @@ async function remove(item: InteractiveAsset) {
 onMounted(() => {
   load()
   window.addEventListener('keydown', onPresentKey)
+  window.addEventListener('message', onFrameMessage)
 })
 onUnmounted(() => {
   window.removeEventListener('keydown', onPresentKey)
+  window.removeEventListener('message', onFrameMessage)
   showPreview.value = false
   exitPresent()
   revokePreview()

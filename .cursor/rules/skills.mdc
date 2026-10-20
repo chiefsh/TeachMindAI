@@ -15,7 +15,9 @@ alwaysApply: false
 | `edu-chem-reaction` | 化学/生物 | CLI `scripts/generate.py`；内核 `lib/reaction_kernel.py` |
 | `edu-chem-lab` | 化学/科学 | CLI `scripts/generate.py`；宏观实验台 `template/lab.html` + `lab2d.js` / `lab3d.js` |
 | `edu-bio` | 生物 | CLI `scripts/generate.py`；探究页 `template/explore.html` + `explore.js` |
-| `edu-physics` | 物理 | CLI `scripts/generate.py`；PhET 风格探究页 `template/explore.html` + `explore.js`（拖动物体 / 滑条改参 / 仪表反馈） |
+| `edu-physics` | 物理 | CLI `scripts/generate.py`；PhET 风格探究页 `template/explore.html` + `explore.js`（拖动物体 / 滑条改参 / 仪表反馈）；带 `engine` 的场景走通用实验台 `template/bench.html`（`circuit` → `circuit.js` 电学，`optics` → `optics.js` 光学；`kind=physics_lab`，场景存 `spec.scene`） |
+
+动画库出 HTML 时由 `animation_service.decorate_html` 套统一外壳 `skills/_shell/`（顶栏 + postMessage 场景协议），skill 模板里不要再各自写顶栏。
 
 能力表与路由：`skill_service.SKILL_CAPABILITIES`、`LAB_CATALOG`、`BIO_CATALOG`、`PHYSICS_CATALOG`、`route_math_point` / `route_chem_point` / `route_chem_lab_point` / `route_bio_point` / `route_physics_point`。任何失败返回 `""`，由 `ai_service` 回退。
 

@@ -1,0 +1,1081 @@
+/* 光学实验台：器材库自由摆放 / 旋转，二维光线追迹（反射、折射、全反射、薄透镜），光具座成像。
+ * 长度单位：10 = 1 cm。 */
+(function () {
+  var DATA = JSON.parse(document.getElementById("bench-data").textContent);
+  document.title = DATA.title || "光学实验台";
+  document.getElementById("lib-tip").textContent = "拖动或点击器材放到实验台；选中后拖动蓝色手柄旋转。光具座上的器材只能左右移动。";
+  var WORLD_W = 1200, WORLD_H = 720, CM = 10;
+  var LENS_HALF = 85;
+  var RAIL = DATA.rail || null;
+  var svg = document.getElementById("stage");
+
+  function $(id) { return document.getElementById(id); }
+  function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+  function fmt(n, d) { return Number(n).toFixed(d == null ? 1 : d); }
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
+    });
+  }
+  function report(ok, q, a) {
+    try {
+      if (ok) window.CW && window.CW.correct && window.CW.correct(q, a);
+      else window.CW && window.CW.wrong && window.CW.wrong(q, a);
+    } catch (e) {}
+  }
+  var toastTimer = 0;
+  function toast(msg, kind) {
+    var t = $("toast");
+    t.textContent = msg;
+    t.className = kind || "";
+    t.style.display = "block";
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { t.style.display = "none"; }, 2600);
+  }
+
+  /* ── 向量 ─────────────────────────────── */
+  function add(a, b) { return [a[0] + b[0], a[1] + b[1]]; }
+  function sub(a, b) { return [a[0] - b[0], a[1] - b[1]]; }
+  function mul(a, k) { return [a[0] * k, a[1] * k]; }
+  function dot(a, b) { return a[0] * b[0] + a[1] * b[1]; }
+  function cross(a, b) { return a[0] * b[1] - a[1] * b[0]; }
+  function norm(a) { var l = Math.hypot(a[0], a[1]) || 1; return [a[0] / l, a[1] / l]; }
+  function rad(d) { return d * Math.PI / 180; }
+  function deg(r) { return r * 180 / Math.PI; }
+  function rotV(v, r) { var c = Math.cos(rad(r)), s = Math.sin(rad(r)); return [v[0] * c - v[1] * s, v[0] * s + v[1] * c]; }
+
+  /* ── 器材 ─────────────────────────────── */
+  var NPROP = { label: "折射率 n", kind: "range", min: 1.3, max: 2, step: 0.05, unit: "", def: 1.5 };
+  var TYPES = {
+    laser: {
+      name: "激光笔", cat: "光源", box: [-64, -16, 128, 32], rot: true,
+      props: {
+        color: { label: "颜色", kind: "select", def: "#ef4444", options: [["红光", "#ef4444"], ["绿光", "#16a34a"], ["紫光", "#8b5cf6"]] },
+        on: { label: "打开激光", kind: "bool", def: true },
+      },
+      note: "拖动蓝色手柄或「角度」滑条改变光的传播方向。",
+    },
+    candle: {
+      name: "蜡烛", cat: "光源", box: [-22, -76, 44, 132], rot: false,
+      note: "烛焰作为成像的物体；烛焰中心、透镜中心、光屏中心应在同一高度。",
+    },
+    convex: {
+      name: "凸透镜", cat: "透镜", box: [-18, -90, 36, 180], rot: true,
+      props: { f: { label: "焦距 f", kind: "range", min: 5, max: 25, step: 1, unit: " cm", def: 10 } },
+      note: "对光有会聚作用。平行于主光轴的光经过后会聚于焦点。",
+    },
+    concave: {
+      name: "凹透镜", cat: "透镜", box: [-18, -90, 36, 180], rot: true,
+      props: { f: { label: "焦距 f", kind: "range", min: 5, max: 25, step: 1, unit: " cm", def: 10 } },
+      note: "对光有发散作用，成正立、缩小的虚像。",
+    },
+    mirror: {
+      name: "平面镜", cat: "反射", box: [-94, -8, 188, 22], rot: true,
+      note: "反射面在上方（背面有斜线）。显示法线后可读出入射角和反射角。",
+    },
+    block: {
+      name: "玻璃砖", cat: "折射", box: [-110, -55, 220, 110], rot: true,
+      props: { n: NPROP },
+      note: "光从空气斜射入玻璃时，折射角小于入射角。",
+    },
+    semi: {
+      name: "半圆形玻璃砖", cat: "折射", box: [-100, -100, 200, 100], rot: true,
+      props: { n: NPROP },
+      note: "让光沿半径射向圆心，增大入射角，可观察全反射。",
+    },
+    screen: {
+      name: "光屏", cat: "光屏", box: [-10, -100, 20, 200], rot: true,
+      note: "用来承接实像。前后移动光屏，直到像最清晰。",
+    },
+  };
+  var CATS = ["全部", "光源", "透镜", "反射", "折射", "光屏"];
+  var RAIL_TYPES = { candle: 1, convex: 1, concave: 1, screen: 1 };
+
+  /* ── 状态 ─────────────────────────────── */
+  var parts = [], seq = 1, sel = null, records = [];
+  var showNormal = DATA.showNormal !== false, showRays = true, showFocus = true;
+  var undoStack = [], redoStack = [], lastSnap = "";
+  var view = { x: 0, y: 0, s: 1 };
+  var doneSteps = {}, latched = {}, allDoneReported = false, catNow = "全部", quizAnswered = {};
+  var optic = null;
+
+  function partById(id) { for (var i = 0; i < parts.length; i++) if (parts[i].id === id) return parts[i]; return null; }
+  function defaultProps(type) {
+    var out = {}, ps = TYPES[type].props || {};
+    Object.keys(ps).forEach(function (k) { out[k] = ps[k].def; });
+    return out;
+  }
+  function onRail(p) { return !!(RAIL && RAIL_TYPES[p.type]); }
+  function railX0() { return RAIL.x0; }
+  function railX1() { return RAIL.x0 + RAIL.len_cm * CM; }
+  function fixRail(p) {
+    if (!onRail(p)) return;
+    p.y = RAIL.y;
+    p.rot = 0;
+    p.x = clamp(Math.round((p.x - railX0()) / CM) * CM + railX0(), railX0(), railX1());
+  }
+  function makePart(type, x, y, rot, props) {
+    var p = { id: "p" + (seq++), type: type, x: x, y: y, rot: rot || 0, props: defaultProps(type) };
+    Object.keys(props || {}).forEach(function (k) { p.props[k] = props[k]; });
+    fixRail(p);
+    return p;
+  }
+  function snapshot() { return JSON.stringify(parts); }
+  function commit() {
+    var now = snapshot();
+    if (now === lastSnap) return;
+    undoStack.push(lastSnap);
+    if (undoStack.length > 80) undoStack.shift();
+    redoStack = [];
+    lastSnap = now;
+    try { window.NB && window.NB.changed && window.NB.changed(); } catch (e) {}
+  }
+  function restore(s) {
+    parts = JSON.parse(s);
+    lastSnap = s;
+    if (sel && !partById(sel)) sel = null;
+    refresh(true);
+  }
+  function undo() { if (!undoStack.length) return; redoStack.push(lastSnap); restore(undoStack.pop()); }
+  function redo() { if (!redoStack.length) return; undoStack.push(lastSnap); restore(redoStack.pop()); }
+
+  function loadScene(scene) {
+    scene = scene || {};
+    parts = []; seq = 1;
+    (scene.parts || []).forEach(function (sp) {
+      if (!TYPES[sp.type]) return;
+      var p = makePart(sp.type, Number(sp.x) || 600, Number(sp.y) || 360, Number(sp.rot) || 0, sp.props);
+      if (sp.id) p.id = String(sp.id);
+      parts.push(p);
+    });
+    var maxId = 0;
+    parts.forEach(function (p) { var m = /^p(\d+)$/.exec(p.id); if (m) maxId = Math.max(maxId, +m[1]); });
+    seq = maxId + 1;
+    records = Array.isArray(scene.records) ? scene.records.slice(0, 30) : [];
+    if (typeof scene.showNormal === "boolean") showNormal = scene.showNormal;
+    if (typeof scene.showRays === "boolean") showRays = scene.showRays;
+    sel = null; doneSteps = {}; latched = {}; allDoneReported = false;
+    undoStack = []; redoStack = [];
+    lastSnap = snapshot();
+  }
+
+  function toWorldPt(p, local) { return add([p.x, p.y], rotV(local, p.rot)); }
+  function toWorld(cx, cy) {
+    var ctm = svg.getScreenCTM();
+    if (!ctm) return [0, 0];
+    var pt = svg.createSVGPoint();
+    pt.x = cx; pt.y = cy;
+    var r = pt.matrixTransform(ctm.inverse());
+    return [r.x, r.y];
+  }
+  function setViewBox() {
+    svg.setAttribute("viewBox", view.x + " " + view.y + " " + (WORLD_W / view.s) + " " + (WORLD_H / view.s));
+  }
+  function zoomAt(f, cx, cy) {
+    var ns = clamp(view.s * f, 0.5, 2.5);
+    var w0 = WORLD_W / view.s, h0 = WORLD_H / view.s, w1 = WORLD_W / ns, h1 = WORLD_H / ns;
+    var px = cx == null ? view.x + w0 / 2 : cx, py = cy == null ? view.y + h0 / 2 : cy;
+    view.x = px - (px - view.x) * (w1 / w0);
+    view.y = py - (py - view.y) * (h1 / h0);
+    view.s = ns;
+    setViewBox();
+    renderTools();
+  }
+
+  /* ── 光学表面 ─────────────────────────────── */
+  function polyEdges(p, pts, centroid) {
+    var w = pts.map(function (q) { return toWorldPt(p, q); });
+    var c = toWorldPt(p, centroid);
+    var out = [];
+    for (var i = 0; i < w.length; i++) {
+      var a = w[i], b = w[(i + 1) % w.length];
+      var n = norm([b[1] - a[1], a[0] - b[0]]);
+      if (dot(sub(mul(add(a, b), 0.5), c), n) < 0) n = mul(n, -1);
+      out.push({ kind: "glass", a: a, b: b, n: n, part: p, poly: p.id, idx: Number(p.props.n) || 1.5 });
+    }
+    return out;
+  }
+  function surfaces() {
+    var out = [];
+    parts.forEach(function (p) {
+      if (p.type === "mirror") out.push({ kind: "mirror", a: toWorldPt(p, [-90, 0]), b: toWorldPt(p, [90, 0]), part: p });
+      else if (p.type === "convex" || p.type === "concave") {
+        out.push({ kind: "lens", a: toWorldPt(p, [0, -LENS_HALF]), b: toWorldPt(p, [0, LENS_HALF]), part: p,
+          c: [p.x, p.y], u: rotV([1, 0], p.rot), t: rotV([0, 1], p.rot),
+          f: (Number(p.props.f) || 10) * CM * (p.type === "concave" ? -1 : 1) });
+      } else if (p.type === "screen") out.push({ kind: "screen", a: toWorldPt(p, [0, -100]), b: toWorldPt(p, [0, 100]), part: p });
+      else if (p.type === "block") out = out.concat(polyEdges(p, [[-110, -55], [110, -55], [110, 55], [-110, 55]], [0, 0]));
+      else if (p.type === "semi") {
+        var pts = [];
+        for (var k = 0; k <= 64; k++) { var a = Math.PI + Math.PI * k / 64; pts.push([100 * Math.cos(a), 100 * Math.sin(a)]); }
+        out = out.concat(polyEdges(p, pts, [0, -40]));
+      }
+    });
+    return out;
+  }
+  function hitSeg(p, d, s) {
+    var r = sub(s.b, s.a), den = cross(d, r);
+    if (Math.abs(den) < 1e-12) return null;
+    var ap = sub(s.a, p);
+    var t = cross(ap, r) / den, u = cross(ap, d) / den;
+    if (t < 1e-3 || u < -1e-9 || u > 1 + 1e-9) return null;
+    return t;
+  }
+
+  /* ── 光线追迹 ─────────────────────────────── */
+  function trace() {
+    var surf = surfaces();
+    var segs = [], events = [], screenHits = [];
+    var stack = [];
+    parts.forEach(function (p) {
+      if (p.type === "laser" && p.props.on) {
+        stack.push({ p: toWorldPt(p, [64, 0]), d: rotV([1, 0], p.rot), I: 1, inside: null, main: true, color: p.props.color, src: p.id, depth: 0 });
+      }
+    });
+    candleRays(surf).forEach(function (r) { stack.push(r); });
+    var budget = 600;
+    while (stack.length && budget-- > 0) {
+      var ray = stack.pop();
+      var best = null, bt = Infinity;
+      surf.forEach(function (s) {
+        var t = hitSeg(ray.p, ray.d, s);
+        if (t != null && t < bt) { bt = t; best = s; }
+      });
+      if (!best) {
+        segs.push({ a: ray.p, b: add(ray.p, mul(ray.d, 3000)), color: ray.color, I: ray.I, main: ray.main, candle: ray.candle });
+        continue;
+      }
+      var hp = add(ray.p, mul(ray.d, bt));
+      segs.push({ a: ray.p, b: hp, color: ray.color, I: ray.I, main: ray.main, candle: ray.candle });
+      if (ray.depth > 40) continue;
+      var next = function (d, I, inside, main) {
+        stack.push({ p: add(hp, mul(d, 0.02)), d: d, I: I, inside: inside, main: main, color: ray.color, src: ray.src, depth: ray.depth + 1, candle: ray.candle, lensHit: ray.lensHit });
+      };
+      if (best.kind === "mirror") {
+        var mn = norm([best.b[1] - best.a[1], best.a[0] - best.b[0]]);
+        if (dot(mn, ray.d) > 0) mn = mul(mn, -1);
+        var rd = sub(ray.d, mul(mn, 2 * dot(ray.d, mn)));
+        var ia = deg(Math.acos(clamp(-dot(ray.d, mn), -1, 1)));
+        if (ray.main && !ray.candle) events.push({ type: "reflect", part: best.part, p: hp, n: mn, din: ray.d, dout: rd, i: ia, o: ia, src: ray.src });
+        next(rd, ray.I, ray.inside, ray.main);
+      } else if (best.kind === "lens") {
+        var along = dot(ray.d, best.u) >= 0 ? best.u : mul(best.u, -1);
+        var cu = dot(ray.d, along);
+        if (cu < 1e-6) { next(ray.d, ray.I, ray.inside, ray.main); continue; }
+        var slope = dot(ray.d, best.t) / cu;
+        var h = dot(sub(hp, best.c), best.t);
+        var ns2 = slope - h / best.f;
+        var nd = norm(add(along, mul(best.t, ns2)));
+        if (ray.main && !ray.candle) events.push({ type: "lens", part: best.part, p: hp, src: ray.src });
+        stack.push({ p: add(hp, mul(nd, 0.02)), d: nd, I: ray.I, inside: ray.inside, main: ray.main, color: ray.color, src: ray.src, depth: ray.depth + 1, candle: ray.candle, lensHit: hp });
+      } else if (best.kind === "screen") {
+        screenHits.push({ part: best.part, p: hp, color: ray.color, candle: ray.candle });
+      } else if (best.kind === "glass") {
+        var inside = ray.inside === best.poly;
+        var n1 = inside ? best.idx : 1, n2 = inside ? 1 : best.idx;
+        var nn = dot(ray.d, best.n) < 0 ? best.n : mul(best.n, -1);
+        var cosi = clamp(-dot(ray.d, nn), -1, 1);
+        var eta = n1 / n2, k = 1 - eta * eta * (1 - cosi * cosi);
+        var refl = sub(ray.d, mul(nn, 2 * dot(ray.d, nn)));
+        var iAng = deg(Math.acos(cosi));
+        if (k < 0) {
+          if (ray.main && !ray.candle) events.push({ type: "tir", part: best.part, p: hp, n: nn, din: ray.d, dout: refl, i: iAng, o: iAng, src: ray.src, crit: deg(Math.asin(1 / best.idx)) });
+          next(refl, ray.I, ray.inside, ray.main);
+        } else {
+          var td = norm(add(mul(ray.d, eta), mul(nn, eta * cosi - Math.sqrt(k))));
+          var oAng = deg(Math.acos(clamp(-dot(td, nn), -1, 1)));
+          if (ray.main && !ray.candle) events.push({ type: "refract", part: best.part, p: hp, n: nn, din: ray.d, dout: td, i: iAng, o: oAng, src: ray.src, entering: !inside });
+          next(td, ray.I, inside ? null : best.poly, ray.main);
+          if (ray.I > 0.5 && !ray.candle) next(refl, ray.I * 0.28, ray.inside, false);
+        }
+      }
+    }
+    return { segs: segs, events: events, screenHits: screenHits };
+  }
+
+  /* 蜡烛：从烛焰中心向最近透镜的口径发一束光 */
+  function flamePt(p) { return toWorldPt(p, [0, -56]); }
+  function nearestLens(c, surf) {
+    var best = null, bd = Infinity;
+    surf.forEach(function (s) {
+      if (s.kind !== "lens") return;
+      var S = flamePt(c);
+      var along = dot(sub(s.c, S), s.u);
+      var h = dot(sub(S, s.c), s.t);
+      if (Math.abs(along) < 5 || Math.abs(h) > LENS_HALF) return;
+      if (Math.abs(along) < bd) { bd = Math.abs(along); best = s; }
+    });
+    return best;
+  }
+  function candleRays(surf) {
+    var out = [];
+    if (!showRays) return out;
+    parts.forEach(function (c) {
+      if (c.type !== "candle") return;
+      var S = flamePt(c), L = nearestLens(c, surf);
+      if (!L) return;
+      for (var k = -3; k <= 3; k++) {
+        var target = add(L.c, mul(L.t, k * (LENS_HALF - 6) / 3));
+        out.push({ p: S, d: norm(sub(target, S)), I: 0.9, inside: null, main: false, color: "#f59e0b", src: c.id, depth: 0, candle: c.id });
+      }
+    });
+    return out;
+  }
+
+  /* ── 成像（薄透镜公式） ─────────────────────────────── */
+  function imaging() {
+    var surf = surfaces();
+    var out = [];
+    parts.forEach(function (c) {
+      if (c.type !== "candle") return;
+      var L = nearestLens(c, surf);
+      if (!L) return;
+      var S = flamePt(c);
+      var uDir = dot(sub(L.c, S), L.u) > 0 ? L.u : mul(L.u, -1);
+      var s = dot(sub(L.c, S), uDir);
+      var h = dot(sub(S, L.c), L.t);
+      var f = L.f;
+      var im = { candle: c, lens: L.part, u: s, f: f, h: h };
+      if (Math.abs(s - f) < 0.5) { im.none = true; out.push(im); return; }
+      var v = f * s / (s - f);
+      var m = -v / s;
+      im.v = v; im.m = m; im.real = v > 0;
+      im.point = add(add(L.c, mul(uDir, v)), mul(L.t, h * m));
+      if (im.real) {
+        var bestScr = null, bd = Infinity;
+        parts.forEach(function (sc) {
+          if (sc.type !== "screen") return;
+          var d = dot(sub([sc.x, sc.y], L.c), uDir);
+          if (d <= 5) return;
+          var tilt = Math.abs(((sc.rot - L.part.rot) % 180 + 180) % 180);
+          if (Math.min(tilt, 180 - tilt) > 6) return;
+          if (Math.abs(dot(sub([sc.x, sc.y], L.c), L.t)) > 60) return;
+          if (d < bd) { bd = d; bestScr = sc; }
+        });
+        if (bestScr) {
+          var d2 = bd;
+          var meff = m * d2 / v;
+          var yWorld = add(add(L.c, mul(uDir, d2)), mul(L.t, h * meff));
+          var tS = rotV([0, 1], bestScr.rot);
+          var ys = dot(sub(yWorld, [bestScr.x, bestScr.y]), tS);
+          var axisYs = dot(sub(add(L.c, mul(uDir, d2)), [bestScr.x, bestScr.y]), tS);
+          var blur = LENS_HALF * Math.abs(d2 - v) / Math.abs(v);
+          im.screen = { part: bestScr, d: d2, ys: ys, axisYs: axisYs, scale: Math.abs(meff), blur: blur, sharp: blur < 6 };
+        }
+      }
+      out.push(im);
+    });
+    return out;
+  }
+  function imageKind(im) {
+    if (!im || im.none) return "";
+    if (!im.real) return "virtual";
+    var a = Math.abs(im.m);
+    if (a < 0.93) return "reduced";
+    if (a <= 1.07) return "equal";
+    return "enlarged";
+  }
+  var KIND_TEXT = { reduced: "倒立、缩小的实像", equal: "倒立、等大的实像", enlarged: "倒立、放大的实像", virtual: "正立、放大的虚像" };
+  function kindText(im) {
+    if (!im) return "—";
+    if (im.none) return "不成像（物体在焦点上）";
+    if (!im.real) return im.f < 0 ? "正立、缩小的虚像" : KIND_TEXT.virtual;
+    return KIND_TEXT[imageKind(im)];
+  }
+
+  /* ── 绘制 ─────────────────────────────── */
+  function defs() {
+    return "<defs>" +
+      '<pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse"><path d="M20 0H0V20" fill="none" stroke="#273449" stroke-width="1"/></pattern>' +
+      '<pattern id="grid5" width="100" height="100" patternUnits="userSpaceOnUse"><rect width="100" height="100" fill="url(#grid)"/><path d="M100 0H0V100" fill="none" stroke="#2f3e55" stroke-width="1.2"/></pattern>' +
+      '<linearGradient id="o-body" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4b5563"/><stop offset=".5" stop-color="#1f2937"/><stop offset="1" stop-color="#111827"/></linearGradient>' +
+      '<linearGradient id="o-metal" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f4f6f8"/><stop offset=".5" stop-color="#b9c2cc"/><stop offset="1" stop-color="#7d8894"/></linearGradient>' +
+      '<linearGradient id="o-wax" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#f6e7c8"/><stop offset=".5" stop-color="#fff8ea"/><stop offset="1" stop-color="#e7d3ab"/></linearGradient>' +
+      '<radialGradient id="o-flame" cx=".5" cy=".7" r=".6"><stop offset="0" stop-color="#fff7d6"/><stop offset=".4" stop-color="#ffd166"/><stop offset=".8" stop-color="#ff8c1a"/><stop offset="1" stop-color="#ff6a00" stop-opacity=".2"/></radialGradient>' +
+      '<radialGradient id="o-glow"><stop offset="0" stop-color="#ffcf66" stop-opacity=".55"/><stop offset="1" stop-color="#ffcf66" stop-opacity="0"/></radialGradient>' +
+      '<linearGradient id="o-glass" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#bfe8ff" stop-opacity=".55"/><stop offset="1" stop-color="#7cc4e8" stop-opacity=".35"/></linearGradient>' +
+      '<filter id="o-soft" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="2.2"/></filter>' +
+      '<filter id="o-shadow" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="3" stdDeviation="3" flood-color="#000" flood-opacity=".35"/></filter>' +
+      "</defs>";
+  }
+  function txt(x, y, s, size, color, weight, anchor) {
+    return '<text x="' + x + '" y="' + y + '" font-size="' + (size || 12) + '" fill="' + (color || "#dbe7f5") +
+      '" font-weight="' + (weight || 700) + '" text-anchor="' + (anchor || "middle") + '" font-family="Noto Sans SC, PingFang SC, Microsoft YaHei, sans-serif">' + esc(s) + "</text>";
+  }
+  function flameShape(cx, tipY, h, w, fill, extra) {
+    var by = tipY + h;
+    return '<path d="M' + cx + " " + tipY + " C" + (cx + w) + " " + (tipY + h * 0.45) + " " + (cx + w * 0.8) + " " + by + " " + cx + " " + by +
+      " C" + (cx - w * 0.8) + " " + by + " " + (cx - w) + " " + (tipY + h * 0.45) + " " + cx + " " + tipY + 'Z" fill="' + fill + '"' + (extra || "") + "/>";
+  }
+
+  function drawPart(p) {
+    var h = "";
+    switch (p.type) {
+      case "laser":
+        h += '<rect x="-60" y="-11" width="112" height="22" rx="6" fill="url(#o-body)" filter="url(#o-shadow)"/>';
+        h += '<rect x="50" y="-7" width="14" height="14" rx="2" fill="url(#o-metal)"/>';
+        h += '<rect x="-30" y="-15" width="18" height="6" rx="2" fill="' + (p.props.on ? p.props.color : "#6b7280") + '"/>';
+        h += '<circle cx="63" cy="0" r="3" fill="' + (p.props.on ? p.props.color : "#374151") + '"/>';
+        h += txt(-8, 4, "LASER", 9, "#9ca3af", 800);
+        break;
+      case "candle":
+        h += '<ellipse cx="0" cy="52" rx="22" ry="5" fill="#9aa5b1"/><rect x="-18" y="44" width="36" height="8" rx="3" fill="#b4bec9"/>';
+        h += '<rect x="-12" y="-40" width="24" height="86" rx="3" fill="url(#o-wax)"/>';
+        h += '<line x1="0" y1="-40" x2="0" y2="-47" stroke="#3a2a1a" stroke-width="2"/>';
+        h += '<circle cx="0" cy="-58" r="26" fill="url(#o-glow)"/>' + flameShape(0, -74, 30, 9, "url(#o-flame)");
+        break;
+      case "convex":
+        h += '<path d="M0 -85 Q 28 0 0 85 Q -28 0 0 -85 Z" fill="url(#o-glass)" stroke="#8fd3ff" stroke-width="1.6"/>';
+        h += '<rect x="-6" y="-90" width="12" height="6" rx="2" fill="#94a3b8"/><rect x="-6" y="84" width="12" height="6" rx="2" fill="#94a3b8"/>';
+        h += txt(0, 106, "f = " + p.props.f + " cm", 11, "#9cc9ec", 700);
+        break;
+      case "concave":
+        h += '<path d="M-13 -85 L13 -85 Q 3 0 13 85 L-13 85 Q -3 0 -13 -85 Z" fill="url(#o-glass)" stroke="#8fd3ff" stroke-width="1.6"/>';
+        h += '<rect x="-14" y="-90" width="28" height="6" rx="2" fill="#94a3b8"/><rect x="-14" y="84" width="28" height="6" rx="2" fill="#94a3b8"/>';
+        h += txt(0, 106, "f = −" + p.props.f + " cm", 11, "#9cc9ec", 700);
+        break;
+      case "mirror":
+        h += '<rect x="-90" y="0" width="180" height="10" fill="#334155"/>';
+        var hatch = "";
+        for (var x = -86; x < 90; x += 10) hatch += "M" + x + " 10 L" + (x + 8) + " 2 ";
+        h += '<path d="' + hatch + '" stroke="#64748b" stroke-width="1.4"/>';
+        h += '<line x1="-90" y1="0" x2="90" y2="0" stroke="#e2f0ff" stroke-width="3.5" stroke-linecap="round"/>';
+        break;
+      case "block":
+        h += '<rect x="-110" y="-55" width="220" height="110" fill="url(#o-glass)" stroke="#8fd3ff" stroke-width="1.6"/>';
+        h += txt(84, 46, "n = " + fmt(p.props.n, 2), 10, "#9cc9ec", 700);
+        break;
+      case "semi":
+        h += '<path d="M-100 0 A100 100 0 0 1 100 0 Z" fill="url(#o-glass)" stroke="#8fd3ff" stroke-width="1.6"/>';
+        h += '<circle cx="0" cy="0" r="2.5" fill="#8fd3ff"/>' + txt(70, -8, "n = " + fmt(p.props.n, 2), 10, "#9cc9ec", 700);
+        break;
+      case "screen":
+        h += '<rect x="-8" y="-100" width="16" height="200" rx="2" fill="#f8fafc" stroke="#94a3b8" stroke-width="1.5" filter="url(#o-shadow)"/>';
+        break;
+    }
+    return h;
+  }
+
+  /* 光屏正视小窗：侧视图里光屏只是一条线，像画在旁边的屏面上 */
+  function screenInset(im) {
+    var s = im.screen;
+    if (!s) return "";
+    var sc = s.part, W = 110, Hh = 200, x0 = sc.x - W / 2, y0 = sc.y - 100 - 26 - Hh, cx = sc.x;
+    var zoom = 2.2, H = Math.min(150, 30 * s.scale * zoom), Wf = Math.min(50, 10 * s.scale * zoom);
+    var cy = y0 + Hh / 2 + clamp(s.ys * zoom, -Hh / 2 + H / 2, Hh / 2 - H / 2);
+    var std = clamp(s.blur * 0.35, 0, 22);
+    var op = clamp(1 - s.blur / 70, 0.2, 1);
+    var id = sc.id;
+    var g = '<g pointer-events="none">';
+    g += '<filter id="o-blur-' + id + '" x="-200%" y="-200%" width="500%" height="500%"><feGaussianBlur stdDeviation="' + std.toFixed(1) + '"/></filter>';
+    g += '<clipPath id="o-clip-' + id + '"><rect x="' + x0 + '" y="' + y0 + '" width="' + W + '" height="' + Hh + '" rx="4"/></clipPath>';
+    g += '<line x1="' + sc.x + '" y1="' + (sc.y - 100) + '" x2="' + sc.x + '" y2="' + (y0 + Hh) + '" stroke="#94a3b8" stroke-dasharray="3 3"/>';
+    g += '<rect x="' + x0 + '" y="' + y0 + '" width="' + W + '" height="' + Hh + '" rx="4" fill="#f8fafc" stroke="#94a3b8" stroke-width="1.5"/>';
+    g += '<g clip-path="url(#o-clip-' + id + ')"><g opacity="' + op.toFixed(2) + '" filter="url(#o-blur-' + id + ')">' +
+      '<g transform="translate(0 ' + (2 * cy).toFixed(1) + ') scale(1 -1)">' + flameShape(cx, cy - H / 2, H, Math.max(1.5, Wf), "url(#o-flame)") + "</g></g></g>";
+    g += txt(cx, y0 - 8, s.sharp ? "光屏上的像（清晰）" : "光屏上的像（模糊）", 11, s.sharp ? "#86efac" : "#fbbf24", 800);
+    return g + "</g>";
+  }
+
+  function railLayer() {
+    if (!RAIL) return "";
+    var y = RAIL.y + 128, x0 = railX0(), x1 = railX1(), h = "";
+    h += '<line x1="' + (x0 - 40) + '" y1="' + RAIL.y + '" x2="' + (x1 + 40) + '" y2="' + RAIL.y + '" stroke="#5b708c" stroke-width="1" stroke-dasharray="8 6"/>';
+    h += '<rect x="' + (x0 - 30) + '" y="' + y + '" width="' + (x1 - x0 + 60) + '" height="26" rx="4" fill="#cbd5e1" stroke="#64748b"/>';
+    var ticks = "";
+    for (var c = 0; c <= RAIL.len_cm; c++) {
+      var x = x0 + c * CM, len = c % 10 === 0 ? 12 : (c % 5 === 0 ? 8 : 4);
+      ticks += "M" + x + " " + y + " V" + (y + len) + " ";
+      if (c % 10 === 0) h += txt(x, y + 23, String(c), 9, "#334155", 700);
+    }
+    h += '<path d="' + ticks + '" stroke="#334155" stroke-width="1"/>';
+    h += txt(x1 + 52, y + 17, "cm", 10, "#94a3b8", 700, "start");
+    parts.forEach(function (p) {
+      if (!onRail(p)) return;
+      var top = p.type === "candle" ? RAIL.y + 56 : RAIL.y + (p.type === "screen" ? 100 : 90);
+      h += '<rect x="' + (p.x - 3) + '" y="' + top + '" width="6" height="' + (y - top) + '" fill="#94a3b8"/>';
+      h += '<rect x="' + (p.x - 14) + '" y="' + (y - 6) + '" width="28" height="8" rx="2" fill="#475569"/>';
+      h += '<path d="M' + p.x + " " + (y + 2) + " l-5 -7 h10 z" + '" fill="#f59e0b"/>';
+    });
+    return h;
+  }
+
+  function focusLayer() {
+    if (!showFocus) return "";
+    var h = "";
+    parts.forEach(function (p) {
+      if (p.type !== "convex" && p.type !== "concave") return;
+      var f = (Number(p.props.f) || 10) * CM;
+      [-2, -1, 1, 2].forEach(function (k) {
+        var q = toWorldPt(p, [k * f, 0]);
+        h += '<circle cx="' + q[0] + '" cy="' + q[1] + '" r="3.5" fill="' + (Math.abs(k) === 1 ? "#f59e0b" : "#94a3b8") + '"/>';
+        h += txt(q[0], q[1] + 18, (Math.abs(k) === 2 ? "2F" : "F"), 11, Math.abs(k) === 1 ? "#fbbf24" : "#94a3b8", 800);
+      });
+      if (!RAIL) {
+        var a = toWorldPt(p, [-2.4 * f, 0]), b = toWorldPt(p, [2.4 * f, 0]);
+        h += '<line x1="' + a[0] + '" y1="' + a[1] + '" x2="' + b[0] + '" y2="' + b[1] + '" stroke="#5b708c" stroke-dasharray="8 6"/>';
+      }
+    });
+    return h;
+  }
+
+  function normalLayer(events) {
+    if (!showNormal) return "";
+    var h = "", shown = {};
+    events.forEach(function (e) {
+      if (e.type === "lens" || !e.n) return;
+      var key = e.src;
+      shown[key] = (shown[key] || 0) + 1;
+      if (shown[key] > 2) return;
+      var a = add(e.p, mul(e.n, 70)), b = add(e.p, mul(e.n, -70));
+      h += '<line x1="' + a[0] + '" y1="' + a[1] + '" x2="' + b[0] + '" y2="' + b[1] + '" stroke="#e2e8f0" stroke-width="1.3" stroke-dasharray="6 5"/>';
+      var back = mul(e.din, -1);
+      h += arc(e.p, e.n, back, 34, "#fde68a", "i=" + fmt(e.i) + "°");
+      var outLabel = e.type === "refract" ? "γ=" : "r=";
+      var outNormal = e.type === "refract" ? mul(e.n, -1) : e.n;
+      h += arc(e.p, outNormal, e.dout, 48, e.type === "refract" ? "#a5f3fc" : "#fde68a", outLabel + fmt(e.o) + "°");
+    });
+    return h;
+  }
+  function arc(c, n, d, r, color, label) {
+    var a0 = Math.atan2(n[1], n[0]), a1 = Math.atan2(d[1], d[0]);
+    var diff = a1 - a0;
+    while (diff > Math.PI) diff -= 2 * Math.PI;
+    while (diff < -Math.PI) diff += 2 * Math.PI;
+    if (Math.abs(diff) < 0.01) return "";
+    var p0 = add(c, mul([Math.cos(a0), Math.sin(a0)], r)), p1 = add(c, mul([Math.cos(a1), Math.sin(a1)], r));
+    var mid = a0 + diff / 2, lp = add(c, mul([Math.cos(mid), Math.sin(mid)], r + 18));
+    return '<path d="M' + p0[0] + " " + p0[1] + " A" + r + " " + r + " 0 0 " + (diff > 0 ? 1 : 0) + " " + p1[0] + " " + p1[1] + '" fill="none" stroke="' + color + '" stroke-width="1.6"/>' +
+      txt(lp[0], lp[1] + 4, label, 11, color, 800);
+  }
+
+  function virtualLayer(images) {
+    if (!showRays) return "";
+    var h = "";
+    images.forEach(function (im) {
+      if (im.none || im.real || !im.point) return;
+      var H = 30 * Math.abs(im.m), W = 9 * Math.abs(im.m);
+      h += '<g opacity=".55">' + flameShape(im.point[0], im.point[1] - 6, H, W, "none", ' stroke="#fbbf24" stroke-width="1.5" stroke-dasharray="4 3"') + "</g>";
+      h += txt(im.point[0], im.point[1] - 14, "虚像", 11, "#fbbf24", 800);
+      var L = partById(im.lens.id);
+      if (!L) return;
+      for (var k = -3; k <= 3; k += 2) {
+        var lp = toWorldPt(L, [0, k * (LENS_HALF - 6) / 3]);
+        h += '<line x1="' + lp[0] + '" y1="' + lp[1] + '" x2="' + im.point[0] + '" y2="' + (im.point[1]) + '" stroke="#f59e0b" stroke-width="1" stroke-dasharray="5 4" opacity=".6"/>';
+      }
+    });
+    return h;
+  }
+
+  function render() {
+    setViewBox();
+    var h = defs();
+    h += '<rect x="-2000" y="-2000" width="5200" height="4720" fill="#162131"/>';
+    h += '<rect x="-2000" y="-2000" width="5200" height="4720" fill="url(#grid5)" data-bg="1"/>';
+    h += railLayer() + focusLayer();
+    h += '<g id="rays">';
+    optic.segs.forEach(function (s) {
+      var w = s.candle ? 1.4 : (s.main ? 2.6 : 1.6);
+      var op = s.candle ? 0.75 : clamp(s.I, 0.2, 1);
+      h += '<line x1="' + s.a[0].toFixed(1) + '" y1="' + s.a[1].toFixed(1) + '" x2="' + s.b[0].toFixed(1) + '" y2="' + s.b[1].toFixed(1) +
+        '" stroke="' + s.color + '" stroke-width="' + (w * 3) + '" opacity="' + (op * 0.18).toFixed(2) + '" stroke-linecap="round" filter="url(#o-soft)"/>';
+      h += '<line x1="' + s.a[0].toFixed(1) + '" y1="' + s.a[1].toFixed(1) + '" x2="' + s.b[0].toFixed(1) + '" y2="' + s.b[1].toFixed(1) +
+        '" stroke="' + s.color + '" stroke-width="' + w + '" opacity="' + op.toFixed(2) + '" stroke-linecap="round"/>';
+    });
+    h += "</g>" + virtualLayer(optic.images);
+    parts.forEach(function (p) {
+      var T = TYPES[p.type], b = T.box;
+      h += '<g data-part="' + p.id + '" transform="translate(' + p.x + " " + p.y + ") rotate(" + p.rot + ')">' +
+        '<rect x="' + b[0] + '" y="' + b[1] + '" width="' + b[2] + '" height="' + b[3] + '" fill="transparent"/>' +
+        drawPart(p);
+      if (sel === p.id) {
+        h += '<rect x="' + (b[0] - 8) + '" y="' + (b[1] - 8) + '" width="' + (b[2] + 16) + '" height="' + (b[3] + 16) + '" rx="8" fill="none" stroke="#60a5fa" stroke-width="1.6" stroke-dasharray="6 4" pointer-events="none"/>';
+        if (T.rot && !onRail(p)) {
+          h += '<line x1="0" y1="' + (b[1] - 8) + '" x2="0" y2="' + (b[1] - 30) + '" stroke="#60a5fa" stroke-width="1.6" pointer-events="none"/>' +
+            '<g data-rot="1" transform="translate(0 ' + (b[1] - 38) + ')"><circle r="10" fill="#2f6fd6" stroke="#fff" stroke-width="2"/><path d="M-4 -1 a4.5 4.5 0 1 1 1.2 4" fill="none" stroke="#fff" stroke-width="1.8"/></g>';
+        }
+        h += '<g data-del="1" transform="translate(' + (b[0] + b[2] + 14) + " " + (b[1] - 14) + ')"><circle r="11" fill="#dc2626"/><path d="M-4 -4 L4 4 M4 -4 L-4 4" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/></g>';
+      }
+      h += "</g>";
+    });
+    h += normalLayer(optic.events);
+    optic.images.forEach(function (im) { h += screenInset(im); });
+    parts.forEach(function (p) {
+      if (sel === p.id && TYPES[p.type].rot && !onRail(p)) {
+        h += txt(p.x, p.y + TYPES[p.type].box[1] + TYPES[p.type].box[3] + 30, fmt(((p.rot % 360) + 360) % 360, 0) + "°", 12, "#93c5fd", 800);
+      }
+      if (onRail(p)) h += txt(p.x, RAIL.y + 120, fmt((p.x - railX0()) / CM, 0) + " cm", 10, "#fbbf24", 800);
+    });
+    svg.innerHTML = h;
+  }
+
+  /* ── HUD / 刷新 ─────────────────────────────── */
+  /* 读数取选中激光（或选中器件）上的事件；近乎垂直入射的（如沿半径射入半圆砖）跳过 */
+  function firstEvent() {
+    var evs = optic.events.filter(function (e) { return e.type !== "lens"; });
+    var mine = evs.filter(function (e) { return sel && (e.src === sel || e.part.id === sel); });
+    if (mine.length) evs = mine;
+    for (var i = 0; i < evs.length; i++) if (evs[i].i > 2) return evs[i];
+    return evs[0] || null;
+  }
+  function renderHud() {
+    var rows = [];
+    var im = optic.images[0];
+    if (im) {
+      rows.push(["物距 u", fmt(im.u / CM) + " cm"]);
+      rows.push(["焦距 f", fmt(Math.abs(im.f) / CM, 0) + " cm"]);
+      if (!im.none) rows.push(["像距 v", (im.real ? "" : "−") + fmt(Math.abs(im.v) / CM) + " cm"]);
+      rows.push(["成像", kindText(im)]);
+      if (im.real && !im.none) {
+        rows.push(["光屏", im.screen ? (im.screen.sharp ? "清晰的像 ✓" : "像模糊，前后移动光屏") : "没有对准光屏"]);
+      } else if (!im.none) rows.push(["光屏", "承接不到像，透过透镜观察"]);
+    } else {
+      var e = firstEvent();
+      if (e) {
+        rows.push(["入射角 i", fmt(e.i) + "°"]);
+        if (e.type === "reflect") rows.push(["反射角 r", fmt(e.o) + "°"]);
+        else if (e.type === "refract") rows.push(["折射角 γ", fmt(e.o) + "°"]);
+        else if (e.type === "tir") { rows.push(["现象", "发生全反射"]); rows.push(["临界角 C", fmt(e.crit) + "°"]); }
+      }
+    }
+    var hud = $("hud");
+    hud.innerHTML = rows.map(function (r) { return '<div class="r"><span class="k">' + r[0] + '</span><span class="v">' + esc(r[1]) + "</span></div>"; }).join("");
+    hud.classList.toggle("show", rows.length > 0);
+  }
+
+  function compute() {
+    var t = trace();
+    optic = { segs: t.segs, events: t.events, images: imaging() };
+    optic.images.forEach(function (im) {
+      var k = imageKind(im);
+      if (k === "virtual" || (im.screen && im.screen.sharp)) latched[k] = true;
+    });
+    if (optic.events.some(function (e) { return e.type === "tir"; })) latched.tir = true;
+  }
+  function refresh(quiet) {
+    compute();
+    updateSteps(quiet);
+    render();
+    renderHud();
+    renderProps();
+    renderTools();
+    renderRecordBar();
+  }
+
+  /* ── 实验步骤判定 ─────────────────────────────── */
+  var STEPS = DATA.steps || [];
+  function evalCheck(c) {
+    if (!c || !optic) return false;
+    switch (c.type) {
+      case "hit":
+        return optic.events.some(function (e) { return e.part.type === c.target; });
+      case "tir":
+        return !!latched.tir;
+      case "image":
+        return !!latched[c.kind];
+      case "records":
+        return records.length >= (c.min || 1);
+      default:
+        return false;
+    }
+  }
+  function updateSteps(quiet) {
+    var changed = false;
+    STEPS.forEach(function (s, i) {
+      if (doneSteps[i] || !s.check) return;
+      if (evalCheck(s.check)) {
+        doneSteps[i] = true;
+        changed = true;
+        if (!quiet) toast("✓ " + (s.ok || s.text), "ok");
+      }
+    });
+    if (changed || quiet) renderSteps();
+    var total = STEPS.filter(function (s) { return s.check; }).length;
+    var done = STEPS.filter(function (s, i) { return s.check && doneSteps[i]; }).length;
+    if (total && done === total && !allDoneReported) {
+      allDoneReported = true;
+      if (!quiet) setTimeout(function () { toast("实验步骤全部完成！", "ok"); }, 900);
+      report(true, DATA.title || "光学实验", "完成全部实验步骤");
+    }
+  }
+  function renderSteps() {
+    var ul = $("steps-list");
+    if (!ul) return;
+    var firstOpen = -1;
+    STEPS.forEach(function (s, i) { if (firstOpen < 0 && s.check && !doneSteps[i]) firstOpen = i; });
+    ul.innerHTML = STEPS.map(function (s, i) {
+      var cls = doneSteps[i] ? "done" : (i === firstOpen ? "now" : "");
+      return '<li class="' + cls + '"><span class="dot">' + (doneSteps[i] ? "✓" : "") + "</span><span>" + esc(s.text) + "</span></li>";
+    }).join("");
+  }
+
+  /* ── 数据记录 ─────────────────────────────── */
+  var REC = DATA.record || null;
+  function measure() {
+    if (!REC) return null;
+    if (REC.mode === "lens") {
+      var im = optic.images[0];
+      if (!im || im.none) return { err: "先在光具座上放好蜡烛和凸透镜" };
+      if (!im.real) return { u: +fmt(im.u / CM), v: "—", kind: kindText(im) };
+      if (!im.screen || !im.screen.sharp) return { err: "光屏上的像还不清晰，前后移动光屏" };
+      return { u: +fmt(im.u / CM), v: +fmt(im.screen.d / CM), kind: kindText(im) };
+    }
+    var e = firstEvent();
+    if (!e) return { err: "让激光照到镜面或玻璃砖上" };
+    if (e.type === "reflect") return { i: +fmt(e.i), r: +fmt(e.o) };
+    if (e.type === "refract") return { i: +fmt(e.i), g: +fmt(e.o) };
+    return { i: +fmt(e.i), r: +fmt(e.o), g: "全反射" };
+  }
+  function recordNow() {
+    var m = measure();
+    if (!m) return;
+    if (m.err) { toast(m.err, "bad"); return; }
+    if (records.length >= 12) { toast("最多记录 12 组数据", "bad"); return; }
+    records.push(m);
+    toast("已记录第 " + records.length + " 组数据", "ok");
+    refresh(true);
+    try { window.NB && window.NB.changed && window.NB.changed(); } catch (e) {}
+  }
+  function renderRecordBar() {
+    var box = $("rec-box");
+    if (!box || !REC) return;
+    var cols = REC.columns || [];
+    var h = '<table class="tbl"><tr><th>次数</th>' + cols.map(function (c) { return "<th>" + esc(c.label) + "</th>"; }).join("") + "</tr>";
+    if (!records.length) h += '<tr><td colspan="' + (cols.length + 1) + '" style="color:#8a99ab">调好后点「记录数据」</td></tr>';
+    records.forEach(function (r, i) {
+      h += "<tr><td>" + (i + 1) + "</td>" + cols.map(function (c) { return "<td>" + esc(r[c.k] == null ? "—" : r[c.k]) + "</td>"; }).join("") + "</tr>";
+    });
+    box.innerHTML = h + "</table>";
+  }
+
+  function renderGuide() {
+    var I = DATA.intro || {};
+    var h = "<h1>" + esc(DATA.title || "光学实验台") + "</h1>";
+    if (DATA.subtitle) h += '<div class="sub">' + esc(DATA.subtitle) + "</div>";
+    if (I.purpose) h += '<div class="sec-t">实验目的</div><div>' + esc(I.purpose) + "</div>";
+    if (STEPS.length) h += '<div class="sec-t">实验步骤（自动判定）</div><ul class="steps" id="steps-list"></ul>';
+    if (REC) {
+      h += '<div class="sec-t">数据记录</div><div class="rec-bar"><button class="btn" id="rec-add" type="button">记录数据</button>' +
+        '<button class="btn ghost" id="rec-clear" type="button">清空表格</button></div><div id="rec-box"></div>';
+    }
+    if (DATA.quiz && DATA.quiz.length) {
+      h += '<div class="sec-t">讨论</div>';
+      DATA.quiz.forEach(function (q, qi) {
+        h += '<div style="margin-bottom:8px"><div style="font-weight:700;margin-bottom:5px">' + esc(q.q) + "</div>";
+        q.options.forEach(function (o, oi) { h += '<button class="choice" type="button" data-q="' + qi + '" data-o="' + oi + '">' + esc(o.t) + "</button>"; });
+        h += '<div class="explain" id="qx-' + qi + '"></div></div>';
+      });
+    }
+    $("guide-body").innerHTML = h;
+    renderSteps();
+    if (REC) {
+      $("rec-add").onclick = recordNow;
+      $("rec-clear").onclick = function () { records = []; refresh(true); };
+    }
+    Array.prototype.forEach.call(document.querySelectorAll(".choice"), function (b) {
+      b.onclick = function () {
+        var qi = b.getAttribute("data-q"), q = DATA.quiz[+qi], o = q.options[+b.getAttribute("data-o")];
+        b.classList.add(o.ok ? "ok" : "no");
+        var x = $("qx-" + qi);
+        x.style.color = o.ok ? "" : "#c2410c";
+        x.textContent = o.ok ? (q.explain || "正确") : (o.why || "再想想，可以在实验台上试一试");
+        if (!quizAnswered[qi]) { quizAnswered[qi] = true; report(!!o.ok, q.q, o.t); }
+      };
+    });
+  }
+
+  /* ── 属性面板 ─────────────────────────────── */
+  function renderProps() {
+    var box = $("props");
+    var p = sel ? partById(sel) : null;
+    if (!p) { box.classList.remove("show"); box.innerHTML = ""; return; }
+    var T = TYPES[p.type];
+    var h = '<div class="ph"><span>' + T.name + '</span><span class="sp"></span><button class="mini danger" id="pp-del" type="button">删除</button></div><div class="pb">';
+    if (T.rot && !onRail(p)) {
+      var r = ((p.rot % 360) + 360) % 360;
+      h += '<label class="row"><span>角度<span class="v" id="pv-rot">' + fmt(r, 0) + '°</span></span><input type="range" data-prop="__rot" min="0" max="359" step="1" value="' + r + '"></label>';
+    }
+    Object.keys(T.props || {}).forEach(function (k) {
+      var d = T.props[k], v = p.props[k];
+      if (d.kind === "range") {
+        h += '<label class="row"><span>' + d.label + '<span class="v" id="pv-' + k + '">' + fmt(v, d.step < 1 ? 2 : 0) + d.unit + '</span></span><input type="range" data-prop="' + k + '" min="' + d.min + '" max="' + d.max + '" step="' + d.step + '" value="' + v + '"></label>';
+      } else if (d.kind === "select") {
+        h += '<label class="row"><span>' + d.label + '</span><select data-prop="' + k + '">' + d.options.map(function (o) { return '<option value="' + o[1] + '"' + (String(v) === o[1] ? " selected" : "") + ">" + o[0] + "</option>"; }).join("") + "</select></label>";
+      } else if (d.kind === "bool") {
+        h += '<label class="row" style="display:flex;align-items:center;gap:8px"><input type="checkbox" data-prop="' + k + '"' + (v ? " checked" : "") + "> " + d.label + "</label>";
+      }
+    });
+    if (onRail(p)) h += '<div class="note">在光具座上的位置：' + fmt((p.x - railX0()) / CM, 0) + " cm</div>";
+    if (T.note) h += '<div class="note">' + T.note + "</div>";
+    box.innerHTML = h + "</div>";
+    box.classList.add("show");
+    $("pp-del").onclick = deleteSel;
+    Array.prototype.forEach.call(box.querySelectorAll("[data-prop]"), function (inp) {
+      var k = inp.getAttribute("data-prop");
+      if (k === "__rot") {
+        inp.oninput = function () { p.rot = Number(inp.value); $("pv-rot").textContent = inp.value + "°"; quickRefresh(); };
+        inp.onchange = function () { commit(); };
+        return;
+      }
+      var d = T.props[k];
+      if (d.kind === "range") {
+        inp.oninput = function () { p.props[k] = Number(inp.value); $("pv-" + k).textContent = fmt(p.props[k], d.step < 1 ? 2 : 0) + d.unit; quickRefresh(); };
+        inp.onchange = function () { commit(); };
+      } else if (d.kind === "select") {
+        inp.onchange = function () { p.props[k] = inp.value; commit(); refresh(true); };
+      } else {
+        inp.onchange = function () { p.props[k] = inp.checked; commit(); refresh(true); };
+      }
+    });
+  }
+  function quickRefresh() {
+    compute();
+    updateSteps(false);
+    render();
+    renderHud();
+  }
+  function deleteSel() {
+    if (!sel) return;
+    parts = parts.filter(function (p) { return p.id !== sel; });
+    sel = null;
+    commit();
+    refresh(true);
+  }
+
+  /* ── 工具栏 ─────────────────────────────── */
+  var TI = {
+    undo: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg>',
+    redo: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 14l5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h3"/></svg>',
+    zin: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M11 8v6M8 11h6M20 20l-4-4"/></svg>',
+    zout: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M8 11h6M20 20l-4-4"/></svg>',
+    clear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>',
+  };
+  function renderTools() {
+    $("tools").innerHTML =
+      '<button class="tb" id="tb-undo" type="button" title="撤销 Ctrl+Z"' + (undoStack.length ? "" : " disabled") + ">" + TI.undo + '<span class="lbl">撤销</span></button>' +
+      '<button class="tb" id="tb-redo" type="button" title="重做 Ctrl+Y"' + (redoStack.length ? "" : " disabled") + ">" + TI.redo + '<span class="lbl">重做</span></button>' +
+      '<span class="tsep"></span>' +
+      '<button class="tb' + (showNormal ? " on" : "") + '" id="tb-normal" type="button">法线与角度</button>' +
+      '<button class="tb' + (showRays ? " on" : "") + '" id="tb-rays" type="button">烛焰光线</button>' +
+      '<button class="tb' + (showFocus ? " on" : "") + '" id="tb-focus" type="button">焦点</button>' +
+      '<span class="tsep"></span><button class="tb" id="tb-zout" type="button" title="缩小">' + TI.zout + "</button>" +
+      '<button class="tb" id="tb-fit" type="button" title="复位视角">' + Math.round(view.s * 100) + "%</button>" +
+      '<button class="tb" id="tb-zin" type="button" title="放大">' + TI.zin + "</button>" +
+      '<span class="tsep"></span><button class="tb" id="tb-clear" type="button" title="清空实验台">' + TI.clear + '<span class="lbl">清空</span></button>';
+    $("tb-undo").onclick = undo;
+    $("tb-redo").onclick = redo;
+    $("tb-normal").onclick = function () { showNormal = !showNormal; refresh(true); };
+    $("tb-rays").onclick = function () { showRays = !showRays; refresh(true); };
+    $("tb-focus").onclick = function () { showFocus = !showFocus; refresh(true); };
+    $("tb-zin").onclick = function () { zoomAt(1.2); };
+    $("tb-zout").onclick = function () { zoomAt(1 / 1.2); };
+    $("tb-fit").onclick = function () { view = { x: 0, y: 0, s: 1 }; setViewBox(); renderTools(); };
+    $("tb-clear").onclick = function () {
+      if (!parts.length || !window.confirm("清空实验台上的全部器材？")) return;
+      parts = []; sel = null;
+      commit();
+      refresh(true);
+    };
+  }
+
+  /* ── 器材库 ─────────────────────────────── */
+  var LIB = (DATA.library && DATA.library.length ? DATA.library : Object.keys(TYPES)).filter(function (t) { return TYPES[t]; });
+  function tileSvg(type) {
+    var b = TYPES[type].box, pad = 12;
+    var fake = { id: "tile", type: type, x: 0, y: 0, rot: 0, props: defaultProps(type) };
+    return '<svg viewBox="' + (b[0] - pad) + " " + (b[1] - pad) + " " + (b[2] + pad * 2) + " " + (b[3] + pad * 2 + 18) + '">' + defs() +
+      '<rect x="' + (b[0] - pad) + '" y="' + (b[1] - pad) + '" width="' + (b[2] + pad * 2) + '" height="' + (b[3] + pad * 2 + 18) + '" rx="10" fill="#1e2a3b"/>' +
+      drawPart(fake) + "</svg>";
+  }
+  function renderLib() {
+    var cats = CATS.filter(function (c) { return c === "全部" || LIB.some(function (t) { return TYPES[t].cat === c; }); });
+    $("lib-cats").innerHTML = cats.length > 2 ? cats.map(function (c) { return '<button type="button" class="' + (c === catNow ? "on" : "") + '" data-cat="' + c + '">' + c + "</button>"; }).join("") : "";
+    Array.prototype.forEach.call(document.querySelectorAll("[data-cat]"), function (b) {
+      b.onclick = function () { catNow = b.getAttribute("data-cat"); renderLib(); };
+    });
+    $("lib-grid").innerHTML = LIB.filter(function (t) { return catNow === "全部" || TYPES[t].cat === catNow; }).map(function (t) {
+      return '<div class="tile" data-type="' + t + '">' + tileSvg(t) + "<span>" + TYPES[t].name + "</span></div>";
+    }).join("");
+    Array.prototype.forEach.call(document.querySelectorAll(".tile"), function (tile) {
+      tile.addEventListener("pointerdown", function (ev) { startSpawn(tile.getAttribute("data-type"), ev); });
+    });
+  }
+  var spawn = null;
+  function startSpawn(type, ev) {
+    ev.preventDefault();
+    var ghost = document.createElement("div");
+    ghost.className = "spawn-ghost";
+    ghost.innerHTML = tileSvg(type);
+    ghost.style.display = "none";
+    document.body.appendChild(ghost);
+    spawn = { type: type, sx: ev.clientX, sy: ev.clientY, ghost: ghost, moved: false };
+    window.addEventListener("pointermove", moveSpawn);
+    window.addEventListener("pointerup", endSpawn);
+    window.addEventListener("pointercancel", endSpawn);
+  }
+  function moveSpawn(ev) {
+    if (!spawn) return;
+    if (Math.hypot(ev.clientX - spawn.sx, ev.clientY - spawn.sy) > 5) spawn.moved = true;
+    if (!spawn.moved) return;
+    spawn.ghost.style.display = "block";
+    spawn.ghost.style.left = (ev.clientX - 46) + "px";
+    spawn.ghost.style.top = (ev.clientY - 35) + "px";
+  }
+  function freeSpot() {
+    var cx = view.x + WORLD_W / view.s / 2, cy = view.y + WORLD_H / view.s / 2;
+    for (var k = 0; k < 24; k++) {
+      var x = cx + ((k % 5) - 2) * 160, y = cy + (Math.floor(k / 5) - 1) * 140;
+      if (!parts.some(function (p) { return Math.abs(p.x - x) < 120 && Math.abs(p.y - y) < 100; })) return [x, y];
+    }
+    return [cx, cy];
+  }
+  function endSpawn(ev) {
+    if (!spawn) return;
+    var s = spawn;
+    spawn = null;
+    window.removeEventListener("pointermove", moveSpawn);
+    window.removeEventListener("pointerup", endSpawn);
+    window.removeEventListener("pointercancel", endSpawn);
+    s.ghost.remove();
+    var pos = null;
+    if (!s.moved) pos = freeSpot();
+    else {
+      var r = svg.getBoundingClientRect();
+      if (ev.clientX >= r.left && ev.clientX <= r.right && ev.clientY >= r.top && ev.clientY <= r.bottom) {
+        var w = toWorld(ev.clientX, ev.clientY);
+        pos = [Math.round(w[0] / 10) * 10, Math.round(w[1] / 10) * 10];
+      }
+    }
+    if (!pos) return;
+    var p = makePart(s.type, pos[0], pos[1], 0);
+    parts.push(p);
+    sel = p.id;
+    commit();
+    refresh(true);
+  }
+
+  /* ── 实验台交互 ─────────────────────────────── */
+  var drag = null;
+  function closestAttr(el, name) {
+    while (el && el !== svg) {
+      if (el.getAttribute && el.getAttribute(name) != null) return el;
+      el = el.parentNode;
+    }
+    return null;
+  }
+  svg.addEventListener("pointerdown", function (ev) {
+    if (ev.button !== 0 && ev.pointerType === "mouse") return;
+    var w = toWorld(ev.clientX, ev.clientY), t = ev.target;
+    try { svg.setPointerCapture(ev.pointerId); } catch (e) {}
+    if (closestAttr(t, "data-del")) { deleteSel(); return; }
+    if (closestAttr(t, "data-rot") && sel) { drag = { kind: "rot", p: partById(sel) }; return; }
+    var partEl = closestAttr(t, "data-part");
+    if (partEl) {
+      var p = partById(partEl.getAttribute("data-part"));
+      sel = p.id;
+      drag = { kind: "move", p: p, ox: w[0] - p.x, oy: w[1] - p.y, sx: ev.clientX, sy: ev.clientY, moved: false };
+      render();
+      renderProps();
+      return;
+    }
+    sel = null;
+    drag = { kind: "pan", sx: ev.clientX, sy: ev.clientY, vx: view.x, vy: view.y };
+    svg.classList.add("panning");
+    render();
+    renderProps();
+  });
+  svg.addEventListener("pointermove", function (ev) {
+    if (!drag) return;
+    var w = toWorld(ev.clientX, ev.clientY);
+    if (drag.kind === "move") {
+      if (!drag.moved && Math.hypot(ev.clientX - drag.sx, ev.clientY - drag.sy) < 4) return;
+      drag.moved = true;
+      drag.p.x = Math.round((w[0] - drag.ox) / 10) * 10;
+      drag.p.y = Math.round((w[1] - drag.oy) / 10) * 10;
+      fixRail(drag.p);
+      quickRefresh();
+    } else if (drag.kind === "rot") {
+      var a = deg(Math.atan2(w[1] - drag.p.y, w[0] - drag.p.x)) + 90;
+      if (ev.shiftKey) a = Math.round(a / 15) * 15;
+      drag.p.rot = Math.round(((a % 360) + 360) % 360);
+      quickRefresh();
+    } else if (drag.kind === "pan") {
+      var r = svg.getBoundingClientRect();
+      var kk = Math.max((WORLD_W / view.s) / Math.max(1, r.width), (WORLD_H / view.s) / Math.max(1, r.height));
+      view.x = drag.vx - (ev.clientX - drag.sx) * kk;
+      view.y = drag.vy - (ev.clientY - drag.sy) * kk;
+      setViewBox();
+    }
+  });
+  function endDrag() {
+    if (!drag) return;
+    var d = drag;
+    drag = null;
+    svg.classList.remove("panning");
+    if ((d.kind === "move" && d.moved) || d.kind === "rot") { commit(); refresh(true); }
+  }
+  svg.addEventListener("pointerup", endDrag);
+  svg.addEventListener("pointercancel", endDrag);
+  svg.addEventListener("wheel", function (ev) {
+    ev.preventDefault();
+    var w = toWorld(ev.clientX, ev.clientY);
+    zoomAt(ev.deltaY < 0 ? 1.1 : 1 / 1.1, w[0], w[1]);
+  }, { passive: false });
+  window.addEventListener("keydown", function (ev) {
+    var tag = (ev.target && ev.target.tagName) || "";
+    if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return;
+    var p = sel ? partById(sel) : null;
+    if ((ev.key === "Delete" || ev.key === "Backspace") && p) { ev.preventDefault(); deleteSel(); }
+    else if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "z") { ev.preventDefault(); ev.shiftKey ? redo() : undo(); }
+    else if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "y") { ev.preventDefault(); redo(); }
+    else if (p && TYPES[p.type].rot && !onRail(p) && (ev.key === "[" || ev.key === "]")) {
+      p.rot = (p.rot + (ev.key === "]" ? 1 : 359)) % 360;
+      commit();
+      refresh(true);
+    } else if (ev.key === "Escape") { sel = null; render(); renderProps(); }
+  });
+  $("guide-close").onclick = function () { document.body.classList.add("guide-off"); };
+  $("guide-tab").onclick = function () { document.body.classList.remove("guide-off"); };
+
+  /* ── 场景协议 ─────────────────────────────── */
+  function getData() {
+    return {
+      v: 1, engine: "optics",
+      parts: parts.map(function (p) { return { id: p.id, type: p.type, x: p.x, y: p.y, rot: p.rot, props: JSON.parse(JSON.stringify(p.props)) }; }),
+      records: records.slice(), showNormal: showNormal, showRays: showRays,
+    };
+  }
+  function setData(d) {
+    if (!d || typeof d !== "object") return;
+    loadScene(d);
+    renderGuide();
+    refresh(true);
+  }
+  function resetScene() {
+    loadScene(DATA.scene);
+    view = { x: 0, y: 0, s: 1 };
+    renderGuide();
+    refresh(true);
+    toast("已恢复初始实验台", "ok");
+  }
+  window.OpticsLab = {
+    getData: getData, setData: setData, reset: resetScene, check: evalCheck, record: recordNow,
+    state: function () { return optic; }, steps: function () { return doneSteps; },
+  };
+
+  if (window.matchMedia && window.matchMedia("(max-width: 900px)").matches) document.body.classList.add("guide-off");
+  loadScene(DATA.scene);
+  renderLib();
+  renderGuide();
+  refresh(true);
+
+  if (window.NB && window.NB.register) {
+    window.NB.register({
+      getData: getData, setData: setData, reset: resetScene,
+      info: function () {
+        var I = DATA.intro || {};
+        return { purpose: I.purpose, apparatus: I.apparatus, steps: STEPS.map(function (s) { return s.text; }), discussion: I.discussion };
+      },
+    });
+  }
+})();

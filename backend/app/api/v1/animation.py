@@ -58,7 +58,7 @@ async def get_animation_html(
     row = await db.get(InteractiveAsset, anim_id)
     if not row or not _can_view(teacher, row):
         raise HTTPException(status_code=404, detail="动画不存在")
-    html = await svc.html_for_row(db, row)
+    html = await svc.served_html(db, row)
     if not html:
         raise HTTPException(status_code=500, detail="动画尚未生成")
     return HTMLResponse(html)
@@ -73,7 +73,7 @@ async def create_animation(
     try:
         row = await svc.duplicate_from_template(
             db, teacher.id, data.template_key, data.title,
-            data.keywords, data.knowledge_tags,
+            data.keywords, data.knowledge_tags, scene=data.scene,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -98,6 +98,12 @@ async def update_animation(
         row.keywords = data.keywords
     if data.knowledge_tags is not None:
         row.knowledge_tags = data.knowledge_tags
+    if data.scene is not None:
+        if row.origin == "system":
+            raise HTTPException(status_code=400, detail="系统预置动画不能保存场景，请先另存为我的")
+        if row.kind not in svc.SCENE_KINDS:
+            raise HTTPException(status_code=400, detail="该动画不支持保存搭建场景")
+        row.spec = {**(row.spec or {}), "scene": data.scene}
     await db.commit()
     await db.refresh(row)
     return svc.to_out(row)

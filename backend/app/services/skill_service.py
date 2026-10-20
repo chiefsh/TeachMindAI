@@ -261,6 +261,31 @@ SKILL_CAPABILITIES["edu-bio"]["problem_types"] = {
 }
 
 PHYSICS_CATALOG: list[dict] = [
+    # 物理实验台（kind=physics_lab）：器材库自由搭建，教师可保存搭好的场景
+    {"key": "optics_lab_reflection", "title": "探究光的反射定律", "group": "光学实验", "kind": "physics_lab",
+     "keywords": ("光的反射定律", "探究光的反射", "反射角", "入射角", "平面镜"),
+     "knowledge_tags": ["光的反射", "反射定律", "反射角与入射角"]},
+    {"key": "optics_lab_refraction", "title": "探究光的折射与全反射", "group": "光学实验", "kind": "physics_lab",
+     "keywords": ("光的折射", "折射角", "全反射", "临界角", "玻璃砖"),
+     "knowledge_tags": ["光的折射", "折射规律", "全反射"]},
+    {"key": "optics_lab_convex", "title": "探究凸透镜成像的规律", "group": "光学实验", "kind": "physics_lab",
+     "keywords": ("凸透镜成像", "凸透镜成像的规律", "物距", "像距", "光具座", "照相机", "投影仪", "放大镜"),
+     "knowledge_tags": ["凸透镜成像规律", "凸透镜成像的规律", "探究凸透镜成像", "物距与像距", "实像与虚像"]},
+    {"key": "optics_lab_diy", "title": "光学实验台（自由搭建）", "group": "光学实验", "kind": "physics_lab",
+     "keywords": ("光学实验", "透镜对光的作用", "凹透镜", "会聚作用", "发散作用"),
+     "knowledge_tags": ["透镜", "光的反射", "光的折射"]},
+    {"key": "circuit_lab_diy", "title": "电学实验台（自由搭建）", "group": "电学实验", "kind": "physics_lab",
+     "keywords": ("连接电路", "电路连接", "电路的组成", "电学实验", "电流表的使用", "电压表的使用"),
+     "knowledge_tags": ["电路的组成", "电流表", "电压表"]},
+    {"key": "circuit_lab_series_parallel", "title": "连接串联电路和并联电路", "group": "电学实验", "kind": "physics_lab",
+     "keywords": ("连接串联电路", "连接并联电路", "串联电路", "并联电路", "串、并联电路"),
+     "knowledge_tags": ["串联电路", "并联电路"]},
+    {"key": "circuit_lab_ohm", "title": "探究电流与电压的关系（伏安法）", "group": "电学实验", "kind": "physics_lab",
+     "keywords": ("伏安法", "电流与电压的关系", "电阻的测量", "测电阻", "滑动变阻器"),
+     "knowledge_tags": ["电流与电压的关系", "伏安法测电阻", "电阻的测量"]},
+    {"key": "circuit_lab_bulb_power", "title": "测量小灯泡的电功率", "group": "电学实验", "kind": "physics_lab",
+     "keywords": ("小灯泡的电功率", "测量小灯泡", "额定功率", "实际功率", "电功率的测量"),
+     "knowledge_tags": ["电功率", "额定功率", "测量小灯泡的电功率"]},
     {"key": "magnetic_field", "title": "磁场与磁感线", "group": "电磁",
      "keywords": ("磁场", "磁感线", "条形磁铁", "小磁针"),
      "knowledge_tags": ["磁场", "磁感线", "磁极"]},
@@ -450,6 +475,13 @@ def match_physics_key(text: str) -> str | None:
     return _best_catalog_key(text, PHYSICS_CATALOG)
 
 
+def physics_kind(key: str) -> str:
+    for e in PHYSICS_CATALOG:
+        if e["key"] == key:
+            return e.get("kind") or "physics_explore"
+    return "physics_explore"
+
+
 def match_reaction_key(text: str) -> str | None:
     return _best_catalog_key(text, REACTION_CATALOG)
 
@@ -496,7 +528,7 @@ def choose_skill_route(
     if rxn:
         return {"skill": "edu-chem-reaction", "problem_type": rxn, "spec": {}, "kind": "chem_reaction"}
     if phy:
-        return {"skill": "edu-physics", "problem_type": phy, "spec": {}, "kind": "physics_explore"}
+        return {"skill": "edu-physics", "problem_type": phy, "spec": {}, "kind": physics_kind(phy)}
     if bio:
         return {"skill": "edu-bio", "problem_type": bio, "spec": {}, "kind": "bio_explore"}
     return None

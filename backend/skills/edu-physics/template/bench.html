@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>物理实验台</title>
+  <style>
+    :root {
+      --ink: #1b2f4a; --muted: #5e6f83; --line: #d3dde8; --accent: #2f6fd6;
+      --bench: #e9eff5; --panel: #ffffff; --ok: #15803d; --bad: #c2410c;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; overflow: hidden; }
+    body {
+      font-family: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+      color: var(--ink); background: #dfe7ef; display: flex; font-size: 13px;
+      -webkit-user-select: none; user-select: none;
+    }
+    button { font: inherit; }
+    .panel { background: var(--panel); display: flex; flex-direction: column; min-height: 0; }
+    .panel-h {
+      flex: none; display: flex; align-items: center; gap: 6px; height: 38px; padding: 0 12px;
+      font-weight: 800; font-size: 13px; color: #fff; background: var(--accent);
+    }
+    .panel-h .sp { flex: 1; }
+    .icon-btn {
+      appearance: none; border: 0; background: rgba(255,255,255,.18); color: #fff; border-radius: 6px;
+      width: 26px; height: 26px; cursor: pointer; font-weight: 800;
+    }
+    /* 左：实验指导 */
+    #guide { width: 280px; flex: none; border-right: 1px solid var(--line); transition: margin .2s; }
+    body.guide-off #guide { margin-left: -280px; }
+    #guide-body { flex: 1; overflow: auto; padding: 12px 14px 18px; }
+    #guide-body h1 { margin: 0; font-size: 16px; }
+    #guide-body .sub { color: var(--muted); margin: 3px 0 10px; font-size: 12px; }
+    .sec-t { margin: 14px 0 6px; font-size: 11px; font-weight: 800; letter-spacing: .1em; color: var(--accent); }
+    .steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+    .steps li {
+      display: flex; gap: 8px; align-items: flex-start; padding: 7px 9px; border-radius: 10px;
+      background: #f4f7fb; border: 1px solid #e3eaf2; line-height: 1.45;
+    }
+    .steps li .dot {
+      flex: none; width: 18px; height: 18px; border-radius: 50%; border: 2px solid #b8c6d6;
+      display: grid; place-items: center; font-size: 11px; font-weight: 800; color: #fff; margin-top: 1px;
+    }
+    .steps li.done { background: #effaf2; border-color: #bfe6cb; }
+    .steps li.done .dot { background: var(--ok); border-color: var(--ok); }
+    .steps li.now { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(47,111,214,.12); }
+    .tbl { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: 12px; }
+    .tbl th, .tbl td { border: 1px solid #dfe6ee; padding: 4px 6px; text-align: center; }
+    .tbl th { background: #f1f5fa; font-weight: 700; }
+    .rec-bar { display: flex; gap: 6px; margin: 6px 0; }
+    .btn {
+      appearance: none; border: 1px solid var(--accent); background: var(--accent); color: #fff;
+      border-radius: 8px; padding: 6px 10px; font-weight: 700; cursor: pointer; font-size: 12px;
+    }
+    .btn.ghost { background: #fff; color: var(--accent); }
+    .btn:disabled { opacity: .45; cursor: not-allowed; }
+    #chart { width: 100%; height: 170px; display: block; margin-top: 6px; background: #fbfdff; border: 1px solid #e3eaf2; border-radius: 8px; }
+    .choice {
+      display: block; width: 100%; text-align: left; margin: 0 0 6px; border: 1px solid var(--line);
+      background: #fff; border-radius: 9px; padding: 7px 9px; cursor: pointer; font-size: 12px;
+    }
+    .choice:hover { border-color: var(--accent); }
+    .choice.ok { border-color: var(--ok); background: #effaf2; }
+    .choice.no { border-color: #f1b59a; background: #fff6f1; }
+    .explain { margin-top: 4px; color: var(--ok); font-weight: 600; font-size: 12px; }
+    /* 中：实验台 */
+    #bench { flex: 1; min-width: 0; position: relative; background: var(--bench); }
+    #stage { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: default; }
+    #stage.panning { cursor: grabbing; }
+    #stage [data-term] { cursor: crosshair; }
+    #stage [data-part] { cursor: move; }
+    #stage [data-knob], #stage [data-toggle] { cursor: pointer; }
+    #stage [data-wire] { cursor: pointer; }
+    #stage .term-hit:hover + .term-ring, #stage .term-ring.hot { stroke: #f59e0b; stroke-width: 4; }
+    #guide-tab {
+      position: absolute; left: 10px; top: 10px; z-index: 4; display: none;
+    }
+    body.guide-off #guide-tab { display: block; }
+    #warn { position: absolute; left: 50%; top: 10px; transform: translateX(-50%); z-index: 4; display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; max-width: 70%; pointer-events: none; }
+    #warn span { background: #fff1e8; color: var(--bad); border: 1px solid #f7c3a5; border-radius: 999px; padding: 4px 11px; font-weight: 700; font-size: 12px; box-shadow: 0 4px 12px rgba(194,65,12,.12); }
+    #tools {
+      position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); z-index: 4;
+      display: flex; align-items: center; gap: 2px; padding: 5px; border-radius: 12px;
+      background: rgba(255,255,255,.96); border: 1px solid var(--line); box-shadow: 0 8px 24px rgba(20,45,80,.14);
+      white-space: nowrap;
+    }
+    .tb {
+      appearance: none; border: 0; background: transparent; color: var(--ink); cursor: pointer;
+      height: 32px; padding: 0 10px; border-radius: 8px; font-weight: 700; font-size: 12px;
+      display: inline-flex; align-items: center; gap: 5px;
+    }
+    .tb:hover { background: #eef3f9; }
+    .tb.on { background: var(--accent); color: #fff; }
+    .tb:disabled { opacity: .35; cursor: default; background: transparent; }
+    .tb svg { width: 16px; height: 16px; }
+    .tsep { width: 1px; height: 20px; background: var(--line); margin: 0 4px; }
+    .seg { display: inline-flex; background: #eef3f9; border-radius: 8px; padding: 2px; }
+    .seg .tb { height: 28px; }
+    #props {
+      position: absolute; right: 12px; top: 12px; z-index: 5; width: 230px; display: none;
+      background: #fff; border: 1px solid var(--line); border-radius: 12px; overflow: hidden;
+      box-shadow: 0 12px 30px rgba(20,45,80,.18);
+    }
+    #props.show { display: block; }
+    #props .ph { display: flex; align-items: center; gap: 6px; padding: 8px 10px; background: #f3f7fc; border-bottom: 1px solid var(--line); font-weight: 800; }
+    #props .ph .sp { flex: 1; }
+    #props .pb { padding: 10px 12px 12px; display: grid; gap: 10px; }
+    #props label.row { display: grid; gap: 4px; font-size: 12px; font-weight: 700; }
+    #props label.row .v { float: right; color: var(--accent); font-variant-numeric: tabular-nums; }
+    #props input[type=range] { width: 100%; accent-color: var(--accent); }
+    #props select { width: 100%; padding: 5px; border-radius: 7px; border: 1px solid var(--line); font: inherit; }
+    #props .acts { display: flex; gap: 6px; }
+    #props .note { font-size: 12px; color: var(--muted); line-height: 1.5; }
+    .mini { appearance: none; border: 1px solid var(--line); background: #fff; border-radius: 7px; padding: 4px 8px; cursor: pointer; font-size: 12px; font-weight: 700; }
+    .mini.danger { color: #b91c1c; border-color: #f3c4c4; }
+    #toast {
+      position: absolute; left: 50%; bottom: 62px; transform: translateX(-50%); z-index: 6;
+      background: #1b2f4a; color: #fff; border-radius: 10px; padding: 8px 14px; font-weight: 600;
+      display: none; max-width: 80%; text-align: center;
+    }
+    #toast.bad { background: #9a3412; }
+    #toast.ok { background: #166534; }
+    /* 右：器材库 */
+    #lib { width: 204px; flex: none; border-left: 1px solid var(--line); }
+    #lib-cats { display: flex; flex-wrap: wrap; gap: 4px; padding: 8px 8px 4px; }
+    #lib-cats button { appearance: none; border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 3px 9px; font-size: 12px; cursor: pointer; }
+    #lib-cats button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+    #lib-grid { flex: 1; overflow: auto; padding: 6px 8px 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-content: start; }
+    .tile {
+      border: 1px solid #e1e8f0; border-radius: 10px; background: #f8fafc; padding: 6px 4px 6px;
+      text-align: center; cursor: grab; touch-action: none;
+    }
+    .tile:hover { border-color: var(--accent); background: #f1f6fe; }
+    .tile svg { width: 100%; height: 58px; display: block; pointer-events: none; }
+    .tile span { display: block; font-size: 12px; font-weight: 700; margin-top: 2px; pointer-events: none; }
+    #hud {
+      position: absolute; left: 12px; top: 12px; z-index: 4; display: none; min-width: 180px;
+      background: rgba(255,255,255,.96); border: 1px solid var(--line); border-radius: 12px; padding: 8px 12px;
+      box-shadow: 0 8px 22px rgba(20,45,80,.12); font-variant-numeric: tabular-nums;
+    }
+    #hud.show { display: block; }
+    #hud .k { font-size: 11px; color: var(--muted); }
+    #hud .v { font-size: 15px; font-weight: 800; color: var(--ink); }
+    #hud .r { display: flex; justify-content: space-between; gap: 14px; padding: 2px 0; }
+    body.guide-off #hud { top: 52px; }
+    #lib-tip { padding: 8px 10px; font-size: 11px; color: var(--muted); border-top: 1px solid var(--line); line-height: 1.5; }
+    .spawn-ghost { position: fixed; z-index: 50; pointer-events: none; width: 92px; height: 70px; opacity: .85; filter: drop-shadow(0 8px 14px rgba(20,45,80,.3)); }
+    @media (max-width: 900px) {
+      #guide { position: absolute; z-index: 8; top: 0; bottom: 0; left: 0; box-shadow: 8px 0 24px rgba(20,45,80,.18); }
+      #lib { width: 128px; }
+      #lib-grid { grid-template-columns: 1fr; }
+      .tb .lbl { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <aside id="guide" class="panel">
+    <div class="panel-h"><span>实验指导</span><span class="sp"></span><button class="icon-btn" id="guide-close" type="button" title="收起">‹</button></div>
+    <div id="guide-body"></div>
+  </aside>
+  <main id="bench">
+    <svg id="stage" xmlns="http://www.w3.org/2000/svg"></svg>
+    <button class="btn ghost" id="guide-tab" type="button">实验指导 ›</button>
+    <div id="warn"></div>
+    <div id="hud"></div>
+    <div id="props"></div>
+    <div id="toast"></div>
+    <div id="tools"></div>
+  </main>
+  <aside id="lib" class="panel">
+    <div class="panel-h"><span>器材库</span></div>
+    <div id="lib-cats"></div>
+    <div id="lib-grid"></div>
+    <div id="lib-tip">拖动或点击器材放到实验台。</div>
+  </aside>
+  <script type="application/json" id="bench-data">__BENCH_DATA__</script>
+  <script>__BENCH_JS__</script>
+  <!-- edu-bench:1 -->
+</body>
+</html>

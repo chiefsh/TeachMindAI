@@ -136,7 +136,48 @@
     .heat-row { display: flex; align-items: center; gap: 8px; }
     .heat-row input { flex: 1; accent-color: var(--accent); }
     .heat-val { font-size: 12px; font-weight: 700; color: var(--accent); min-width: 42px; text-align: right; }
-    .ops { position: absolute; left: 228px; right: 312px; bottom: 72px; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; z-index: 4; }
+    .ops { position: absolute; left: 228px; right: 312px; bottom: 72px; display: grid; grid-template-columns: minmax(0,1.5fr) auto auto; gap: 8px; align-items: center; z-index: 4; }
+    .ops-step { font-size: 13px; font-weight: 750; line-height: 1.35; padding: 2px 6px; }
+    .shelf-head { display: flex; align-items: center; justify-content: space-between; margin: 0 4px 8px; }
+    .shelf-q {
+      width: 100%; border: 1px solid var(--line); background: var(--glass); color: inherit;
+      border-radius: 12px; padding: 7px 10px; font-size: 12px; margin: 0 0 8px;
+    }
+    body.mode-2d .shelf-q { background: #fff; color: #0f172a; }
+    .icon-btn {
+      width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--line);
+      background: var(--glass); color: inherit; cursor: pointer; font-size: 16px; line-height: 1;
+    }
+    .hud-shelf.collapsed { width: 46px; padding: 10px 6px; overflow: hidden; }
+    .hud-shelf.collapsed .shelf-q,
+    .hud-shelf.collapsed #cabinet,
+    .hud-shelf.collapsed .shelf-head .sec-title { display: none; }
+    .hud-shelf.collapsed .shelf-head { justify-content: center; margin: 0; }
+    body.shelf-collapsed .hud-top { left: 74px; }
+    body.shelf-collapsed .hud-bottom,
+    body.shelf-collapsed .ops,
+    body.shelf-collapsed .drop-hint,
+    body.shelf-collapsed .phenom { left: 74px; }
+    .bottle.dose { opacity: 1; cursor: grab; border-color: rgba(251,191,36,.75); }
+    .op-tip { font-size: 12px; margin: 8px 0 0; color: #fbbf24; line-height: 1.45; }
+    body.mode-2d .op-tip { color: #b45309; }
+    .piece.hot-op { animation: pulse-op 1s ease-in-out infinite; cursor: pointer; }
+    @keyframes pulse-op { 50% { opacity: .72; } }
+    .report {
+      position: absolute; inset: 0; z-index: 30; display: flex; align-items: center; justify-content: center;
+      background: rgba(7,12,20,.55); padding: 24px;
+    }
+    .report-card {
+      width: min(440px, 100%); max-height: min(78vh, 640px); overflow: auto;
+      background: #fff; color: #0f172a; border-radius: 18px; padding: 18px 18px 14px;
+      box-shadow: 0 24px 60px rgba(0,0,0,.35);
+    }
+    .report-card h2 { margin: 0 0 6px; font-size: 18px; }
+    .report-card h3 { margin: 14px 0 6px; font-size: 13px; }
+    .report-card p, .report-card li { font-size: 13px; line-height: 1.55; margin: 0 0 6px; }
+    .report-card .eq { color: #0f766e; margin-top: 0; }
+    .report-card li.bad { color: #9f1239; }
+    .report-card .btn { margin-top: 12px; width: 100%; }
     .ops .btn, .btn {
       appearance: none; border: 0; border-radius: 12px; padding: 9px 12px; font-size: 12px;
       font-weight: 800; cursor: pointer; background: #0f766e; color: #fff;
@@ -191,12 +232,43 @@
     .drag-ghost { position: fixed; z-index: 80; pointer-events: none; filter: drop-shadow(0 10px 16px rgba(15,23,42,.35)); }
     .drag-ghost svg { width: 64px; height: auto; }
     .hidden { display: none !important; }
-    .fx-beaker-bubbles circle, .fx-acid-bubbles circle { animation: rise 1.5s ease-in infinite; }
-    @keyframes rise { 0% { transform: translateY(0); opacity: .8; } 100% { transform: translateY(-28px); opacity: 0; } }
+    .fx-beaker-bubbles circle, .fx-acid-bubbles circle {
+      transform-box: fill-box; transform-origin: center;
+      fill: #fff; stroke: #0284c7; stroke-width: 1.6px;
+      animation: rise 1.15s linear infinite;
+    }
+    .fx-beaker-bubbles circle:nth-child(2), .fx-acid-bubbles circle:nth-child(2) { animation-delay: .28s; }
+    .fx-beaker-bubbles circle:nth-child(3), .fx-acid-bubbles circle:nth-child(3) { animation-delay: .55s; }
+    .fx-beaker-bubbles circle:nth-child(4), .fx-acid-bubbles circle:nth-child(4) { animation-delay: .8s; }
+    @keyframes rise {
+      0% { transform: translateY(8px) scale(.8); opacity: .95; }
+      100% { transform: translateY(-40px) scale(1.25); opacity: .35; }
+    }
+    .phenom {
+      position: absolute; left: 228px; right: 312px; bottom: 124px; z-index: 5;
+      background: rgba(255, 251, 235, .96); color: #1c1917;
+      border: 2px solid #f59e0b; border-radius: 16px; padding: 10px 14px 12px;
+      box-shadow: 0 14px 32px rgba(120, 53, 15, .2);
+    }
+    .phenom .k {
+      font-size: 11px; font-weight: 800; letter-spacing: .14em; color: #b45309;
+    }
+    .phenom .t { margin: 2px 0 0; font-size: 16px; font-weight: 750; line-height: 1.45; }
+    .phenom .cues { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .phenom .cue {
+      font-size: 12px; font-weight: 750; color: #9a3412; background: #fff;
+      border: 1px solid #fdba74; border-radius: 999px; padding: 3px 8px;
+    }
+    .phenom.pop { animation: phenom-in .35s ease; }
+    @keyframes phenom-in { from { transform: translateY(8px); opacity: 0; } to { transform: none; opacity: 1; } }
     @media (max-width: 900px) {
       .hud-shelf { width: 168px; }
       .hud-guide { width: 230px; }
-      .hud-bottom, .ops, .drop-hint { left: 188px; right: 250px; }
+      .hud-bottom, .ops, .drop-hint, .phenom { left: 188px; right: 250px; }
+      body.shelf-collapsed .hud-bottom,
+      body.shelf-collapsed .ops,
+      body.shelf-collapsed .drop-hint,
+      body.shelf-collapsed .phenom { left: 64px; }
     }
   </style>
 </head>
@@ -217,11 +289,13 @@
       <button class="tab on" type="button" id="tab-3d">3D</button>
     </div>
     <button class="cam-btn" type="button" id="btn-cam">复位视角</button>
-    <aside class="hud-shelf">
-      <div class="sec-title">试剂架</div>
-      <div class="bottles" id="reagents"></div>
-      <div class="sec-title">仪器</div>
-      <div class="chips" id="apparatus"></div>
+    <aside class="hud-shelf" id="shelf">
+      <div class="shelf-head">
+        <div class="sec-title" style="margin:0">器件库</div>
+        <button class="icon-btn" type="button" id="btn-shelf" title="收起器件库">‹</button>
+      </div>
+      <input id="shelf-q" class="shelf-q" type="search" placeholder="搜索器材或药品" autocomplete="off">
+      <div id="cabinet"></div>
     </aside>
     <aside class="hud-guide">
       <div class="guide-top">
@@ -237,10 +311,10 @@
         <button class="round" type="button" id="btn-next">›</button>
       </div>
     </aside>
-    <div class="ops">
-      <button class="btn" type="button" id="btn-mix">混合反应</button>
-      <button class="btn quiet" type="button" id="btn-clear">清空容器</button>
-      <button class="btn" type="button" id="btn-done">完成实验</button>
+    <div class="ops" id="ops">
+      <div class="ops-step" id="ops-step">先看实验原理</div>
+      <button class="btn" type="button" id="btn-primary">开始操作</button>
+      <button class="btn quiet" type="button" id="btn-clear">重做</button>
     </div>
     <div class="hud-bottom" id="hud-meters">
       <div class="meter"><div class="k">pH</div><div class="v" id="ph">7.0</div></div>
@@ -253,7 +327,23 @@
         </div>
       </div>
     </div>
+    <div class="phenom hidden" id="phenom">
+      <div class="k">观察到的现象</div>
+      <p class="t" id="phenom-text"></p>
+      <div class="cues" id="phenom-cues"></div>
+    </div>
     <div class="drop-hint" id="drop-hint">把试剂拖到发光工位，或点 +加入</div>
+    <div class="report hidden" id="report">
+      <div class="report-card">
+        <h2 id="report-title">实验报告</h2>
+        <div class="eq" id="report-eq"></div>
+        <h3>现象与操作记录</h3>
+        <ol id="report-log"></ol>
+        <p id="report-safe"></p>
+        <p id="report-sum"></p>
+        <button class="btn" type="button" id="report-close">回到实验台</button>
+      </div>
+    </div>
     <div class="toast" id="toast"></div>
     <div class="boot" id="boot3d">正在进入实验室…</div>
   </div>
@@ -280,6 +370,26 @@
     var heatC = 25;
     var showingPrinciple = true;
     var canHeat = (DATA.required_apparatus || []).indexOf("lamp") >= 0;
+    var shelfQuery = "";
+    var journal = [];
+    var AUX = { stand: 1, tripod: 1, spoon: 1, tweezers: 1, cotton: 1, clamp: 1, splint: 1, paper: 1, rod: 1, goggles: 1, gauze: 1, cover: 1, wire: 1, dropper: 1 };
+    var ACTION_RULES = [
+      [/滤纸/, "paper"],
+      [/漏斗/, "funnel"],
+      [/蒸发皿|结晶/, "dish"],
+      [/滴管|滴加|滴定/, "dropper"],
+      [/玻璃棒|搅拌/, "rod"],
+      [/棉花/, "cotton"],
+      [/木条|验纯|复燃|爆鸣/, "splint"],
+      [/酒精灯|点燃|加热|灯芯|熄灭/, "lamp"],
+      [/集气瓶|玻璃片/, "bottle"],
+      [/水槽/, "trough"],
+      [/护目镜/, "goggles"],
+      [/电源|通电|电解/, "power"],
+      [/导管|气密/, "delivery"],
+      [/烧杯/, "beaker"],
+      [/药匙|加入|装药|倾倒|倒入|取用/, "tube"]
+    ];
 
     function $(id) { return document.getElementById(id); }
     function report(q, a, correct) {
@@ -365,6 +475,104 @@
       refreshSlots();
       updateMeters();
     }
+    function nameOf(id) {
+      var lists = [].concat(DATA.inventory.apparatus || [], DATA.inventory.reagents || []);
+      for (var i = 0; i < lists.length; i++) if (lists[i].id === id) return lists[i].name;
+      return id || "";
+    }
+    function reagentForm(item) {
+      var n = item.name || "";
+      if (/固体/.test(n)) return "固体药品";
+      if (/溶液|稀|浓|水|酚酞|石蕊|试液|酒精|浊液|滤液|石灰水|硫酸$|盐酸$|硝酸/.test(n)) return "液体药品";
+      return "固体药品";
+    }
+    function apparatusGroup(item) { return AUX[item.id] ? "辅助器材" : "反应仪器"; }
+    function doseNow() {
+      var s = current();
+      return !!(s && s.need === "action" && /加入|倾倒|滴|取用|装药|药匙/.test((s.title || "") + (s.action_label || "")));
+    }
+    function actionTarget(step) {
+      if (!step) return "";
+      var text = (step.title || "") + (step.action_label || "");
+      var i, id;
+      for (i = 0; i < ACTION_RULES.length; i++) {
+        if (!ACTION_RULES[i][0].test(text)) continue;
+        id = ACTION_RULES[i][1];
+        if (selectedA[id]) return id;
+      }
+      var fb = ["tube", "beaker", "dish", "bottle", "funnel", "lamp", "cell", "rod"];
+      for (i = 0; i < fb.length; i++) if (selectedA[fb[i]]) return fb[i];
+      var keys = Object.keys(selectedA);
+      return keys.length ? keys[0] : "";
+    }
+    function isVessel(id) { return /tube|beaker|dish|bottle|flask|funnel|cell/.test(id || ""); }
+    function activeEngine() {
+      return mode === "3d" && window.Lab3D && lab3dReady ? window.Lab3D : window.Lab2D;
+    }
+    function syncHighlight() {
+      var id = "";
+      var step = current();
+      if (!showingPrinciple && !finished && step && step.need === "action") id = actionTarget(step);
+      engines().forEach(function (eng) { if (eng.highlight) eng.highlight(id); });
+    }
+    function note(text, ok) {
+      if (!text) return;
+      journal.push({ text: text, ok: ok !== false });
+    }
+    function cuesOf(st, text) {
+      st = st || {};
+      text = text || "";
+      var cues = [];
+      if (st.bubbles || st.acid_bubbles || st.oxide_bubbles) cues.push("持续冒泡");
+      if (st.liquid === "blue") cues.push("溶液变成蓝色");
+      if (st.liquid === "pink" || st.liquid === "red") cues.push("溶液变成红色");
+      if (st.liquid === "pale") cues.push("红色变浅");
+      if (st.liquid === "clear" && /褪|无色|变浅/.test(text)) cues.push("红色褪去");
+      if (st.lime_milky) cues.push("石灰水变浑浊");
+      if (st.flame || st.heat) cues.push("正在加热");
+      if (st.collected || st.co2_fill) cues.push("瓶中收集到气体");
+      if (st.splint_on) cues.push("木条复燃");
+      if (st.pop) cues.push("发出爆鸣声");
+      if (st.jet_flame) cues.push("淡蓝色火焰");
+      if (st.sparks) cues.push("火星四射");
+      if (st.crystals) cues.push("析出晶体");
+      if (st.residue) cues.push("滤纸上留下残渣");
+      if (st.filtrate) cues.push("烧杯中得到滤液");
+      if (st.water_rise) cues.push("液面上升约 1/5");
+      if (st.charcoal_glow) cues.push("发出耀眼白光");
+      if (st.sulfur_flame === "blue_violet") cues.push("蓝紫色火焰");
+      if (st.sulfur_flame === "pale_blue") cues.push("淡蓝色火焰");
+      if (st.white_smoke) cues.push("产生白烟");
+      if (st.gases) cues.push("氢气约是氧气的 2 倍");
+      if (st.rust) cues.push("铁钉生锈");
+      if (st.copper) cues.push("出现红色的铜");
+      if (st.powder && !st.liquid) cues.push("固体进入容器");
+      return cues;
+    }
+    function showPhenom(text, extra) {
+      if (!text) return;
+      var box = $("phenom");
+      if (!box) return;
+      $("phenom-text").textContent = text;
+      var row = $("phenom-cues");
+      row.innerHTML = "";
+      cuesOf(Object.assign({}, scene, extra || {}), text).forEach(function (label) {
+        var chip = document.createElement("span");
+        chip.className = "cue";
+        chip.textContent = label;
+        row.appendChild(chip);
+      });
+      box.classList.remove("hidden");
+      box.classList.remove("pop");
+      void box.offsetWidth;
+      box.classList.add("pop");
+      if ($("drop-hint")) $("drop-hint").classList.add("hidden");
+    }
+    function hidePhenom() {
+      var box = $("phenom");
+      if (box) box.classList.add("hidden");
+      if ($("drop-hint")) $("drop-hint").classList.remove("hidden");
+    }
     function kindOf(step) {
       if (!step) return "结论";
       if (step.guide) return step.guide;
@@ -401,6 +609,7 @@
           if (s.need === "choice") {
             html += '<div style="margin-top:10px" id="choices"></div>';
           } else if (s.need === "action") {
+            html += '<p class="op-tip">点击台上发亮的器材。加药品时，也可把试剂拖到容器口再松开。</p>';
             html += '<button class="btn" type="button" id="btn-act">' + (s.action_label || "执行操作") + "</button>";
           }
           $("guide-body").innerHTML = html;
@@ -419,37 +628,151 @@
         }
       }
       refreshSlots();
+      syncOps();
+      syncHighlight();
+      syncDropHint();
+      renderCabinet();
+    }
+    function syncDropHint() {
+      var hint = $("drop-hint");
+      if (!hint) return;
+      if (finished) hint.textContent = "可打开实验报告，或点重做再来一次";
+      else if (showingPrinciple) hint.textContent = "看完原理后，从左侧器件库取用器材和药品";
+      else if (current() && current().need === "select") hint.textContent = "拖到形状相同的虚线工位，或点「加入」。点台上的器材可取回";
+      else if (current() && current().need === "action") hint.textContent = "点击发亮器材：" + (nameOf(actionTarget(current())) || "按步骤操作");
+      else hint.textContent = "在右侧选择操作。选错会记一次安全提示";
+    }
+    function syncOps() {
+      var btn = $("btn-primary");
+      var label = $("ops-step");
+      if (!btn || !label) return;
+      if (finished) {
+        label.textContent = "实验完成";
+        btn.textContent = "实验报告";
+        btn.disabled = false;
+        return;
+      }
+      if (showingPrinciple) {
+        label.textContent = "先看实验原理";
+        btn.textContent = "开始操作";
+        btn.disabled = false;
+        return;
+      }
+      var s = current();
+      label.textContent = s ? ((stepIndex + 1) + ". " + s.title) : "";
+      if (!s) { btn.disabled = true; return; }
+      if (s.need === "select") {
+        var n = missingRequired().length;
+        btn.textContent = n ? ("还差 " + n + " 件") : "组装完成";
+        btn.disabled = false;
+      } else if (s.need === "action") {
+        btn.textContent = s.action_label || "执行操作";
+        btn.disabled = false;
+      } else {
+        btn.textContent = "在右侧选择";
+        btn.disabled = true;
+      }
+    }
+    function openReport() {
+      $("report-title").textContent = DATA.title || "实验报告";
+      $("report-eq").textContent = DATA.equation || "";
+      $("report-eq").style.display = DATA.equation ? "" : "none";
+      $("report-sum").textContent = (DATA.complete && DATA.complete.summary) || "";
+      var ol = $("report-log");
+      ol.innerHTML = "";
+      if (!journal.length) {
+        var empty = document.createElement("li");
+        empty.textContent = "按步骤操作后，现象会记在这里。";
+        ol.appendChild(empty);
+      }
+      journal.forEach(function (row) {
+        var li = document.createElement("li");
+        if (!row.ok) li.className = "bad";
+        li.textContent = row.text;
+        ol.appendChild(li);
+      });
+      $("report-safe").textContent = "正确操作 " + okCount + " 步，安全提示 " + hazard + " 次。";
+      $("report").classList.remove("hidden");
     }
     function renderCabinet() {
-      $("reagents").innerHTML = "";
-      $("apparatus").innerHTML = "";
-      (DATA.inventory.reagents || []).forEach(function (item) {
-        var b = document.createElement("div");
-        b.className = "bottle" + (isPlaced(item.id, true) ? " placed" : "");
-        b.innerHTML = '<div class="ico">' + iconOf(item, true) + '</div><div class="name">' + item.name +
-          '</div><button class="add" type="button">+ 加入</button>';
-        b.querySelector(".add").onclick = function (e) {
-          e.stopPropagation();
-          addItem(item, true);
-        };
-        b.addEventListener("pointerdown", function (e) {
-          if (e.target.classList.contains("add")) return;
-          if (e.button != null && e.button !== 0) return;
-          startDrag(e, item, true);
-        });
-        $("reagents").appendChild(b);
-      });
+      var box = $("cabinet");
+      if (!box) return;
+      box.innerHTML = "";
+      var groups = { "反应仪器": [], "辅助器材": [], "固体药品": [], "液体药品": [] };
       (DATA.inventory.apparatus || []).forEach(function (item) {
-        var b = document.createElement("button");
-        b.type = "button";
-        b.className = "chip" + (isPlaced(item.id, false) ? " placed" : "");
-        b.innerHTML = '<div class="ico">' + iconOf(item, false) + '</div><div class="name">' + item.name + "</div>";
-        b.addEventListener("pointerdown", function (e) {
-          if (e.button != null && e.button !== 0) return;
-          startDrag(e, item, false);
-        });
-        $("apparatus").appendChild(b);
+        if (shelfQuery && item.name.indexOf(shelfQuery) < 0) return;
+        groups[apparatusGroup(item)].push({ item: item, reagent: false });
       });
+      (DATA.inventory.reagents || []).forEach(function (item) {
+        if (shelfQuery && item.name.indexOf(shelfQuery) < 0) return;
+        groups[reagentForm(item)].push({ item: item, reagent: true });
+      });
+      var order = ["反应仪器", "辅助器材", "固体药品", "液体药品"];
+      var any = false;
+      order.forEach(function (title) {
+        var list = groups[title];
+        if (!list.length) return;
+        any = true;
+        var h = document.createElement("div");
+        h.className = "sec-title";
+        h.textContent = title;
+        box.appendChild(h);
+        var wrap = document.createElement("div");
+        wrap.className = title.indexOf("药品") >= 0 ? "bottles" : "chips";
+        list.forEach(function (row) { wrap.appendChild(cabinetItem(row.item, row.reagent)); });
+        box.appendChild(wrap);
+      });
+      if (!any) {
+        var empty = document.createElement("div");
+        empty.className = "sec-title";
+        empty.textContent = "没有匹配的器材";
+        box.appendChild(empty);
+      }
+    }
+    function cabinetItem(item, reagent) {
+      var placed = isPlaced(item.id, reagent);
+      var dosing = reagent && doseNow() && (DATA.required_reagents || []).indexOf(item.id) >= 0;
+      var canReturn = placed && !reagent && current() && current().need === "select" && !lockedSelect && !finished;
+      var node = document.createElement("div");
+      node.className = (reagent ? "bottle" : "chip") + (placed ? " placed" : "") + (dosing ? " dose" : "");
+      var action = dosing ? "倾倒" : (canReturn ? "取回" : (placed ? "已放" : "+ 加入"));
+      node.innerHTML = '<div class="ico">' + iconOf(item, reagent) + '</div><div class="name">' + item.name +
+        '</div><button class="add" type="button">' + action + "</button>";
+      node.querySelector(".add").onclick = function (e) {
+        e.stopPropagation();
+        e.preventDefault();
+        if (canReturn) { unplace(item.id); return; }
+        if (dosing) { doAction(); return; }
+        if (placed) return;
+        addItem(item, reagent);
+      };
+      node.addEventListener("pointerdown", function (e) {
+        if (e.target.classList.contains("add")) return;
+        if (e.button != null && e.button !== 0) return;
+        if (canReturn && !e.target.classList.contains("add")) {
+          /* 拖动优先；没拖开再取回由 click 处理 */
+        }
+        startDrag(e, item, reagent);
+      });
+      if (canReturn) {
+        node.addEventListener("click", function (e) {
+          if (e.target.classList.contains("add")) return;
+          if (node.dataset.dragged === "1") { node.dataset.dragged = ""; return; }
+          unplace(item.id);
+        });
+      }
+      return node;
+    }
+    function unplace(id) {
+      if (finished || lockedSelect || !current() || current().need !== "select") {
+        toast("组装完成后请点重做再调整", "bad");
+        return;
+      }
+      delete selectedA[id];
+      delete selectedR[id];
+      renderCabinet();
+      applyScene({});
+      toast("已取回 " + nameOf(id), "ok");
     }
     function missingRequired() {
       var miss = [];
@@ -501,6 +824,7 @@
     }
     function failPlace(item) {
       hazard += 1;
+      note("放错了「" + item.name + "」：" + (item.slot ? "没有放到对应工位" : "不是本实验需要的"), false);
       report(current().title, "放错 " + item.name, false);
       toast(item.slot ? "请拖到形状相同的虚线位置" : "这件不是本实验需要的", "bad");
       renderCabinet();
@@ -511,9 +835,16 @@
         }
       });
     }
+    function canDragItem(item, reagent) {
+      if (finished || showingPrinciple) return false;
+      var step = current();
+      if (!step) return false;
+      if (step.need === "select" && !lockedSelect && !isPlaced(item.id, reagent)) return true;
+      if (reagent && doseNow() && (DATA.required_reagents || []).indexOf(item.id) >= 0) return true;
+      return false;
+    }
     function startDrag(e, item, reagent) {
-      if (finished || showingPrinciple || lockedSelect || !current() || current().need !== "select") return;
-      if (isPlaced(item.id, reagent)) return;
+      if (!canDragItem(item, reagent)) return;
       e.preventDefault();
       var g = $("drag-ghost");
       g.innerHTML = iconOf(item, reagent);
@@ -528,8 +859,10 @@
       if (Math.hypot(e.clientX - drag.x, e.clientY - drag.y) > 8) drag.moved = true;
       drag.ghost.style.left = (e.clientX + 10) + "px";
       drag.ghost.style.top = (e.clientY + 10) + "px";
-      var eng = mode === "3d" && window.Lab3D ? window.Lab3D : window.Lab2D;
-      if (eng && eng.hoverSlot) eng.hoverSlot(eng.hitSlot(e.clientX, e.clientY, drag.item.slot));
+      var eng = activeEngine();
+      if (eng && eng.hoverSlot && current() && current().need === "select") {
+        eng.hoverSlot(eng.hitSlot(e.clientX, e.clientY, drag.item.slot));
+      }
     }
     function onMove(e) { moveGhost(e); }
     function onUp(e) {
@@ -538,15 +871,22 @@
       if (!drag) return;
       drag.ghost.classList.add("hidden");
       drag.ghost.innerHTML = "";
-      var eng = mode === "3d" && window.Lab3D ? window.Lab3D : window.Lab2D;
+      var eng = activeEngine();
       if (eng && eng.hoverSlot) eng.hoverSlot("");
       var hit = eng && eng.hitSlot ? eng.hitSlot(e.clientX, e.clientY, drag.item.slot) : "";
+      var piece = eng && eng.hitPiece ? eng.hitPiece(e.clientX, e.clientY) : "";
       var want = drag.item.slot || "";
       var item = drag.item;
       var reagent = drag.reagent;
       var moved = drag.moved;
       drag = null;
-      if (!moved && item.slot) {
+      if (reagent && doseNow()) {
+        var target = actionTarget(current());
+        if (!moved || (piece && (piece === target || isVessel(piece)))) { doAction(); return; }
+        toast("把药品拖到容器口再松开", "bad");
+        return;
+      }
+      if (!moved && item.slot && current() && current().need === "select") {
         placeItem(item, reagent);
         return;
       }
@@ -570,8 +910,8 @@
       $("heat").value = "25";
       $("btn-play").textContent = "▶";
       applyScene({
-        flame: false, heat: false, bubbles: false, acid_bubbles: false,
-        sparks: false, jet_flame: false, pop: false, dripping: false,
+        flame: false, heat: false, dripping: false,
+        sparks: false, jet_flame: false, pop: false,
         sulfur_flame: false, charcoal_glow: false, white_smoke: false,
         splint_on: false, pouring: false
       });
@@ -584,13 +924,15 @@
       var s = current();
       if (!s || s.need !== "action" || finished) return false;
       okCount += 1;
+      note((s.title ? s.title + "：" : "") + (s.phenomenon || s.action_label || "操作完成"), true);
+      showPhenom(s.phenomenon || "", s.scene || {});
       report(s.title, s.action_label || "操作", true);
       if (lab3dReady && window.Lab3D) {
         var lab = s.action_label || s.title || "";
         if (/混合|振荡|搅拌/.test(lab) && Lab3D.playMix) Lab3D.playMix();
         else if (/加入|倒|滴|取用/.test(lab) && Lab3D.playPour) Lab3D.playPour(itemColor(s));
       }
-      toast(s.phenomenon || "操作完成", "ok");
+      if (!s.phenomenon) toast("操作完成", "ok");
       next(s.scene || {});
       return true;
     }
@@ -604,44 +946,66 @@
       if (!s || s.need !== "choice" || finished) return;
       if (c.correct) {
         okCount += 1;
+        note(c.ok || c.label, true);
+        showPhenom(c.ok || c.label, Object.assign({}, s.scene || {}, c.scene || {}));
         report(s.title, c.label, true);
-        toast(c.ok || "正确", "ok");
         var sc = Object.assign({}, s.scene || {}, c.scene || {});
         if (c.id === "tilt_down") sc.tilt_down = true;
         if (c.id === "tilt_up") sc.tilt_up = true;
         next(sc);
       } else {
         hazard += 1;
+        note(c.hazard || "这样不安全。", false);
         report(s.title, c.label, false);
         toast(c.hazard || "请重新选择", "bad");
-        var note = document.createElement("div");
-        note.className = "obs hazard";
-        note.textContent = c.hazard || "这样不安全。";
-        $("guide-body").appendChild(note);
+        var hazardNote = document.createElement("div");
+        hazardNote.className = "obs hazard";
+        hazardNote.textContent = c.hazard || "这样不安全。";
+        $("guide-body").appendChild(hazardNote);
       }
     }
-    function doMix() {
-      if (finished) return;
+    function onPrimary() {
+      if (finished) { openReport(); return; }
       if (showingPrinciple) {
-        toast("先看完实验原理，点讲解下一步", "bad");
+        showingPrinciple = false;
+        renderGuide();
         return;
       }
-      if (current() && current().need === "select") {
-        toast("先把试剂和仪器放到台上", "bad");
+      var s = current();
+      if (!s) return;
+      if (s.need === "select") {
+        if (missingRequired().length) toast("还缺：" + missingNames().join("、"), "bad");
+        else tryFinishSelect();
         return;
       }
-      if (lab3dReady && window.Lab3D && Lab3D.playMix) Lab3D.playMix();
-      if (doAction()) return;
-      if (current() && current().need === "choice") {
-        toast("请在右侧讲解里选择操作", "bad");
+      if (s.need === "action") doAction();
+    }
+    function missingNames() {
+      return missingRequired().map(function (id) { return nameOf(id) || id; });
+    }
+    function onBenchPointer(e) {
+      if (drag || finished || showingPrinciple) return;
+      var eng = activeEngine();
+      if (!eng || !eng.hitPiece) return;
+      var id = eng.hitPiece(e.clientX, e.clientY);
+      if (!id) return;
+      var step = current();
+      if (step && step.need === "select" && !lockedSelect && selectedA[id]) {
+        unplace(id);
         return;
       }
-      toast("按讲解步骤继续", "bad");
+      if (step && step.need === "action") {
+        var target = actionTarget(step);
+        if (!target || id === target || (doseNow() && isVessel(id))) doAction();
+        else toast("请操作发亮的「" + nameOf(target) + "」", "bad");
+      }
     }
     function resetLab() {
       selectedA = {}; selectedR = {}; scene = {}; stepIndex = 0; lockedSelect = false;
-      finished = false; hazard = 0; okCount = 0;
+      finished = false; hazard = 0; okCount = 0; journal = [];
+      hidePhenom();
       heatC = 25; playing = false; showingPrinciple = true;
+      $("report").classList.add("hidden");
       $("heat").value = "25";
       $("btn-play").textContent = "▶";
       clearTimeout(playTimer);
@@ -767,17 +1131,21 @@
     $("btn-cam").onclick = function () {
       if (lab3dReady && window.Lab3D && Lab3D.resetView) Lab3D.resetView();
     };
-    $("btn-mix").onclick = doMix;
+    $("btn-primary").onclick = onPrimary;
     $("btn-clear").onclick = resetLab;
-    $("btn-done").onclick = function () {
-      if (finished) { toast("已经完成", "ok"); return; }
-      if (stepIndex >= DATA.steps.length - 1 && current() && current().need !== "choice") {
-        if (current().need === "action") doAction();
-        else finish();
-        return;
-      }
-      toast("请先按讲解做完关键步骤", "bad");
+    $("btn-shelf").onclick = function () {
+      var shelf = $("shelf");
+      var collapsed = shelf.classList.toggle("collapsed");
+      document.body.classList.toggle("shelf-collapsed", collapsed);
+      $("btn-shelf").textContent = collapsed ? "›" : "‹";
     };
+    $("shelf-q").addEventListener("input", function () {
+      shelfQuery = ($("shelf-q").value || "").trim();
+      renderCabinet();
+    });
+    $("report-close").onclick = function () { $("report").classList.add("hidden"); };
+    $("view-2d").addEventListener("pointerup", onBenchPointer);
+    $("view-3d").addEventListener("pointerup", onBenchPointer);
     $("btn-play").onclick = togglePlay;
     $("btn-prev").onclick = function () { gotoGuide(-1); };
     $("btn-next").onclick = function () { gotoGuide(1); };
@@ -796,7 +1164,7 @@
     $("subtitle").textContent = DATA.subtitle || "";
     $("equation").textContent = DATA.equation || "";
     $("equation").style.display = DATA.equation ? "" : "none";
-    $("drop-hint").textContent = "拖到发光工位，或点试剂瓶「+ 加入」倒入容器";
+    $("drop-hint").textContent = "看完原理后，从左侧器件库取用器材和药品";
     if (!canHeat) {
       $("heat-meter").style.display = "none";
       $("hud-meters").classList.add("no-heat");
@@ -810,6 +1178,6 @@
     setMode("3d");
   })();
   </script>
-  <!-- edu-lab:22 -->
+  <!-- edu-lab:24 -->
 </body>
 </html>

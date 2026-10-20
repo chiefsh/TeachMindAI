@@ -478,7 +478,7 @@ async def html_for_row(db: AsyncSession, row: InteractiveAsset) -> str:
     elif row.kind == "physics_explore":
         stale = not row.html or "edu-sim:3" not in row.html
     elif row.kind == "chem_lab":
-        stale = not row.html or "edu-lab:14" not in row.html
+        stale = not row.html or "edu-lab:24" not in row.html
     if row.html and not stale:
         return row.html
     return await render_and_store(db, row)

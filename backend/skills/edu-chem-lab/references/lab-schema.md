@@ -13,7 +13,7 @@
 
 - `select`：从画布左上角把器材拖到同形虚线工位、药品拖到「药品」虚线；全部放对后自动进入下一步
 - `choice`：二选一/三选一，`choices[].correct` 为真才进入下一步；错选记安全事故
-- `action`：点一次操作按钮，写入 `phenomenon`，可带 `scene` 开关
+- `action`：点讲解按钮、底部步骤条，或点击台上发亮器材（加药品也可把试剂拖到容器口）。写入 `phenomenon`，可带 `scene` 开关。做完可打开实验报告，记录现象与安全提示次数
 
 场景开关（oxygen 制气台）：`powder` / `zinc` / `marble` / `acid` / `flame` / `no_lamp` / `upright` / `air_collect` / `bubbles` / `collected` / `splint_on` / `pop` / `jet_flame` / `sparks` / `bottle_water` / `wet_paper` / `lime` / `lime_milky`。
 场景开关（neutralization 烧杯）：`goggles` / `liquid=clear|pink|pale` / `dripping` / `metal` / `acid_bubbles` / `done`。

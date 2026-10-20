@@ -43,7 +43,7 @@
         '<g class="fx-zinc" visibility="hidden"><rect x="24" y="148" width="16" height="8" rx="1" fill="#94a3b8"/><rect x="26" y="150" width="6" height="4" fill="#e2e8f0"/></g>' +
         '<g class="fx-marble" visibility="hidden"><circle cx="28" cy="154" r="5" fill="#f8fafc" stroke="#cbd5e1"/><circle cx="36" cy="157" r="4" fill="#e2e8f0"/></g>' +
         '<g class="fx-acid" visibility="hidden"><path d="M20 120 h24 v36 a12 16 0 0 1 -24 0z" fill="#38bdf8" opacity=".45"/><ellipse cx="32" cy="120" rx="12" ry="4" fill="#7dd3fc" opacity=".6"/></g>' +
-        '<g class="fx-acid-bubbles" visibility="hidden"><circle cx="24" cy="130" r="2.2" fill="#fff" opacity=".75"/><circle cx="36" cy="122" r="2" fill="#fff" opacity=".7"/><circle cx="30" cy="140" r="1.8" fill="#fff" opacity=".7"/></g>' +
+        '<g class="fx-acid-bubbles" visibility="hidden"><circle cx="24" cy="128" r="5" fill="#fff"/><circle cx="34" cy="112" r="4" fill="#e0f2fe"/><circle cx="28" cy="142" r="4.5" fill="#fff"/><circle cx="40" cy="134" r="3.6" fill="#bae6fd"/></g>' +
         '<g class="fx-cotton" visibility="hidden"><ellipse cx="32" cy="22" rx="13" ry="7" fill="#f8fafc" stroke="#d6d3d1"/><ellipse cx="28" cy="20" rx="5" ry="4" fill="#e7e5e4"/></g>'
     },
     heated_tube: {
@@ -54,6 +54,7 @@
         '<path d="M22 25 Q13 29 16 42 Q18 51 30 54 L188 68" fill="none" stroke="#fff" stroke-opacity=".55" stroke-width="5"/>' +
         '<rect x="197" y="42" width="15" height="38" rx="3" fill="#e2e8f0" stroke="#94a3b8" transform="rotate(5 204 61)"/>' +
         '<g class="fx-powder" visibility="hidden"><ellipse cx="35" cy="53" rx="17" ry="7" fill="#6b21a8"/><circle cx="29" cy="49" r="4" fill="#a855f7"/></g>' +
+        '<g class="fx-acid-bubbles" visibility="hidden"><circle cx="72" cy="50" r="5" fill="#fff"/><circle cx="112" cy="54" r="4.2" fill="#e0f2fe"/><circle cx="152" cy="58" r="5.2" fill="#fff"/><circle cx="188" cy="56" r="4" fill="#bae6fd"/></g>' +
         '<g class="fx-copper" visibility="hidden"><ellipse cx="48" cy="55" rx="16" ry="6" fill="#b45309"/><circle cx="43" cy="51" r="4" fill="#ef8b45"/></g>' +
         '<g class="fx-cotton" visibility="hidden"><ellipse cx="176" cy="62" rx="11" ry="7" fill="#f8fafc" stroke="#d6d3d1"/></g>'
     },
@@ -159,7 +160,7 @@
         '<rect x="36" y="2" width="28" height="10" rx="2" fill="#e2e8f0" stroke="#94a3b8"/>' +
         '<rect class="fx-cover" x="22" y="0" width="56" height="7" rx="1" fill="#e0f2fe" stroke="#64748b" opacity=".9" visibility="hidden"/>' +
         '<path d="M36 36 v110" stroke="#fff" stroke-opacity=".5" stroke-width="5"/>' +
-        '<g class="fx-gas" visibility="hidden"><rect x="34" y="70" width="32" height="70" fill="#f8fafc" opacity=".55"/></g>' +
+        '<g class="fx-gas" visibility="hidden"><rect x="30" y="36" width="40" height="108" rx="8" fill="#bef264" opacity=".9"/><text x="50" y="96" text-anchor="middle" font-size="14" font-weight="800" fill="#3f6212">气体</text></g>' +
         '<g class="fx-bottle-water" visibility="hidden"><rect x="32" y="130" width="36" height="18" fill="#38bdf8" opacity=".45"/></g>' +
         '<g class="fx-water-rise" visibility="hidden"><rect x="30" y="108" width="40" height="40" fill="#38bdf8" opacity=".5"/><text x="50" y="102" text-anchor="middle" font-size="10" fill="#0f172a" font-weight="700">约1/5</text></g>' +
         '<g class="fx-marks" visibility="hidden">' +
@@ -173,7 +174,7 @@
         '<path d="M38 140 h24 v16 H62 v8 H38z" fill="url(#g-glass)" stroke="#64748b" stroke-width="1.4"/>' +
         '<rect x="36" y="156" width="28" height="10" rx="2" fill="#e2e8f0" stroke="#94a3b8"/>' +
         '<path d="M36 20 v110" stroke="#fff" stroke-opacity=".5" stroke-width="5"/>' +
-        '<g class="fx-gas" visibility="hidden"><rect x="34" y="20" width="32" height="70" fill="#f8fafc" opacity=".55"/></g>'
+        '<g class="fx-gas" visibility="hidden"><rect x="30" y="16" width="40" height="108" rx="8" fill="#bef264" opacity=".9"/><text x="50" y="74" text-anchor="middle" font-size="14" font-weight="800" fill="#3f6212">气体</text></g>'
     },
     splint: {
       w: 32, h: 156, label: "木条",
@@ -225,11 +226,11 @@
         '<path d="M12 8 h100" stroke="#94a3b8" stroke-width="2.5"/>' +
         '<path d="M22 22 v100" stroke="#fff" stroke-opacity=".45" stroke-width="6"/>' +
         '<path d="M86 40 h10 M86 58 h10 M86 76 h10" stroke="#94a3b8" stroke-width="1"/>' +
-        '<g class="fx-liquid"><path d="M24 78 h76 l4 50 h-84z" fill="#7dd3fc" opacity=".5"/><ellipse cx="62" cy="78" rx="38" ry="6" fill="#bae6fd" opacity=".65"/></g>' +
+        '<g class="fx-liquid"><path d="M24 78 h76 l4 50 h-84z" fill="#38bdf8" opacity=".9"/><ellipse cx="62" cy="78" rx="38" ry="6" fill="#7dd3fc" opacity=".95"/></g>' +
         '<g class="fx-oxide" visibility="hidden"><ellipse cx="62" cy="118" rx="20" ry="7" fill="#1e293b"/><ellipse cx="54" cy="114" rx="6" ry="4" fill="#334155"/></g>' +
         '<g class="fx-metal" visibility="hidden"><rect x="48" y="96" width="28" height="10" rx="2" fill="#94a3b8"/></g>' +
         '<g class="fx-copper" visibility="hidden"><rect x="47" y="94" width="31" height="12" rx="3" fill="#b45309"/><circle cx="56" cy="92" r="4" fill="#ef8b45"/></g>' +
-        '<g class="fx-beaker-bubbles" visibility="hidden"><circle cx="44" cy="110" r="3" fill="#fff" opacity=".75"/><circle cx="62" cy="100" r="2.5" fill="#fff" opacity=".75"/><circle cx="78" cy="114" r="3" fill="#fff" opacity=".7"/></g>'
+        '<g class="fx-beaker-bubbles" visibility="hidden"><circle cx="40" cy="112" r="6" fill="#fff"/><circle cx="58" cy="96" r="5" fill="#e0f2fe"/><circle cx="76" cy="116" r="6.5" fill="#fff"/><circle cx="66" cy="108" r="4" fill="#bae6fd"/></g>'
     },
     dropper: {
       w: 40, h: 132, label: "胶头滴管",
@@ -792,8 +793,8 @@
     vis("fx-rust", !!st.rust);
     vis("fx-drip", !!st.dripping);
     vis("fx-metal", !!st.metal);
-    vis("fx-beaker-bubbles", !!st.acid_bubbles);
-    vis("fx-acid-bubbles", !!st.acid_bubbles || !!st.oxide_bubbles);
+    vis("fx-beaker-bubbles", !!st.acid_bubbles || !!st.bubbles);
+    vis("fx-acid-bubbles", !!st.acid_bubbles || !!st.oxide_bubbles || !!st.bubbles);
     vis("fx-h2", !!st.gases);
     vis("fx-o2", !!st.gases);
     vis("fx-ratio", !!st.ratio);
@@ -869,19 +870,25 @@
         red: "#dc2626"
       };
       var powderColor = st.oxide ? "#1e293b" : (powderColors[st.powder_color] || "#6b21a8");
-      n.querySelectorAll("[fill]").forEach(function (p, i) {
-        p.setAttribute("fill", i ? powderColor : powderColor);
+      var reacting = !!(st.flame && (st.bubbles || st.oxide_bubbles));
+      n.setAttribute("opacity", reacting ? "0.4" : "1");
+      n.querySelectorAll("[fill]").forEach(function (p) {
+        p.setAttribute("fill", reacting ? "#44403c" : powderColor);
       });
     });
     (fx["fx-acid"] || []).forEach(function (n) {
-      if (st.liquid !== "blue") return;
-      n.querySelectorAll("[fill]").forEach(function (p) { p.setAttribute("fill", "#2563eb"); });
+      var blue = st.liquid === "blue";
+      n.querySelectorAll("[fill]").forEach(function (p) {
+        if (blue) p.setAttribute("fill", "#1d4ed8");
+        p.setAttribute("opacity", "0.94");
+      });
     });
     (fx["fx-liquid"] || []).forEach(function (n) {
-      var colors = { pink: "#f9a8d4", pale: "#fce7f3", clear: "#7dd3fc", blue: "#2563eb" };
+      var colors = { pink: "#ec4899", pale: "#f9a8d4", clear: "#38bdf8", blue: "#1d4ed8", red: "#ef4444" };
       var liquidColor = displacedCopper ? "#93c5fd" : (colors[st.liquid] || colors.clear);
       n.querySelectorAll("[fill]").forEach(function (p) {
-        if (p.tagName.toLowerCase() !== "ellipse") p.setAttribute("fill", liquidColor);
+        p.setAttribute("fill", liquidColor);
+        p.setAttribute("opacity", "0.94");
       });
       if (st.filtrate === false) n.setAttribute("visibility", "hidden");
       if (st.filtrate) n.setAttribute("visibility", "visible");
@@ -900,8 +907,9 @@
       n.setAttribute("fill", st.liquid === "pink" ? "#e0f2fe" : (st.liquid ? "#ef4444" : "#7dd3fc"));
     });
     (fx["fx-indicator-base"] || []).forEach(function (n) {
-      var c = st.liquid === "blue" ? "#2563eb" : (st.liquid === "pink" ? "#ec4899" : "#7dd3fc");
+      var c = st.liquid === "blue" ? "#1d4ed8" : (st.liquid === "pink" ? "#ec4899" : "#7dd3fc");
       n.setAttribute("fill", c);
+      n.setAttribute("opacity", "0.95");
     });
     (fx["fx-sulfur-flame"] || []).forEach(function (n) {
       var violet = st.sulfur_flame === "blue_violet";
@@ -916,8 +924,9 @@
       });
     }
     (fx["fx-lime-liquid"] || []).forEach(function (n) {
-      n.querySelectorAll("path").forEach(function (p) {
-        p.setAttribute("fill", st.lime_milky ? "#f8fafc" : "#e2e8f0");
+      n.querySelectorAll("path, ellipse").forEach(function (p) {
+        p.setAttribute("fill", st.lime_milky ? "#f8fafc" : "#7dd3fc");
+        p.setAttribute("opacity", st.lime_milky ? "0.98" : "0.55");
       });
     });
     (fx["fx-dish-liquid"] || []).forEach(function (n) {
@@ -968,9 +977,29 @@
     });
     return best;
   }
+  function hitPiece(clientX, clientY) {
+    var best = "", bestA = 1e15;
+    Object.keys(pieces).forEach(function (k) {
+      var piece = pieces[k];
+      if (!piece || k === "reagent") return;
+      if (piece.el.style.display === "none" || piece.el.dataset.placed !== "1") return;
+      var r = piece.el.getBoundingClientRect();
+      if (!r.width || !r.height) return;
+      if (clientX < r.left || clientX > r.right || clientY < r.top || clientY > r.bottom) return;
+      var area = r.width * r.height;
+      if (area < bestA) { bestA = area; best = k; }
+    });
+    return best;
+  }
+  function highlight(id) {
+    Object.keys(pieces).forEach(function (k) {
+      if (pieces[k] && pieces[k].el) pieces[k].el.classList.toggle("hot-op", !!id && k === id);
+    });
+  }
 
   global.Lab2D = {
     init: init, icon: icon, setSelecting: setSelecting, hoverSlot: hoverSlot,
-    setPiece: setPiece, applyEffects: applyEffects, hitSlot: hitSlot
+    setPiece: setPiece, applyEffects: applyEffects, hitSlot: hitSlot,
+    hitPiece: hitPiece, highlight: highlight
   };
 })(window);

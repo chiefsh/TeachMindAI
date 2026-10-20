@@ -75,8 +75,8 @@
       roughness: 0.12,
       metalness: 0,
       transparent: true,
-      opacity: 0.78,
-      transmission: 0.28,
+      opacity: 0.94,
+      transmission: 0.06,
       thickness: 0.18
     });
   }
@@ -1463,6 +1463,12 @@
     if (fx.burnFlame && fx.burnFlame.visible) {
       fx.burnFlame.scale.y = 0.9 + Math.sin(now * 0.028) * 0.16;
     }
+    Object.keys(pieces).forEach(function (k) {
+      var g = pieces[k];
+      if (!g || !g.userData.shown) return;
+      if (k === highlightId) g.scale.setScalar(1 + Math.sin(now * 0.008) * 0.045);
+      else if (Math.abs(g.scale.x - 1) > 0.001) g.scale.setScalar(1);
+    });
     if (pour.on) tickPour(0.016);
     if (mix.on) tickMix(0.016);
     for (var i = pops.length - 1; i >= 0; i--) {
@@ -1626,7 +1632,13 @@
     if (fx.cotton) fx.cotton.visible = !!st.cotton;
     if (fx.acid) {
       fx.acid.visible = !!st.acid || !!st.oxide_acid || st.liquid === "blue";
-      if (st.liquid === "blue") fx.acid.material.color.setHex(0x2563eb);
+      if (st.liquid === "blue") {
+        fx.acid.material.color.setHex(0x1d4ed8);
+        if (fx.acid.material.emissive) {
+          fx.acid.material.emissive.setHex(0x1d4ed8);
+          fx.acid.material.emissiveIntensity = 0.35;
+        }
+      }
     }
     var lit = !!st.flame || !!st.heat;
     if (fx.flame) fx.flame.visible = lit;
@@ -1655,9 +1667,22 @@
     }
     if (fx.charcoalLight) fx.charcoalLight.intensity = st.charcoal_glow ? 2.8 : 0;
     (fx.smoke || []).forEach(function (s) { s.visible = !!st.white_smoke; });
-    (fx.bubbles || []).forEach(function (b) { b.visible = !!st.bubbles; });
-    (fx.tubeBubbles || []).forEach(function (b) { b.visible = !!st.acid_bubbles || !!st.oxide_bubbles || !!st.bubbles; });
-    if (fx.gas) fx.gas.visible = (!!st.collected && !st.air_collect) || !!st.co2_fill;
+    (fx.bubbles || []).forEach(function (b) {
+      b.visible = !!st.bubbles || !!st.acid_bubbles;
+      b.scale.setScalar(b.visible ? 2.4 : 1);
+    });
+    (fx.tubeBubbles || []).forEach(function (b) {
+      b.visible = !!st.acid_bubbles || !!st.oxide_bubbles || !!st.bubbles;
+      b.scale.setScalar(b.visible ? 2.6 : 1);
+    });
+    if (fx.gas) {
+      fx.gas.visible = (!!st.collected && !st.air_collect) || !!st.co2_fill;
+      if (fx.gas.material) {
+        fx.gas.material.color.setHex(0xbef264);
+        fx.gas.material.opacity = fx.gas.visible ? 0.88 : 0.45;
+      }
+      fx.gas.scale.set(fx.gas.visible ? 1.08 : 1, fx.gas.visible ? 1.7 : 1, fx.gas.visible ? 1.08 : 1);
+    }
     if (fx.flameLow) fx.flameLow.visible = !!st.lit && !st.low_out;
     if (fx.flameLowInner) fx.flameLowInner.visible = !!st.lit && !st.low_out;
     if (fx.flameHigh) fx.flameHigh.visible = !!st.lit && !st.high_out;
@@ -1709,8 +1734,14 @@
       if (st.upright || st.tilt_up || st.tilt_down) fx.tube.rotation.z = rot;
     }
     if (fx.liquid) {
-      var colors = { pink: 0xf9a8d4, pale: 0xfce7f3, clear: 0x7dd3fc, blue: 0x2563eb };
-      fx.liquid.material.color.setHex(colors[st.liquid] || colors.clear);
+      var colors = { pink: 0xec4899, pale: 0xf9a8d4, clear: 0x38bdf8, blue: 0x1d4ed8, red: 0xef4444 };
+      var liquidHex = colors[st.liquid] || colors.clear;
+      fx.liquid.material.color.setHex(liquidHex);
+      if (fx.liquid.material.emissive) {
+        fx.liquid.material.emissive.setHex(liquidHex);
+        fx.liquid.material.emissiveIntensity = st.liquid && st.liquid !== "clear" ? 0.32 : 0.08;
+      }
+      fx.liquid.material.opacity = 0.94;
       if (st.filtrate === false) fx.liquid.visible = false;
       if (st.filtrate) fx.liquid.visible = true;
     }
@@ -1753,7 +1784,10 @@
     if (fx.ratio) fx.ratio.visible = !!st.ratio;
     if (fx.filterPaper) fx.filterPaper.visible = !!st.paper;
     if (fx.residue) fx.residue.visible = !!st.residue;
-    if (fx.limeLiquid) fx.limeLiquid.material.color.setHex(st.lime_milky ? 0xf8fafc : 0xe0f2fe);
+    if (fx.limeLiquid) {
+      fx.limeLiquid.material.color.setHex(st.lime_milky ? 0xffffff : 0x7dd3fc);
+      fx.limeLiquid.material.opacity = st.lime_milky ? 0.98 : 0.55;
+    }
     if (fx.crystals) fx.crystals.visible = !!st.crystals;
     if (fx.dishLiquid) fx.dishLiquid.material.opacity = st.crystals ? 0.25 : 0.55;
     (fx.steam || []).forEach(function (s) { s.visible = !!st.heat; });
@@ -1778,6 +1812,25 @@
     var hits = raycaster.intersectObjects(list, false);
     return hits.length && hits[0].object.userData.slot ? hits[0].object.userData.slot : "";
   }
+  var highlightId = "";
+  function highlight(id) { highlightId = id || ""; }
+  function hitPiece(clientX, clientY) {
+    if (!canvas) return "";
+    var r = canvas.getBoundingClientRect();
+    pointer.x = ((clientX - r.left) / r.width) * 2 - 1;
+    pointer.y = -((clientY - r.top) / r.height) * 2 + 1;
+    raycaster.setFromCamera(pointer, camera);
+    var list = [];
+    Object.keys(pieces).forEach(function (k) {
+      var g = pieces[k];
+      if (!g || !g.visible || k === "reagent" || !g.userData.shown) return;
+      g.traverse(function (o) {
+        if (o.isMesh) { o.userData.piece = k; list.push(o); }
+      });
+    });
+    var hits = raycaster.intersectObjects(list, false);
+    return hits.length ? (hits[0].object.userData.piece || "") : "";
+  }
   function playPour(color) {
     pour.on = true;
     pour.t = 0;
@@ -1799,6 +1852,7 @@
   global.Lab3D = {
     init: init, resize: resize, setSelecting: setSelecting,
     setPiece: setPiece, applyEffects: applyEffects, hitSlot: hitSlot, hoverSlot: hoverSlot,
+    hitPiece: hitPiece, highlight: highlight,
     playPour: playPour, playMix: playMix, playPlace: playPlace, resetView: resetView
   };
 })(window);

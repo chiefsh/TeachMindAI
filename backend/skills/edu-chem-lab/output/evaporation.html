@@ -6,133 +6,315 @@
   <title>化学虚拟实验台</title>
   <style>
     :root {
-      --ink: #1e293b; --muted: #64748b; --line: #e2e8f0;
-      --ok: #16a34a; --bad: #dc2626; --accent: #0f766e;
+      --ink: #e8eef6; --muted: #9db0c6; --line: rgba(255,255,255,.12);
+      --ok: #34d399; --bad: #fb7185; --accent: #2dd4bf;
+      --panel: rgba(8, 14, 24, .72); --glass: rgba(255,255,255,.08);
     }
     * { box-sizing: border-box; }
-    html, body { margin: 0; min-height: 100%; height: auto; }
+    html, body { margin: 0; height: 100%; overflow: hidden; }
     body {
-      font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
-      color: var(--ink); background: #f1f5f9; display: flex; flex-direction: column;
-      min-height: 100%;
+      font-family: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+      color: var(--ink); background: #070c14; display: flex; flex-direction: column;
     }
-    header {
-      padding: 10px 14px; background: #fff; border-bottom: 1px solid var(--line);
-      display: flex; align-items: center; gap: 10px; flex-wrap: wrap; flex-shrink: 0;
+    body.mode-2d { background: #c5d4e0; color: #1e2937; }
+    .stage {
+      flex: 1; min-height: 0; position: relative; overflow: hidden;
+      background: #8fb7d4;
     }
-    header h1 { font-size: 17px; margin: 0; }
-    header p { margin: 2px 0 0; font-size: 12px; color: var(--accent); }
+    body.mode-2d .stage {
+      background:
+        radial-gradient(1200px 420px at 50% -10%, #eef6fb, transparent 55%),
+        linear-gradient(#c9d8e6 0 58%, #2c333d 58% 61%, #3b2a1a 61% 100%);
+    }
+    #view-2d, #view-3d { position: absolute; inset: 0; width: 100%; height: 100%; }
+    #bench { width: 100%; height: 100%; display: block; }
+    .hud-top, .hud-shelf, .hud-guide, .hud-bottom, .view-switch, .cam-btn, .boot {
+      position: absolute; z-index: 4; pointer-events: auto;
+    }
+    .hud-top {
+      left: 228px; right: 312px; top: 12px; display: flex; align-items: flex-start; gap: 14px;
+      pointer-events: none;
+    }
+    .hud-top > * { pointer-events: auto; }
+    .title-block {
+      background: var(--panel); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--line); border-radius: 18px; padding: 10px 16px 12px;
+      box-shadow: 0 18px 40px rgba(0,0,0,.28);
+    }
     .badge {
-      font-size: 11px; font-weight: 600; color: var(--accent);
-      background: #ccfbf1; border-radius: 999px; padding: 2px 10px;
+      font-size: 10px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
+      color: var(--accent); background: rgba(45,212,191,.14); border-radius: 999px;
+      padding: 3px 9px; display: inline-block; margin-bottom: 4px;
     }
+    .title-block h1 { font-size: 18px; margin: 0; font-weight: 700; letter-spacing: -.02em; }
+    .title-block p { margin: 3px 0 0; font-size: 12px; color: var(--muted); }
     .eq {
-      margin-left: auto; font-size: 13px; background: #f8fafc; border: 1px solid var(--line);
-      border-radius: 10px; padding: 6px 10px; font-family: ui-serif, serif;
+      margin-top: 8px; display: inline-block; font-size: 13px;
+      background: rgba(255,255,255,.06); border: 1px solid var(--line); border-radius: 10px;
+      padding: 4px 10px; font-family: ui-serif, Georgia, serif; color: #99f6e4;
     }
-    .wrap {
-      flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) 220px;
-      min-height: 540px; min-width: 0;
+    body.mode-2d .title-block { background: rgba(255,255,255,.82); color: #0f172a; }
+    body.mode-2d .title-block p, body.mode-2d .hud-guide, body.mode-2d .sec-title { color: #475569; }
+    body.mode-2d .eq { color: #0f766e; background: #fff; }
+    .hud-shelf {
+      left: 16px; top: 12px; bottom: 92px; width: 198px;
+      background: var(--panel); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+      border: 1px solid var(--line); border-radius: 20px; padding: 12px 10px;
+      overflow: auto; box-shadow: 0 18px 40px rgba(0,0,0,.28);
     }
-    @media (max-width: 640px) {
-      .wrap { grid-template-columns: 1fr; min-height: 0; }
-      .log-col { border-left: 0; border-top: 1px solid var(--line); min-height: 180px; }
+    .sec-title {
+      font-size: 11px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
+      color: #7dd3fc; margin: 8px 4px 8px;
     }
-    .log-col { background: #fff; overflow: auto; min-width: 0; border-left: 1px solid var(--line); padding: 12px; }
-    .sec-title { font-size: 11px; font-weight: 700; letter-spacing: .08em; color: var(--muted); margin: 8px 0; }
-    .stage { position: relative; min-height: 420px; min-width: 0; display: flex; flex-direction: column; background: #eef3f8; }
-    #view { flex: 1; width: 100%; min-height: 400px; }
-    #bench { width: 100%; height: 100%; min-height: 400px; display: block; }
-    .slot { pointer-events: none; }
-    .slot-dash { stroke: #94a3b8; stroke-width: 1.4; stroke-dasharray: 4 8; opacity: .55; }
-    .slot.hot .slot-dash { stroke: #0f766e; stroke-width: 2; opacity: .95; }
-    .slot-label { font-size: 11px; fill: #94a3b8; font-weight: 600; }
-    .palette {
-      position: absolute; left: 10px; top: 10px; z-index: 4;
-      max-width: 268px; background: rgba(255,255,255,.94);
-      border: 1px solid var(--line); border-radius: 12px; padding: 8px;
-      box-shadow: 0 8px 20px rgba(15,23,42,.08);
+    .bottles { display: flex; flex-direction: column; gap: 8px; }
+    .bottle {
+      display: flex; align-items: center; gap: 8px; border: 1px solid var(--line);
+      background: var(--glass); border-radius: 14px; padding: 8px 8px 8px 10px;
+      cursor: grab; user-select: none; touch-action: none;
     }
-    .palette .sec-title { margin: 4px 0 6px; }
-    .tiles { display: flex; flex-wrap: wrap; gap: 6px; }
-    .tile {
-      width: 60px; border: 1px solid var(--line); background: #fff; border-radius: 10px;
-      padding: 4px 2px 6px; cursor: grab; user-select: none; text-align: center;
-      box-shadow: 0 2px 6px rgba(15,23,42,.05); touch-action: none;
+    .bottle:hover { border-color: rgba(45,212,191,.55); }
+    .bottle:active { cursor: grabbing; }
+    .bottle.placed { opacity: .38; cursor: default; }
+    .bottle.wrong { border-color: var(--bad); background: rgba(251,113,133,.12); }
+    .bottle .ico { width: 28px; height: 36px; display: flex; align-items: center; justify-content: center; }
+    .bottle .ico svg { max-width: 24px; max-height: 34px; }
+    .bottle .name { flex: 1; font-size: 12px; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .add {
+      border: 0; background: #2dd4bf; color: #042f2e; font-size: 11px; font-weight: 800;
+      border-radius: 999px; padding: 4px 8px; cursor: pointer; white-space: nowrap;
     }
-    .tile:active { cursor: grabbing; }
-    .tile.placed { opacity: .32; cursor: default; filter: grayscale(.45); }
-    .tile.wrong { border-color: var(--bad); background: #fef2f2; }
-    .tile .ico { height: 48px; display: flex; align-items: center; justify-content: center; }
-    .tile .ico svg { max-width: 42px; max-height: 46px; }
-    .tile span { display: block; font-size: 10px; line-height: 1.2; }
-    .hidden { display: none !important; }
-    .hint-bar {
-      position: absolute; right: 12px; top: 10px; z-index: 3; max-width: 340px; margin: 0;
-      background: rgba(255,255,255,.94); border-radius: 12px;
-      padding: 8px 12px; font-size: 13px; border: 1px solid var(--line);
+    .chips { display: flex; flex-direction: column; gap: 6px; }
+    .chip {
+      display: flex; align-items: center; gap: 8px; border: 1px solid var(--line);
+      background: var(--glass); border-radius: 14px; padding: 7px 10px;
+      font-size: 12px; cursor: grab; user-select: none; touch-action: none; color: inherit;
     }
-    .actions .hint-bar { position: static; max-width: none; }
-    .actions { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 10px 12px; }
-    .btn {
-      appearance: none; border: 0; border-radius: 10px; padding: 9px 14px; font-size: 14px;
-      font-weight: 600; cursor: pointer; background: var(--accent); color: #fff;
+    .chip.placed { opacity: .35; cursor: default; }
+    .chip.wrong { border-color: var(--bad); }
+    .chip .ico { width: 22px; height: 28px; display: flex; }
+    .chip .ico svg { max-width: 20px; max-height: 26px; }
+    .hud-guide {
+      right: 16px; top: 56px; bottom: 92px; width: 280px;
+      background: var(--panel); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+      border: 1px solid var(--line); border-radius: 20px; padding: 14px 14px 10px;
+      display: flex; flex-direction: column; box-shadow: 0 18px 40px rgba(0,0,0,.28);
+    }
+    body.mode-2d .hud-shelf, body.mode-2d .hud-guide, body.mode-2d .hud-bottom, body.mode-2d .view-switch, body.mode-2d .cam-btn {
+      background: rgba(255,255,255,.86); color: #0f172a; backdrop-filter: blur(12px);
+    }
+    .guide-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+    .guide-top h2 { margin: 0; font-size: 14px; }
+    .guide-top .n { font-size: 12px; color: var(--muted); }
+    #guide-rail { display: flex; gap: 5px; margin: 0 0 10px; }
+    #guide-rail i { flex: 1; height: 4px; border-radius: 99px; background: rgba(148,163,184,.45); }
+    #guide-rail i.done { background: #2dd4bf; }
+    #guide-rail i.now { background: #fbbf24; }
+    .g-kind {
+      font-size: 10px; font-weight: 800; letter-spacing: .08em; color: #042f2e;
+      background: #2dd4bf; border-radius: 999px; padding: 2px 8px; margin-right: 6px;
+    }
+    #guide-title { font-size: 14px; font-weight: 700; margin: 0 0 8px; }
+    #guide-body { font-size: 13px; line-height: 1.65; color: #c5d4e6; flex: 1; overflow: auto; }
+    body.mode-2d #guide-body { color: #334155; }
+    .guide-nav { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 10px 0 2px; flex-shrink: 0; }
+    .round {
+      width: 36px; height: 36px; border-radius: 50%; border: 1px solid var(--line);
+      background: var(--glass); cursor: pointer; font-size: 16px; color: inherit;
+    }
+    .round.play { width: 46px; height: 46px; background: #14b8a6; color: #042f2e; border: 0; font-size: 17px; }
+    .hud-bottom {
+      left: 228px; right: 312px; bottom: 14px;
+      background: var(--panel); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+      border: 1px solid var(--line); border-radius: 18px; padding: 8px 10px;
+      display: grid; grid-template-columns: minmax(70px,.7fr) minmax(86px,.8fr) minmax(140px,1.4fr);
+      gap: 8px; align-items: center; box-shadow: 0 18px 40px rgba(0,0,0,.28);
+    }
+    .hud-bottom.no-heat { grid-template-columns: 1fr 1fr; }
+    .meter { padding: 2px 8px; }
+    .meter .k { font-size: 10px; color: var(--muted); letter-spacing: .08em; text-transform: uppercase; }
+    .meter .v { font-size: 18px; font-weight: 700; line-height: 1.15; }
+    .heat-row { display: flex; align-items: center; gap: 8px; }
+    .heat-row input { flex: 1; accent-color: var(--accent); }
+    .heat-val { font-size: 12px; font-weight: 700; color: var(--accent); min-width: 42px; text-align: right; }
+    .ops { position: absolute; left: 228px; right: 312px; bottom: 72px; display: grid; grid-template-columns: minmax(0,1.5fr) auto auto; gap: 8px; align-items: center; z-index: 4; }
+    .ops-step { font-size: 13px; font-weight: 750; line-height: 1.35; padding: 2px 6px; }
+    .shelf-head { display: flex; align-items: center; justify-content: space-between; margin: 0 4px 8px; }
+    .shelf-q {
+      width: 100%; border: 1px solid var(--line); background: var(--glass); color: inherit;
+      border-radius: 12px; padding: 7px 10px; font-size: 12px; margin: 0 0 8px;
+    }
+    body.mode-2d .shelf-q { background: #fff; color: #0f172a; }
+    .icon-btn {
+      width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--line);
+      background: var(--glass); color: inherit; cursor: pointer; font-size: 16px; line-height: 1;
+    }
+    .hud-shelf.collapsed { width: 46px; padding: 10px 6px; overflow: hidden; }
+    .hud-shelf.collapsed .shelf-q,
+    .hud-shelf.collapsed #cabinet,
+    .hud-shelf.collapsed .shelf-head .sec-title { display: none; }
+    .hud-shelf.collapsed .shelf-head { justify-content: center; margin: 0; }
+    body.shelf-collapsed .hud-top { left: 74px; }
+    body.shelf-collapsed .hud-bottom,
+    body.shelf-collapsed .ops,
+    body.shelf-collapsed .drop-hint { left: 74px; }
+    .bottle.dose { opacity: 1; cursor: grab; border-color: rgba(251,191,36,.75); }
+    .op-tip { font-size: 12px; margin: 8px 0 0; color: #fbbf24; line-height: 1.45; }
+    body.mode-2d .op-tip { color: #b45309; }
+    .piece.hot-op { animation: pulse-op 1s ease-in-out infinite; cursor: pointer; }
+    @keyframes pulse-op { 50% { opacity: .72; } }
+    .report {
+      position: absolute; inset: 0; z-index: 30; display: flex; align-items: center; justify-content: center;
+      background: rgba(7,12,20,.55); padding: 24px;
+    }
+    .report-card {
+      width: min(440px, 100%); max-height: min(78vh, 640px); overflow: auto;
+      background: #fff; color: #0f172a; border-radius: 18px; padding: 18px 18px 14px;
+      box-shadow: 0 24px 60px rgba(0,0,0,.35);
+    }
+    .report-card h2 { margin: 0 0 6px; font-size: 18px; }
+    .report-card h3 { margin: 14px 0 6px; font-size: 13px; }
+    .report-card p, .report-card li { font-size: 13px; line-height: 1.55; margin: 0 0 6px; }
+    .report-card .eq { color: #0f766e; margin-top: 0; }
+    .report-card li.bad { color: #9f1239; }
+    .report-card .btn { margin-top: 12px; width: 100%; }
+    .ops .btn, .btn {
+      appearance: none; border: 0; border-radius: 12px; padding: 9px 12px; font-size: 12px;
+      font-weight: 800; cursor: pointer; background: #0f766e; color: #fff;
+    }
+    .ops .btn.quiet { background: rgba(255,255,255,.12); color: inherit; border: 1px solid var(--line); }
+    body.mode-2d .ops .btn.quiet { background: #fff; color: #0f172a; }
+    .btn:disabled { opacity: .45; cursor: default; }
+    #guide-body .btn { margin-top: 12px; width: 100%; }
+    .view-switch {
+      top: 12px; right: 16px; display: flex; gap: 4px; padding: 4px;
+      background: var(--panel); border: 1px solid var(--line); border-radius: 999px;
+    }
+    .tab {
+      border: 0; background: transparent; border-radius: 999px; padding: 6px 12px;
+      font-size: 12px; font-weight: 700; color: var(--muted); cursor: pointer;
+    }
+    .tab.on { background: #2dd4bf; color: #042f2e; }
+    .cam-btn {
+      top: 56px; right: 16px; border: 1px solid var(--line); background: var(--panel);
+      color: inherit; border-radius: 999px; padding: 6px 12px; font-size: 12px; cursor: pointer;
     }
     .choice {
-      display: block; width: 100%; text-align: left; margin-bottom: 8px;
-      border: 1px solid var(--line); background: #fff; border-radius: 12px; padding: 10px 12px;
-      font-size: 13px; cursor: pointer;
+      display: block; width: 100%; text-align: left; margin: 0 0 8px;
+      border: 1px solid var(--line); background: var(--glass); border-radius: 12px; padding: 10px 12px;
+      font-size: 13px; cursor: pointer; color: inherit;
     }
+    .choice:hover { border-color: #2dd4bf; }
+    .obs { font-size: 12px; background: rgba(251,191,36,.12); border: 1px solid rgba(251,191,36,.35); border-radius: 10px; padding: 6px 8px; margin-top: 8px; line-height: 1.4; }
+    .hazard { background: rgba(251,113,133,.12); border-color: rgba(251,113,133,.4); color: #fecaca; }
     .toast {
-      position: absolute; left: 50%; bottom: 64px; transform: translateX(-50%);
-      max-width: 90%; background: #111827; color: #fff; border-radius: 12px;
-      padding: 10px 14px; font-size: 13px; display: none; z-index: 5;
+      position: absolute; left: 50%; bottom: 128px; transform: translateX(-50%);
+      max-width: 70%; background: #042f2e; color: #ecfeff; border-radius: 12px;
+      padding: 10px 14px; font-size: 13px; display: none; z-index: 6;
+      box-shadow: 0 12px 32px rgba(0,0,0,.35);
     }
-    .toast.bad { background: #991b1b; }
-    .toast.ok { background: #166534; }
-    .ghost {
-      position: fixed; z-index: 80; pointer-events: none;
-      filter: drop-shadow(0 10px 16px rgba(15,23,42,.25));
+    .toast.bad { background: #9f1239; }
+    .toast.ok { background: #14532d; }
+    .drop-hint {
+      position: absolute; left: 228px; right: 312px; bottom: 118px; text-align: center;
+      font-size: 12px; color: rgba(255,255,255,.7); pointer-events: none; text-shadow: 0 1px 8px #0b1220;
     }
-    .ghost svg { width: 72px; height: auto; }
-    .step { font-size: 13px; padding: 8px 0; border-bottom: 1px dashed var(--line); color: var(--muted); }
-    .step.now { color: var(--ink); font-weight: 700; }
-    .step.done { color: var(--ok); }
-    .obs { font-size: 13px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 10px; padding: 8px 10px; margin-top: 8px; }
-    .hazard { background: #fef2f2; border-color: #fecaca; color: #991b1b; }
+    .boot {
+      inset: 0; display: flex; align-items: center; justify-content: center;
+      background: rgba(7,12,20,.45); color: #ecfeff; font-size: 14px; letter-spacing: .08em;
+      z-index: 8;
+    }
+    .slot { pointer-events: none; }
+    .slot-dash { stroke: #2dd4bf; stroke-width: 1.8; stroke-dasharray: 5 6; opacity: .85; }
+    .slot.hot .slot-dash { stroke: #fbbf24; stroke-width: 2.4; opacity: 1; }
+    .slot-label { font-size: 12px; fill: #0f766e; font-weight: 700; }
+    body.mode-3d .slot-label { fill: #ecfeff; }
+    .drag-ghost { position: fixed; z-index: 80; pointer-events: none; filter: drop-shadow(0 10px 16px rgba(15,23,42,.35)); }
+    .drag-ghost svg { width: 64px; height: auto; }
+    .hidden { display: none !important; }
+    .fx-beaker-bubbles circle, .fx-acid-bubbles circle { animation: rise 1.5s ease-in infinite; }
+    @keyframes rise { 0% { transform: translateY(0); opacity: .8; } 100% { transform: translateY(-28px); opacity: 0; } }
+    @media (max-width: 900px) {
+      .hud-shelf { width: 168px; }
+      .hud-guide { width: 230px; }
+      .hud-bottom, .ops, .drop-hint { left: 188px; right: 250px; }
+      body.shelf-collapsed .hud-bottom,
+      body.shelf-collapsed .ops,
+      body.shelf-collapsed .drop-hint { left: 64px; }
+    }
   </style>
 </head>
-<body>
-  <header>
-    <div>
-      <div class="badge" id="badge">虚拟实验台</div>
-      <h1 id="title">化学虚拟实验台</h1>
-      <p id="subtitle"></p>
-    </div>
-    <div class="eq" id="equation"></div>
-  </header>
-  <div class="wrap">
-    <section class="stage">
-      <div class="palette">
-        <div class="sec-title">器材 · 拖到同形虚线</div>
-        <div class="tiles" id="apparatus"></div>
-        <div class="sec-title">药品 · 拖到药品虚线</div>
-        <div class="tiles" id="reagents"></div>
+<body class="mode-3d">
+  <div class="stage" id="stage">
+    <div id="view-2d" class="hidden"></div>
+    <canvas id="view-3d"></canvas>
+    <div class="hud-top">
+      <div class="title-block">
+        <div class="badge" id="badge">虚拟实验台</div>
+        <h1 id="title">化学虚拟实验台</h1>
+        <p id="subtitle"></p>
+        <div class="eq" id="equation"></div>
       </div>
-      <div class="hint-bar" id="step-hint"></div>
-      <div id="view"></div>
-      <div class="actions" id="actions"></div>
-      <div class="toast" id="toast"></div>
-    </section>
-    <aside class="log-col">
-      <div class="sec-title">实验步骤</div>
-      <div id="steps"></div>
-      <div class="sec-title">观察与安全</div>
-      <div id="log"></div>
+    </div>
+    <div class="view-switch">
+      <button class="tab" type="button" id="tab-2d">2D</button>
+      <button class="tab on" type="button" id="tab-3d">3D</button>
+    </div>
+    <button class="cam-btn" type="button" id="btn-cam">复位视角</button>
+    <aside class="hud-shelf" id="shelf">
+      <div class="shelf-head">
+        <div class="sec-title" style="margin:0">器件库</div>
+        <button class="icon-btn" type="button" id="btn-shelf" title="收起器件库">‹</button>
+      </div>
+      <input id="shelf-q" class="shelf-q" type="search" placeholder="搜索器材或药品" autocomplete="off">
+      <div id="cabinet"></div>
     </aside>
+    <aside class="hud-guide">
+      <div class="guide-top">
+        <h2>实验讲解</h2>
+        <span class="n" id="guide-n">1 / 1</span>
+      </div>
+      <div id="guide-rail"></div>
+      <div id="guide-title"></div>
+      <div id="guide-body"></div>
+      <div class="guide-nav">
+        <button class="round" type="button" id="btn-prev">‹</button>
+        <button class="round play" type="button" id="btn-play">▶</button>
+        <button class="round" type="button" id="btn-next">›</button>
+      </div>
+    </aside>
+    <div class="ops" id="ops">
+      <div class="ops-step" id="ops-step">先看实验原理</div>
+      <button class="btn" type="button" id="btn-primary">开始操作</button>
+      <button class="btn quiet" type="button" id="btn-clear">重做</button>
+    </div>
+    <div class="hud-bottom" id="hud-meters">
+      <div class="meter"><div class="k">pH</div><div class="v" id="ph">7.0</div></div>
+      <div class="meter"><div class="k">温度</div><div class="v" id="temp">25 ℃</div></div>
+      <div class="meter" id="heat-meter">
+        <div class="k">加热</div>
+        <div class="heat-row">
+          <input id="heat" type="range" min="0" max="100" value="25">
+          <span class="heat-val" id="heat-val">25℃</span>
+        </div>
+      </div>
+    </div>
+    <div class="drop-hint" id="drop-hint">把试剂拖到发光工位，或点 +加入</div>
+    <div class="report hidden" id="report">
+      <div class="report-card">
+        <h2 id="report-title">实验报告</h2>
+        <div class="eq" id="report-eq"></div>
+        <h3>现象与操作记录</h3>
+        <ol id="report-log"></ol>
+        <p id="report-safe"></p>
+        <p id="report-sum"></p>
+        <button class="btn" type="button" id="report-close">回到实验台</button>
+      </div>
+    </div>
+    <div class="toast" id="toast"></div>
+    <div class="boot" id="boot3d">正在进入实验室…</div>
   </div>
-  <div id="ghost" class="ghost hidden"></div>
-  <script type="application/json" id="lab-data">{"id": "evaporation", "scene": "evaporation", "title": "蒸发结晶", "subtitle": "加热蒸发 · 玻璃棒搅拌 · 余热蒸干", "equation": "（物理操作，无化学方程式）", "goal": "把滤液加热蒸发，得到固体晶体，并防止液滴飞溅。", "badge": "初中化学 · 基本操作", "inventory": {"apparatus": [{"id": "dish", "name": "蒸发皿", "icon": "皿", "slot": "dish"}, {"id": "lamp", "name": "酒精灯", "icon": "灯", "slot": "lamp"}, {"id": "rod", "name": "玻璃棒", "icon": "棒", "slot": "rod"}, {"id": "stand", "name": "铁架台 / 三脚架", "icon": "架", "slot": "stand"}, {"id": "gauze", "name": "陶土网", "icon": "网", "slot": "gauze"}, {"id": "funnel", "name": "漏斗", "icon": "斗", "slot": ""}], "reagents": [{"id": "sol", "name": "食盐溶液 / 滤液", "color": "#38bdf8", "slot": "reagent"}, {"id": "kmno4", "name": "高锰酸钾固体", "color": "#6b21a8", "slot": ""}]}, "required_apparatus": ["dish", "lamp", "rod", "stand", "gauze"], "required_reagents": ["sol"], "steps": [{"id": "pick", "need": "select", "title": "选取仪器与药品", "hint": "从左上角把器材拖到形状相同的虚线工位；药品拖到「药品」虚线。放对会卡住，放错会弹回。不需要的仪器没有工位。"}, {"id": "pour", "need": "action", "title": "倒入溶液", "action_label": "把溶液倒入蒸发皿，液面不超过容积的三分之二", "hint": "蒸发皿能耐高温，烧杯一般不直接用来蒸干。", "phenomenon": "蒸发皿中有一层溶液。", "scene": {"stir": true}}, {"id": "heat", "need": "action", "title": "加热并搅拌", "action_label": "点燃酒精灯，用玻璃棒不断搅拌", "hint": "搅拌是为了防止局部过热，液滴飞溅伤人。", "phenomenon": "溶液逐渐减少，有水蒸气逸出。", "scene": {"heat": true, "stir": true}}, {"id": "stop", "need": "choice", "title": "何时停止加热", "hint": "大量固体析出时改用余热蒸干，避免晶体飞溅或烧焦。", "choices": [{"id": "left", "label": "出现较多固体时停止加热，利用余热蒸干", "correct": true, "ok": "余热足够把剩余水分蒸干，晶体不易飞溅。", "scene": {"crystals": true, "heat": false}}, {"id": "dry", "label": "一直加热到皿底完全烧干、固体发黄", "correct": false, "hazard": "过热会使晶体飞溅，也可能使固体分解变色。"}]}], "complete": {"title": "实验完成", "summary": "你完成了蒸发结晶：加热搅拌、见固体后改用余热蒸干。"}}</script>
+  <div id="drag-ghost" class="drag-ghost hidden"></div>
+  <script type="application/json" id="lab-data">{"id": "evaporation", "scene": "evaporation", "title": "蒸发结晶", "subtitle": "加热蒸发 · 玻璃棒搅拌 · 余热蒸干", "equation": "（物理操作，无化学方程式）", "goal": "把滤液加热蒸发，得到固体晶体，并防止液滴飞溅。", "badge": "初中化学 · 基本操作", "inventory": {"apparatus": [{"id": "dish", "name": "蒸发皿", "icon": "皿", "slot": "dish"}, {"id": "lamp", "name": "酒精灯", "icon": "灯", "slot": "lamp"}, {"id": "rod", "name": "玻璃棒", "icon": "棒", "slot": "rod"}, {"id": "stand", "name": "铁架台 / 三脚架", "icon": "架", "slot": "stand"}, {"id": "gauze", "name": "陶土网", "icon": "网", "slot": "gauze"}, {"id": "funnel", "name": "漏斗", "icon": "斗", "slot": ""}], "reagents": [{"id": "sol", "name": "食盐溶液 / 滤液", "color": "#38bdf8", "slot": "reagent"}, {"id": "kmno4", "name": "高锰酸钾固体", "color": "#6b21a8", "slot": ""}]}, "required_apparatus": ["dish", "lamp", "rod", "stand", "gauze"], "required_reagents": ["sol"], "steps": [{"id": "pick", "need": "select", "title": "选取仪器与药品", "hint": "从左侧器件库按「反应仪器 / 辅助器材 / 药品」取用：点「加入」，或拖到形状相同的虚线工位。点已经放上的器材可取回。放对卡住，放错弹回并记一次安全提示。之后的操作可以直接点击台上发亮的器材，或把药品拖到容器口。"}, {"id": "pour", "need": "action", "title": "倒入溶液", "action_label": "把溶液倒入蒸发皿，液面不超过容积的三分之二", "hint": "蒸发皿能耐高温，烧杯一般不直接用来蒸干。", "phenomenon": "蒸发皿中有一层溶液。", "scene": {"stir": true}}, {"id": "heat", "need": "action", "title": "加热并搅拌", "action_label": "点燃酒精灯，用玻璃棒不断搅拌", "hint": "搅拌是为了防止局部过热，液滴飞溅伤人。", "phenomenon": "溶液逐渐减少，有水蒸气逸出。", "scene": {"heat": true, "stir": true}}, {"id": "stop", "need": "choice", "title": "何时停止加热", "hint": "大量固体析出时改用余热蒸干，避免晶体飞溅或烧焦。", "choices": [{"id": "left", "label": "出现较多固体时停止加热，利用余热蒸干", "correct": true, "ok": "余热足够把剩余水分蒸干，晶体不易飞溅。", "scene": {"crystals": true, "heat": false}}, {"id": "dry", "label": "一直加热到皿底完全烧干、固体发黄", "correct": false, "hazard": "过热会使晶体飞溅，也可能使固体分解变色。"}]}], "complete": {"title": "实验完成", "summary": "你完成了蒸发结晶：加热搅拌、见固体后改用余热蒸干。"}}</script>
   <script>/* 宏观实验台：写实 2D 器材 + 同形虚线工位。 */
 (function (global) {
   var NS = "http://www.w3.org/2000/svg";
@@ -146,7 +328,9 @@
     return n;
   }
   function tf(s) {
-    return "translate(" + s.x + "," + s.y + ") rotate(" + (s.r || 0) + ") scale(" + (s.s || 1) + ")";
+    var r = s.r || 0;
+    var origin = (s.ox != null && s.oy != null) ? (" " + s.ox + " " + s.oy) : "";
+    return "translate(" + s.x + "," + s.y + ") rotate(" + r + origin + ") scale(" + (s.s || 1) + ")";
   }
 
   var ART = {
@@ -175,7 +359,44 @@
         '<g class="fx-powder" visibility="hidden"><ellipse cx="32" cy="158" rx="11" ry="7" fill="#6b21a8"/><ellipse cx="28" cy="154" rx="4" ry="3" fill="#a855f7"/></g>' +
         '<g class="fx-zinc" visibility="hidden"><rect x="24" y="148" width="16" height="8" rx="1" fill="#94a3b8"/><rect x="26" y="150" width="6" height="4" fill="#e2e8f0"/></g>' +
         '<g class="fx-marble" visibility="hidden"><circle cx="28" cy="154" r="5" fill="#f8fafc" stroke="#cbd5e1"/><circle cx="36" cy="157" r="4" fill="#e2e8f0"/></g>' +
-        '<g class="fx-acid" visibility="hidden"><path d="M20 120 h24 v36 a12 16 0 0 1 -24 0z" fill="#38bdf8" opacity=".45"/><ellipse cx="32" cy="120" rx="12" ry="4" fill="#7dd3fc" opacity=".6"/></g>'
+        '<g class="fx-acid" visibility="hidden"><path d="M20 120 h24 v36 a12 16 0 0 1 -24 0z" fill="#38bdf8" opacity=".45"/><ellipse cx="32" cy="120" rx="12" ry="4" fill="#7dd3fc" opacity=".6"/></g>' +
+        '<g class="fx-acid-bubbles" visibility="hidden"><circle cx="24" cy="130" r="2.2" fill="#fff" opacity=".75"/><circle cx="36" cy="122" r="2" fill="#fff" opacity=".7"/><circle cx="30" cy="140" r="1.8" fill="#fff" opacity=".7"/></g>' +
+        '<g class="fx-cotton" visibility="hidden"><ellipse cx="32" cy="22" rx="13" ry="7" fill="#f8fafc" stroke="#d6d3d1"/><ellipse cx="28" cy="20" rx="5" ry="4" fill="#e7e5e4"/></g>'
+    },
+    heated_tube: {
+      w: 220, h: 92, label: "试管",
+      outline: "M18 18 Q5 22 8 42 Q10 60 28 64 L194 78 Q204 79 205 69 L208 53 Q209 45 199 44z",
+      paint:
+        '<path d="M18 18 Q5 22 8 42 Q10 60 28 64 L194 78 Q204 79 205 69 L208 53 Q209 45 199 44z" fill="url(#g-glass)" stroke="#64748b" stroke-width="1.7"/>' +
+        '<path d="M22 25 Q13 29 16 42 Q18 51 30 54 L188 68" fill="none" stroke="#fff" stroke-opacity=".55" stroke-width="5"/>' +
+        '<rect x="197" y="42" width="15" height="38" rx="3" fill="#e2e8f0" stroke="#94a3b8" transform="rotate(5 204 61)"/>' +
+        '<g class="fx-powder" visibility="hidden"><ellipse cx="35" cy="53" rx="17" ry="7" fill="#6b21a8"/><circle cx="29" cy="49" r="4" fill="#a855f7"/></g>' +
+        '<g class="fx-copper" visibility="hidden"><ellipse cx="48" cy="55" rx="16" ry="6" fill="#b45309"/><circle cx="43" cy="51" r="4" fill="#ef8b45"/></g>' +
+        '<g class="fx-cotton" visibility="hidden"><ellipse cx="176" cy="62" rx="11" ry="7" fill="#f8fafc" stroke="#d6d3d1"/></g>'
+    },
+    test_tube: {
+      w: 54, h: 150, label: "小试管",
+      outline: "M14 6 h26 v112 a13 18 0 0 1 -26 0z",
+      paint: '<path d="M14 6 h26 v112 a13 18 0 0 1 -26 0z" fill="url(#g-glass)" stroke="#64748b" stroke-width="1.4"/>' +
+        '<rect x="12" y="4" width="30" height="7" rx="2" fill="#e2e8f0" stroke="#94a3b8"/><path d="M19 16 v105" stroke="#fff" stroke-opacity=".5" stroke-width="4"/>'
+    },
+    spoon: {
+      w: 150, h: 34, label: "药匙",
+      outline: "M8 10 q-8 7 0 14 q18 8 32 -1 h102 v-12 H40 q-14 -8 -32 -1z",
+      paint: '<ellipse cx="20" cy="17" rx="18" ry="11" fill="#cbd5e1" stroke="#64748b"/>' +
+        '<rect x="34" y="12" width="108" height="10" rx="5" fill="#94a3b8"/><path d="M42 14 h86" stroke="#e2e8f0" stroke-width="3"/>'
+    },
+    tweezers: {
+      w: 156, h: 42, label: "镊子",
+      outline: "M8 8 h132 l8 6 -8 6 H34 l106 14 -4 6 L8 22z",
+      paint: '<path d="M8 8 h132 l8 6 -8 6 H34 l106 14 -4 6 L8 22z" fill="#94a3b8" stroke="#475569"/>' +
+        '<path d="M18 13 h112 M18 22 h108" stroke="#e2e8f0" stroke-width="2"/>'
+    },
+    cotton: {
+      w: 88, h: 58, label: "棉花",
+      outline: "M10 42 Q0 25 18 19 Q20 3 38 10 Q51 -2 61 14 Q82 11 80 31 Q88 46 69 50 H23z",
+      paint: '<path d="M10 42 Q0 25 18 19 Q20 3 38 10 Q51 -2 61 14 Q82 11 80 31 Q88 46 69 50 H23z" fill="#f8fafc" stroke="#d6d3d1" stroke-width="1.5"/>' +
+        '<circle cx="31" cy="29" r="12" fill="#fff"/><circle cx="56" cy="27" r="14" fill="#f5f5f4"/>'
     },
     lamp: {
       w: 108, h: 136, label: "酒精灯",
@@ -194,36 +415,125 @@
         '</g>'
     },
     delivery: {
-      w: 250, h: 96, label: "导管",
-      outline: "M6 12 h154 q28 0 28 26 v40 h8 v16 h-24 V42 q0 -10 -14 -10 H6z",
-      paint: '<path d="M10 20 h148 q22 0 22 20 v34" fill="none" stroke="#94a3b8" stroke-width="9" stroke-linecap="round"/>' +
-        '<path d="M10 20 h148 q22 0 22 20 v34" fill="none" stroke="#e0f2fe" stroke-width="5" stroke-linecap="round"/>' +
-        '<path d="M180 74 h28" fill="none" stroke="#475569" stroke-width="7" stroke-linecap="round"/>' +
-        '<circle cx="10" cy="20" r="5" fill="#cbd5e1"/>'
+      w: 250, h: 290, label: "导管",
+      outline: "M4 6 h210 v28 H46 v240 H18 V42 H4z",
+      paint: '<circle cx="14" cy="20" r="9" fill="#7c2d12"/><circle cx="14" cy="20" r="4" fill="#1e293b"/>' +
+        '<path d="M18 20 H 214 V 268" fill="none" stroke="#94a3b8" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>' +
+        '<path d="M18 20 H 214 V 268" fill="none" stroke="#e0f2fe" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>' +
+        '<path d="M206 268 h16" fill="none" stroke="#475569" stroke-width="6" stroke-linecap="round"/>'
+    },
+    /* 排水法：从试管口斜向下，末端伸进倒扣集气瓶的瓶口，不横穿瓶身。 */
+    delivery_water: {
+      w: 230, h: 110, label: "导管",
+      outline: "M8 6 h28 v22 H24 L214 102 h12 L40 16 H8z",
+      paint: '<circle cx="16" cy="18" r="9" fill="#7c2d12"/><circle cx="16" cy="18" r="4" fill="#1e293b"/>' +
+        '<path d="M22 18 L 206 96" fill="none" stroke="#94a3b8" stroke-width="9" stroke-linecap="round"/>' +
+        '<path d="M22 18 L 206 96" fill="none" stroke="#e0f2fe" stroke-width="5" stroke-linecap="round"/>'
+    },
+    delivery_h2: {
+      w: 200, h: 190, label: "导管",
+      outline: "M6 4 h28 v20 H22 L176 176 h12 L40 14 H6z",
+      paint: '<circle cx="14" cy="16" r="9" fill="#7c2d12"/><circle cx="14" cy="16" r="4" fill="#1e293b"/>' +
+        '<path d="M20 16 L 172 168" fill="none" stroke="#94a3b8" stroke-width="9" stroke-linecap="round"/>' +
+        '<path d="M20 16 L 172 168" fill="none" stroke="#e0f2fe" stroke-width="5" stroke-linecap="round"/>'
+    },
+    delivery_down: {
+      w: 180, h: 340, label: "导管",
+      outline: "M4 6 h150 v28 H40 v290 H16 V42 H4z",
+      paint: '<circle cx="14" cy="20" r="9" fill="#7c2d12"/><circle cx="14" cy="20" r="4" fill="#1e293b"/>' +
+        '<path d="M18 20 H 148 V 320" fill="none" stroke="#94a3b8" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>' +
+        '<path d="M18 20 H 148 V 320" fill="none" stroke="#e0f2fe" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>' +
+        '<path d="M140 320 h16" fill="none" stroke="#475569" stroke-width="6" stroke-linecap="round"/>'
+    },
+    /* 瓶口水平引出，再向下伸进烧杯水面。 */
+    delivery_beaker: {
+      w: 250, h: 200, label: "导管",
+      outline: "M8 8 h230 v180 h-20 V28 H8z",
+      paint: '<circle cx="16" cy="20" r="9" fill="#7c2d12"/><circle cx="16" cy="20" r="4" fill="#1e293b"/>' +
+        '<path d="M22 20 H 230 V 186" fill="none" stroke="#94a3b8" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>' +
+        '<path d="M22 20 H 230 V 186" fill="none" stroke="#e0f2fe" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>'
+    },
+    delivery_air: {
+      w: 220, h: 250, label: "导管",
+      outline: "M4 6 h200 v28 H42 v186 H16 V42 H4z",
+      paint: '<circle cx="14" cy="20" r="9" fill="#7c2d12"/><circle cx="14" cy="20" r="4" fill="#1e293b"/>' +
+        '<path d="M18 20 H 168 V 218" fill="none" stroke="#94a3b8" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>' +
+        '<path d="M18 20 H 168 V 218" fill="none" stroke="#e0f2fe" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>' +
+        '<path d="M160 218 h16" fill="none" stroke="#475569" stroke-width="6" stroke-linecap="round"/>'
     },
     trough: {
-      w: 230, h: 96, label: "水槽",
-      outline: "M10 22 h210 v8 H26 v48 h178 v8 H10z",
-      paint: '<rect x="8" y="18" width="214" height="70" rx="6" fill="#e0f2fe" stroke="#0369a1" stroke-width="2.2"/>' +
-        '<rect x="14" y="36" width="202" height="46" rx="4" fill="#38bdf8" opacity=".42" class="fx-trough-water"/>' +
-        '<ellipse cx="115" cy="38" rx="100" ry="7" fill="#7dd3fc" opacity=".55"/>' +
-        '<path d="M16 28 v48" stroke="#fff" stroke-opacity=".4" stroke-width="5"/>'
+      w: 280, h: 130, label: "水槽",
+      outline: "M10 18 h260 v10 H28 v80 h224 v10 H10z",
+      paint: '<rect x="8" y="16" width="264" height="104" rx="6" fill="#e0f2fe" stroke="#0369a1" stroke-width="2.2"/>' +
+        '<rect x="16" y="40" width="248" height="72" rx="4" fill="#38bdf8" opacity=".42" class="fx-trough-water"/>' +
+        '<ellipse cx="140" cy="42" rx="122" ry="8" fill="#7dd3fc" opacity=".55"/>' +
+        '<path d="M18 28 v70" stroke="#fff" stroke-opacity=".4" stroke-width="5"/>'
     },
     bottle: {
       w: 100, h: 168, label: "集气瓶",
       outline: "M38 4 h24 v16 h12 v8 H26 v112 a28 18 0 0 0 48 0 V28 H62 V20 H38z",
       paint:         '<path d="M38 4 h24 v16 h12 v8 H26 v112 a28 18 0 0 0 48 0 V28 H62 V20 H38z" fill="url(#g-glass)" stroke="#64748b" stroke-width="1.5"/>' +
         '<rect x="36" y="2" width="28" height="10" rx="2" fill="#e2e8f0" stroke="#94a3b8"/>' +
+        '<rect class="fx-cover" x="22" y="0" width="56" height="7" rx="1" fill="#e0f2fe" stroke="#64748b" opacity=".9" visibility="hidden"/>' +
         '<path d="M36 36 v110" stroke="#fff" stroke-opacity=".5" stroke-width="5"/>' +
         '<g class="fx-gas" visibility="hidden"><rect x="34" y="70" width="32" height="70" fill="#f8fafc" opacity=".55"/></g>' +
-        '<g class="fx-bottle-water" visibility="hidden"><rect x="32" y="130" width="36" height="18" fill="#38bdf8" opacity=".45"/></g>'
+        '<g class="fx-bottle-water" visibility="hidden"><rect x="32" y="130" width="36" height="18" fill="#38bdf8" opacity=".45"/></g>' +
+        '<g class="fx-water-rise" visibility="hidden"><rect x="30" y="108" width="40" height="40" fill="#38bdf8" opacity=".5"/><text x="50" y="102" text-anchor="middle" font-size="10" fill="#0f172a" font-weight="700">约1/5</text></g>' +
+        '<g class="fx-marks" visibility="hidden">' +
+        '<path d="M68 52 h10 M68 70 h10 M68 88 h10 M68 106 h10 M68 124 h10" stroke="#334155" stroke-width="1.4"/>' +
+        '</g>'
+    },
+    bottle_inv: {
+      w: 100, h: 168, label: "集气瓶",
+      outline: "M26 8 h48 v112 a28 18 0 0 1 -48 0z M38 140 h24 v18 H38z",
+      paint: '<path d="M26 8 h48 v112 a28 18 0 0 1 -48 0z" fill="url(#g-glass)" stroke="#64748b" stroke-width="1.5"/>' +
+        '<path d="M38 140 h24 v16 H62 v8 H38z" fill="url(#g-glass)" stroke="#64748b" stroke-width="1.4"/>' +
+        '<rect x="36" y="156" width="28" height="10" rx="2" fill="#e2e8f0" stroke="#94a3b8"/>' +
+        '<path d="M36 20 v110" stroke="#fff" stroke-opacity=".5" stroke-width="5"/>' +
+        '<g class="fx-gas" visibility="hidden"><rect x="34" y="20" width="32" height="70" fill="#f8fafc" opacity=".55"/></g>'
     },
     splint: {
       w: 32, h: 156, label: "木条",
       outline: "M10 8 h12 v140 h-12z",
       paint: '<rect x="11" y="28" width="10" height="120" rx="2" fill="#b45309"/>' +
         '<rect x="12" y="30" width="3" height="110" fill="#fbbf24" opacity=".35"/>' +
-        '<ellipse class="fx-splint" cx="16" cy="18" rx="10" ry="12" fill="#fbbf24" opacity=".85"/>'
+        '<g class="fx-splint" visibility="hidden"><ellipse cx="16" cy="16" rx="11" ry="15" fill="#f97316"/><ellipse cx="16" cy="18" rx="5" ry="9" fill="#fde68a"/></g>'
+    },
+    candle_beaker: {
+      w: 200, h: 230, label: "烧杯",
+      outline: "M18 8 h140 l12 8 14 -8 h10 l14 204 H10z",
+      paint:
+        '<path d="M18 8 h140 l12 8 14 -8 h10 l14 204 H10z" fill="url(#g-glass)" stroke="#64748b" stroke-width="1.6"/>' +
+        '<path d="M16 8 h164" stroke="#94a3b8" stroke-width="2.6"/>' +
+        '<path d="M28 22 v168" stroke="#fff" stroke-opacity=".4" stroke-width="6"/>' +
+        '<g class="fx-co2-mid" visibility="hidden">' +
+        '<path d="M28 88 h144 l8 112 H22z" fill="#94a3b8" opacity=".28"/>' +
+        '<ellipse cx="100" cy="88" rx="72" ry="10" fill="#cbd5e1" opacity=".35"/>' +
+        '</g>' +
+        '<g class="fx-co2-low" visibility="hidden">' +
+        '<path d="M30 148 h140 l6 52 H26z" fill="#64748b" opacity=".32"/>' +
+        '<ellipse cx="100" cy="148" rx="70" ry="9" fill="#94a3b8" opacity=".4"/>' +
+        '</g>' +
+        '<rect x="56" y="150" width="18" height="52" rx="2" fill="#f8fafc" stroke="#d6d3d1"/>' +
+        '<rect x="61" y="142" width="8" height="10" fill="#78716c"/>' +
+        '<rect x="126" y="78" width="18" height="124" rx="2" fill="#f8fafc" stroke="#d6d3d1"/>' +
+        '<rect x="131" y="70" width="8" height="10" fill="#78716c"/>' +
+        '<g class="fx-flame-low" visibility="hidden">' +
+        '<ellipse cx="65" cy="132" rx="8" ry="14" fill="#f97316"/><ellipse cx="65" cy="134" rx="4" ry="8" fill="#fde68a"/>' +
+        '</g>' +
+        '<g class="fx-flame-high" visibility="hidden">' +
+        '<ellipse cx="135" cy="58" rx="9" ry="16" fill="#f97316"/><ellipse cx="135" cy="60" rx="4" ry="9" fill="#fde68a"/>' +
+        '</g>' +
+        '<g class="fx-smoke-low" visibility="hidden">' +
+        '<ellipse cx="62" cy="128" rx="10" ry="6" fill="#cbd5e1" opacity=".55"/>' +
+        '<ellipse cx="70" cy="116" rx="8" ry="5" fill="#e2e8f0" opacity=".45"/>' +
+        '</g>' +
+        '<g class="fx-smoke-high" visibility="hidden">' +
+        '<ellipse cx="132" cy="54" rx="11" ry="6" fill="#cbd5e1" opacity=".55"/>' +
+        '<ellipse cx="140" cy="42" rx="8" ry="5" fill="#e2e8f0" opacity=".45"/>' +
+        '</g>' +
+        '<text x="65" y="222" text-anchor="middle" font-size="13" fill="#334155" font-weight="700">较低处</text>' +
+        '<text x="135" y="222" text-anchor="middle" font-size="13" fill="#334155" font-weight="700">较高处</text>'
     },
     beaker: {
       w: 124, h: 146, label: "烧杯",
@@ -233,8 +543,10 @@
         '<path d="M22 22 v100" stroke="#fff" stroke-opacity=".45" stroke-width="6"/>' +
         '<path d="M86 40 h10 M86 58 h10 M86 76 h10" stroke="#94a3b8" stroke-width="1"/>' +
         '<g class="fx-liquid"><path d="M24 78 h76 l4 50 h-84z" fill="#7dd3fc" opacity=".5"/><ellipse cx="62" cy="78" rx="38" ry="6" fill="#bae6fd" opacity=".65"/></g>' +
+        '<g class="fx-oxide" visibility="hidden"><ellipse cx="62" cy="118" rx="20" ry="7" fill="#1e293b"/><ellipse cx="54" cy="114" rx="6" ry="4" fill="#334155"/></g>' +
         '<g class="fx-metal" visibility="hidden"><rect x="48" y="96" width="28" height="10" rx="2" fill="#94a3b8"/></g>' +
-        '<g class="fx-beaker-bubbles" visibility="hidden"><circle cx="44" cy="100" r="3" fill="#fff" opacity=".7"/><circle cx="62" cy="90" r="2.5" fill="#fff" opacity=".7"/><circle cx="78" cy="104" r="3" fill="#fff" opacity=".65"/></g>'
+        '<g class="fx-copper" visibility="hidden"><rect x="47" y="94" width="31" height="12" rx="3" fill="#b45309"/><circle cx="56" cy="92" r="4" fill="#ef8b45"/></g>' +
+        '<g class="fx-beaker-bubbles" visibility="hidden"><circle cx="44" cy="110" r="3" fill="#fff" opacity=".75"/><circle cx="62" cy="100" r="2.5" fill="#fff" opacity=".75"/><circle cx="78" cy="114" r="3" fill="#fff" opacity=".7"/></g>'
     },
     dropper: {
       w: 40, h: 132, label: "胶头滴管",
@@ -250,6 +562,21 @@
       outline: "M6 6 h176 v10 h-176z",
       paint: '<rect x="6" y="6" width="176" height="10" rx="5" fill="#e2e8f0" stroke="#94a3b8"/>' +
         '<rect x="10" y="8" width="70" height="3" fill="#fff" opacity=".6"/>'
+    },
+    test_tube_holder: {
+      w: 96, h: 168, label: "试管夹",
+      outline: "M18 8 h22 v52 h16 v12 h-16 v80 H18 V72 H8 V60 h10z",
+      paint: '<rect x="40" y="22" width="12" height="118" rx="4" fill="#1e3a5f"/>' +
+        '<rect x="42" y="26" width="4" height="70" fill="#93c5fd" opacity=".35"/>' +
+        '<ellipse cx="28" cy="36" rx="18" ry="10" fill="none" stroke="#cbd5e1" stroke-width="6"/>' +
+        '<ellipse cx="28" cy="70" rx="16" ry="9" fill="none" stroke="#94a3b8" stroke-width="5"/>' +
+        '<rect x="22" y="48" width="10" height="16" rx="2" fill="#9ca3af"/>'
+    },
+    spring_clamp: {
+      w: 92, h: 54, label: "弹簧夹",
+      outline: "M8 10 h28 l14 10 28 -10 8 8 -23 10 23 10 -8 8 -28 -10 -14 10 H8z",
+      paint: '<path d="M8 10 h28 l14 10 28 -10 8 8 -23 10 23 10 -8 8 -28 -10 -14 10 H8z" fill="#64748b" stroke="#334155"/>' +
+        '<circle cx="50" cy="28" r="7" fill="#cbd5e1" stroke="#475569"/>'
     },
     goggles: {
       w: 120, h: 50, label: "护目镜",
@@ -294,8 +621,10 @@
       outline: "M10 20 h248 v10 H24 v68 h220 v10 H10z",
       paint: '<rect x="8" y="16" width="252" height="90" rx="6" fill="#e0f2fe" stroke="#0369a1" stroke-width="2"/>' +
         '<rect x="16" y="40" width="236" height="58" fill="#38bdf8" opacity=".4"/>' +
-        '<rect x="70" y="8" width="8" height="98" fill="#94a3b8"/>' +
-        '<rect x="190" y="8" width="8" height="98" fill="#cbd5e1"/>'
+        '<rect x="70" y="8" width="8" height="98" fill="#1d4ed8"/>' +
+        '<rect x="190" y="8" width="8" height="98" fill="#dc2626"/>' +
+        '<text x="74" y="114" text-anchor="middle" fill="#1d4ed8" font-size="11" font-weight="700">−</text>' +
+        '<text x="194" y="114" text-anchor="middle" fill="#dc2626" font-size="11" font-weight="700">+</text>'
     },
     power: {
       w: 130, h: 74, label: "电源",
@@ -310,9 +639,9 @@
       outline: "M20 6 h32 v158 a6 6 0 0 1 -32 0z M104 6 h32 v158 a6 6 0 0 1 -32 0z",
       paint: '<rect x="18" y="8" width="36" height="160" rx="4" fill="url(#g-glass)" stroke="#64748b"/>' +
         '<rect x="102" y="8" width="36" height="160" rx="4" fill="url(#g-glass)" stroke="#64748b"/>' +
-        '<g class="fx-h2" visibility="hidden"><rect x="22" y="20" width="28" height="90" fill="#e0f2fe" opacity=".55"/></g>' +
-        '<g class="fx-o2" visibility="hidden"><rect x="106" y="70" width="28" height="40" fill="#e0f2fe" opacity=".55"/></g>' +
-        '<g class="fx-ratio" visibility="hidden"><text x="78" y="50" text-anchor="middle" fill="#0f766e" font-size="16" font-weight="700">2 : 1</text></g>'
+        '<g class="fx-h2" visibility="hidden"><rect x="22" y="20" width="28" height="90" fill="#e0f2fe" opacity=".55"/><text x="36" y="16" text-anchor="middle" fill="#0f766e" font-size="11" font-weight="700">H₂</text></g>' +
+        '<g class="fx-o2" visibility="hidden"><rect x="106" y="70" width="28" height="40" fill="#e0f2fe" opacity=".55"/><text x="120" y="66" text-anchor="middle" fill="#c2410c" font-size="11" font-weight="700">O₂</text></g>' +
+        '<g class="fx-ratio" visibility="hidden"><text x="78" y="50" text-anchor="middle" fill="#0f766e" font-size="14" font-weight="700">H₂ : O₂ ≈ 2 : 1</text></g>'
     },
     balance: {
       w: 188, h: 108, label: "天平",
@@ -349,64 +678,271 @@
         '<path d="M22 22 v100" stroke="#fff" stroke-opacity=".45" stroke-width="6"/>' +
         '<g class="fx-lime-liquid"><path d="M24 78 h76 l4 50 h-84z" fill="#e2e8f0" opacity=".7"/><ellipse cx="62" cy="78" rx="38" ry="6" fill="#f8fafc" opacity=".7"/></g>'
     },
+    source_beaker: {
+      w: 124, h: 146, label: "盛浊液烧杯",
+      outline: "M14 8 h78 l8 6 10 -6 h8 l10 128 H10z",
+      paint: '<path d="M14 8 h78 l8 6 10 -6 h8 l10 128 H10z" fill="url(#g-glass)" stroke="#64748b" stroke-width="1.5"/>' +
+        '<path d="M12 8 h100" stroke="#94a3b8" stroke-width="2.5"/><path d="M22 22 v100" stroke="#fff" stroke-opacity=".45" stroke-width="6"/>' +
+        '<path d="M24 70 h76 l4 58 h-84z" fill="#a8a29e" opacity=".68"/><ellipse cx="62" cy="70" rx="38" ry="6" fill="#d6d3d1" opacity=".8"/>' +
+        '<circle cx="46" cy="108" r="3" fill="#78716c"/><circle cx="72" cy="116" r="4" fill="#78716c"/>'
+    },
+    absorber: {
+      w: 126, h: 170, label: "尾气吸收瓶",
+      outline: "M30 12 h66 v20 h12 v124 H18 V32 h12z",
+      paint: '<path d="M30 12 h66 v20 h12 v124 H18 V32 h12z" fill="url(#g-glass)" stroke="#64748b" stroke-width="1.5"/>' +
+        '<rect x="26" y="112" width="74" height="36" fill="#a3e635" opacity=".35"/><ellipse cx="63" cy="112" rx="37" ry="6" fill="#d9f99d" opacity=".6"/>' +
+        '<path d="M-140 4 H 48 V 128" fill="none" stroke="#94a3b8" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>' +
+        '<path d="M-140 4 H 48 V 128" fill="none" stroke="#e0f2fe" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>' +
+        '<circle cx="44" cy="128" r="3" fill="#fff"/><circle cx="44" cy="139" r="2" fill="#fff"/>'
+    },
+    sealed_flask: {
+      w: 170, h: 188, label: "密闭锥形瓶",
+      outline: "M66 8 h38 v52 l50 102 q5 16 -14 16 H30 q-19 0 -14 -16 L66 60z",
+      paint: '<path d="M66 8 h38 v52 l50 102 q5 16 -14 16 H30 q-19 0 -14 -16 L66 60z" fill="url(#g-glass)" stroke="#64748b" stroke-width="1.7"/>' +
+        '<rect x="62" y="5" width="46" height="14" rx="3" fill="#7c2d12"/><path d="M36 151 h98 l8 18 H28z" fill="#93c5fd" opacity=".48" class="fx-flask-liquid" visibility="hidden"/>' +
+        '<path d="M48 139 q18 -18 38 0" fill="none" stroke="#94a3b8" stroke-width="7" class="fx-mass-iron"/>' +
+        '<path d="M77 26 h18 v96 q0 10 -9 10 q-9 0 -9 -10z" fill="url(#g-glass)" stroke="#64748b" stroke-width="1.2"/>' +
+        '<rect class="fx-inner-liquid" x="79" y="87" width="14" height="34" fill="#2563eb" opacity=".7"/>' +
+        '<g class="fx-copper" visibility="hidden"><path d="M48 137 q18 -16 38 0" fill="none" stroke="#b45309" stroke-width="8"/><circle cx="62" cy="139" r="5" fill="#ef8b45"/></g>'
+    },
+    indicator_pair: {
+      w: 330, h: 174, label: "酸、碱两组容器",
+      outline: "M12 8 h132 l10 154 H4z M186 8 h132 l10 154 H178z",
+      paint: '<path d="M12 8 h132 l10 154 H4z M186 8 h132 l10 154 H178z" fill="url(#g-glass)" stroke="#64748b" stroke-width="1.6"/>' +
+        '<path class="fx-indicator-acid" d="M22 92 h112 l5 58 H17z" fill="#7dd3fc" opacity=".65"/>' +
+        '<path class="fx-indicator-base" d="M196 92 h112 l5 58 H191z" fill="#7dd3fc" opacity=".65"/>' +
+        '<text x="79" y="168" text-anchor="middle" font-size="14" fill="#334155" font-weight="700">稀盐酸</text>' +
+        '<text x="253" y="168" text-anchor="middle" font-size="14" fill="#334155" font-weight="700">氢氧化钠</text>'
+    },
     reagent: {
       w: 72, h: 108, label: "药品",
       outline: "M26 4 h20 v14 h10 v8 H16 v66 a18 14 0 0 0 40 0 V26 H46 V18 H26z",
       paint: '<rect x="24" y="6" width="24" height="16" rx="2" fill="#78716c"/>' +
         '<path d="M18 22 h36 v72 a16 12 0 0 1 -36 0z" fill="#7c3aed" opacity=".8" stroke="#5b21b6"/>' +
         '<rect x="20" y="28" width="8" height="50" fill="#fff" opacity=".25"/>'
+    },
+    condition_beaker: {
+      w: 220, h: 210, label: "烧杯",
+      outline: "M18 8 h150 l12 8 16 -8 h12 l16 186 H10z",
+      paint:
+        '<path d="M18 8 h150 l12 8 16 -8 h12 l16 186 H10z" fill="url(#g-glass)" stroke="#64748b" stroke-width="1.6"/>' +
+        '<path d="M28 20 v150" stroke="#fff" stroke-opacity=".4" stroke-width="6"/>' +
+        '<g class="fx-hot-water"><path d="M28 88 h164 l8 90 H22z" fill="#f97316" opacity=".28"/><ellipse cx="110" cy="88" rx="82" ry="10" fill="#fdba74" opacity=".45"/></g>' +
+        '<rect x="24" y="70" width="172" height="8" rx="1" fill="#b45309"/>' +
+        '<g class="fx-wp-air" visibility="hidden"><ellipse cx="58" cy="58" rx="12" ry="8" fill="#f8fafc" stroke="#cbd5e1"/><ellipse class="fx-flame-wp" cx="58" cy="42" rx="8" ry="14" fill="#f97316"/><text x="58" y="84" text-anchor="middle" font-size="11" fill="#0f172a" font-weight="700">白磷</text></g>' +
+        '<g class="fx-rp-air" visibility="hidden"><ellipse cx="162" cy="58" rx="12" ry="8" fill="#dc2626"/><text x="162" y="84" text-anchor="middle" font-size="11" fill="#0f172a" font-weight="700">红磷</text></g>' +
+        '<g class="fx-wp-water" visibility="hidden"><ellipse cx="110" cy="148" rx="14" ry="8" fill="#f8fafc" stroke="#94a3b8"/><text x="110" y="172" text-anchor="middle" font-size="11" fill="#0f172a" font-weight="700">水中白磷</text></g>' +
+        '<g class="fx-wp-o2" visibility="hidden"><circle cx="96" cy="132" r="3" fill="#fff" opacity=".8"/><circle cx="118" cy="124" r="2.5" fill="#fff" opacity=".8"/><ellipse cx="110" cy="118" rx="8" ry="12" fill="#f97316" opacity=".85"/></g>'
+    },
+    rust_tubes: {
+      w: 280, h: 180, label: "对照试管",
+      outline: "M12 8 h256 v164 H12z",
+      paint:
+        '<g transform="translate(18,12)">' +
+        '<rect x="18" y="8" width="36" height="120" rx="10" fill="url(#g-glass)" stroke="#64748b"/>' +
+        '<rect x="22" y="70" width="28" height="50" fill="#38bdf8" opacity=".35"/>' +
+        '<rect x="28" y="88" width="16" height="8" rx="2" fill="#94a3b8"/>' +
+        '<g class="fx-rust" visibility="hidden"><rect x="28" y="86" width="16" height="10" rx="2" fill="#b45309"/></g>' +
+        '<text x="36" y="150" text-anchor="middle" font-size="11" fill="#0f172a" font-weight="700">水+空气</text>' +
+        '</g>' +
+        '<g transform="translate(108,12)">' +
+        '<rect x="18" y="8" width="36" height="120" rx="10" fill="url(#g-glass)" stroke="#64748b"/>' +
+        '<rect x="22" y="70" width="28" height="50" fill="#38bdf8" opacity=".35"/>' +
+        '<rect x="22" y="66" width="28" height="8" fill="#ca8a04" opacity=".7"/>' +
+        '<rect x="28" y="88" width="16" height="8" rx="2" fill="#94a3b8"/>' +
+        '<text x="36" y="150" text-anchor="middle" font-size="11" fill="#0f172a" font-weight="700">油封隔空气</text>' +
+        '</g>' +
+        '<g transform="translate(198,12)">' +
+        '<rect x="18" y="8" width="36" height="120" rx="10" fill="url(#g-glass)" stroke="#64748b"/>' +
+        '<rect x="28" y="96" width="16" height="8" rx="2" fill="#94a3b8"/>' +
+        '<text x="36" y="150" text-anchor="middle" font-size="11" fill="#0f172a" font-weight="700">干燥剂</text>' +
+        '</g>'
     }
   };
+  /* “clamp” historically also serves the test-tube-holder cabinet icon. */
+  ART.clamp = ART.test_tube_holder;
 
+  /* 桌面在 CSS 背景 58% 处，固定 viewBox 高 600 → y=348。器材落在桌面上并按课本连成一套装置。 */
+  var TABLE = 348;
   var SCENES = {
-    oxygen: [
-      { id: "stand", x: 300, y: 20, label: "铁架台" },
-      { id: "tube", x: 500, y: 20, label: "试管" },
-      { id: "delivery", x: 620, y: 20, label: "导管" },
-      { id: "splint", x: 900, y: 20, label: "木条" },
-      { id: "wire", x: 900, y: 200, label: "铁丝" },
-      { id: "paper", x: 900, y: 360, label: "试纸" },
-      { id: "lamp", x: 300, y: 300, label: "酒精灯" },
-      { id: "reagent", x: 500, y: 280, label: "药品" },
-      { id: "bottle", x: 620, y: 160, label: "集气瓶" },
-      { id: "cover", x: 760, y: 160, label: "玻璃片" },
-      { id: "trough", x: 620, y: 360, label: "水槽" },
-      { id: "lime_beaker", x: 760, y: 340, label: "石灰水" }
+    prep_oxygen_kmno4: [
+      { id: "stand", x: 248, y: TABLE - 240, label: "铁架台" },
+      { id: "tube", art: "heated_tube", x: 294, y: 142, label: "管口略向下的试管" },
+      { id: "lamp", x: 276, y: TABLE - 136, label: "酒精灯" },
+      { id: "delivery", art: "delivery_water", x: 482, y: 185, label: "带单孔塞导管" },
+      { id: "trough", x: 540, y: TABLE - 130, label: "水槽" },
+      { id: "bottle", art: "bottle_inv", x: 638, y: 133, label: "集气瓶" },
+      { id: "splint", x: 846, y: TABLE - 156, label: "带火星木条" },
+      { id: "spoon", x: 142, y: 238, s: 0.72, label: "药匙" },
+      /* 疏松棉花在试管口、橡皮塞内侧，不落在桌面上。 */
+      { id: "cotton", x: 464, y: 198, s: 0.18, label: "试管口棉花" },
+      { id: "reagent", x: 185, y: TABLE - 108, label: "药品" }
+    ],
+    nh4hco3_decomp: [
+      { id: "stand", x: 248, y: TABLE - 240, label: "铁架台" },
+      { id: "tube", art: "heated_tube", x: 294, y: 142, label: "管口略向下的试管" },
+      { id: "lamp", x: 326, y: TABLE - 136, label: "酒精灯" },
+      { id: "delivery", art: "delivery_water", x: 482, y: 185, label: "导管" },
+      { id: "paper", x: 492, y: 152, s: 0.46, label: "湿润红色石蕊试纸" },
+      { id: "lime_beaker", x: 616, y: TABLE - 158, label: "石灰水" },
+      { id: "reagent", x: 180, y: TABLE - 108, label: "药品" }
+    ],
+    prep_hydrogen: [
+      { id: "stand", x: 292, y: TABLE - 240, label: "铁架台" },
+      { id: "tube", x: 338, y: 122, label: "试管" },
+      { id: "delivery", art: "delivery_h2", x: 356, y: 120, label: "导管" },
+      { id: "trough", x: 420, y: TABLE - 130, label: "水槽" },
+      { id: "bottle", art: "bottle_inv", x: 478, y: 140, label: "集气瓶" },
+      { id: "test_tube", x: 690, y: TABLE - 150, label: "验纯用小试管" },
+      { id: "splint", x: 820, y: TABLE - 156, label: "木条" },
+      { id: "reagent", x: 210, y: TABLE - 108, label: "药品" }
+    ],
+    prep_co2: [
+      { id: "stand", x: 292, y: TABLE - 240, label: "铁架台" },
+      { id: "tube", x: 340, y: 122, label: "试管" },
+      { id: "delivery", art: "delivery_air", x: 358, y: 110, label: "导管" },
+      { id: "bottle", x: 476, y: TABLE - 168, label: "集气瓶" },
+      { id: "lime_beaker", x: 600, y: TABLE - 146, label: "石灰水" },
+      { id: "splint", x: 760, y: TABLE - 156, label: "木条" },
+      { id: "reagent", x: 190, y: TABLE - 108, label: "药品" }
+    ],
+    iron_in_oxygen: [
+      { id: "lamp", x: 300, y: TABLE - 136, label: "酒精灯" },
+      { id: "wire", x: 508, y: 92, label: "铁丝" },
+      { id: "bottle", x: 490, y: TABLE - 168, label: "集气瓶" },
+      { id: "cover", x: 640, y: TABLE - 20, label: "玻璃片" },
+      { id: "reagent", x: 210, y: TABLE - 108, label: "药品" }
+    ],
+    charcoal_in_oxygen: [
+      { id: "lamp", x: 260, y: TABLE - 136, label: "酒精灯" },
+      { id: "wire", x: 484, y: 92, label: "坩埚钳" },
+      { id: "bottle", x: 470, y: TABLE - 168, label: "盛氧气集气瓶" },
+      { id: "lime_beaker", x: 650, y: TABLE - 146, label: "石灰水" },
+      { id: "reagent", x: 170, y: TABLE - 108, label: "木炭和氧气" }
+    ],
+    sulfur_in_oxygen: [
+      { id: "goggles", x: 190, y: TABLE - 50, label: "护目镜" },
+      { id: "lamp", x: 310, y: TABLE - 136, label: "酒精灯" },
+      { id: "wire", x: 505, y: 92, label: "燃烧匙" },
+      { id: "bottle", x: 490, y: TABLE - 168, label: "盛氧气集气瓶" },
+      { id: "absorber", x: 680, y: TABLE - 170, label: "碱液尾气吸收瓶" },
+      { id: "reagent", x: 215, y: 154, label: "硫和氧气" }
     ],
     neutralization: [
-      { id: "goggles", x: 310, y: 24, label: "护目镜" },
-      { id: "paper", x: 310, y: 120, label: "称量纸" },
-      { id: "balance", x: 300, y: 320, label: "天平" },
-      { id: "dropper", x: 500, y: 16, label: "胶头滴管" },
-      { id: "beaker", x: 500, y: 180, label: "烧杯" },
-      { id: "reagent", x: 500, y: 360, label: "药品" },
-      { id: "rod", x: 700, y: 200, label: "玻璃棒" },
-      { id: "cylinder", x: 820, y: 140, label: "量筒" }
+      { id: "goggles", x: 268, y: TABLE - 50, label: "护目镜" },
+      { id: "beaker", x: 456, y: TABLE - 146, label: "烧杯" },
+      { id: "dropper", x: 506, y: 96, label: "胶头滴管" },
+      { id: "rod", x: 428, y: 248, r: -32, ox: 94, oy: 11, label: "玻璃棒" },
+      { id: "reagent", x: 620, y: TABLE - 108, label: "药品" }
+    ],
+    metal_acid: [
+      { id: "goggles", x: 268, y: TABLE - 50, label: "护目镜" },
+      { id: "beaker", x: 456, y: TABLE - 146, label: "烧杯" },
+      { id: "rod", x: 428, y: 248, r: -32, ox: 94, oy: 11, label: "玻璃棒" },
+      { id: "reagent", x: 620, y: TABLE - 108, label: "药品" }
+    ],
+    solution_prep: [
+      { id: "balance", x: 250, y: TABLE - 108, label: "天平" },
+      { id: "paper", x: 268, y: TABLE - 108 - 36, label: "称量纸" },
+      { id: "cylinder", x: 468, y: TABLE - 176, label: "量筒" },
+      { id: "beaker", x: 560, y: TABLE - 146, label: "烧杯" },
+      { id: "rod", x: 532, y: 248, r: -28, ox: 94, oy: 11, label: "玻璃棒" },
+      { id: "reagent", x: 700, y: TABLE - 108, label: "药品" }
     ],
     electrolysis: [
-      { id: "power", x: 400, y: 20, label: "电源" },
-      { id: "tubes", x: 400, y: 120, label: "集气管" },
-      { id: "cell", x: 360, y: 340, label: "水槽" },
-      { id: "reagent", x: 700, y: 340, label: "水" },
-      { id: "splint", x: 860, y: 80, label: "木条" }
+      { id: "power", x: 268, y: TABLE - 74, label: "电源" },
+      { id: "cell", x: 430, y: TABLE - 118, label: "水槽" },
+      { id: "tubes", x: 486, y: 78, label: "集气管" },
+      { id: "splint", x: 780, y: TABLE - 156, label: "木条" },
+      { id: "reagent", x: 210, y: TABLE - 108, label: "水" }
     ],
     filtration: [
-      { id: "stand", x: 300, y: 40, label: "铁架台" },
-      { id: "funnel", x: 500, y: 30, label: "漏斗" },
-      { id: "paper", x: 660, y: 30, label: "滤纸" },
-      { id: "rod", x: 820, y: 40, label: "玻璃棒" },
-      { id: "beaker", x: 500, y: 280, label: "烧杯" },
-      { id: "reagent", x: 700, y: 280, label: "浊液" }
+      { id: "stand", x: 400, y: TABLE - 240, label: "铁架台" },
+      { id: "funnel", x: 438, y: 72, label: "漏斗" },
+      { id: "paper", x: 700, y: TABLE - 84, label: "滤纸" },
+      { id: "rod", x: 520, y: 90, r: -48, ox: 20, oy: 11, label: "玻璃棒" },
+      { id: "source_beaker", x: 605, y: 100, r: -28, ox: 62, oy: 73, label: "盛浊液烧杯" },
+      { id: "beaker", x: 428, y: TABLE - 146, label: "烧杯" },
+      { id: "reagent", x: 825, y: TABLE - 108, label: "浊液" }
     ],
     evaporation: [
-      { id: "lamp", x: 320, y: 300, label: "酒精灯" },
-      { id: "stand", art: "tripod", x: 480, y: 280, label: "三脚架" },
-      { id: "gauze", x: 480, y: 40, label: "陶土网" },
-      { id: "dish", x: 480, y: 120, label: "蒸发皿" },
-      { id: "rod", x: 720, y: 40, label: "玻璃棒" },
-      { id: "reagent", x: 720, y: 200, label: "溶液" }
+      { id: "lamp", x: 448, y: TABLE - 136, label: "酒精灯" },
+      { id: "stand", art: "tripod", x: 416, y: 226, label: "三脚架" },
+      { id: "gauze", x: 438, y: 234, label: "陶土网" },
+      { id: "dish", x: 444, y: 212, label: "蒸发皿" },
+      { id: "rod", x: 560, y: 208, r: -16, ox: 20, oy: 11, label: "玻璃棒" },
+      { id: "reagent", x: 680, y: TABLE - 108, label: "溶液" }
+    ],
+    co2_candles: [
+      { id: "bottle", x: 300, y: TABLE - 168, label: "二氧化碳" },
+      { id: "beaker", art: "candle_beaker", x: 500, y: TABLE - 230, label: "烧杯" }
+    ],
+    metal_oxide_acid: [
+      { id: "lamp", x: 428, y: TABLE - 136, label: "酒精灯" },
+      { id: "tube", x: 448, y: 58, r: 34, ox: 32, oy: 168, label: "试管" },
+      { id: "rod", art: "test_tube_holder", x: 512, y: 78, r: -14, label: "试管夹" },
+      { id: "spoon", x: 700, y: TABLE - 34, label: "药匙或纸槽" },
+      { id: "reagent", x: 280, y: TABLE - 108, label: "药品" }
+    ],
+    air_oxygen: [
+      { id: "lamp", x: 185, y: TABLE - 136, label: "酒精灯" },
+      { id: "wire", x: 405, y: 88, label: "燃烧匙" },
+      { id: "bottle", x: 430, y: TABLE - 168, label: "密闭集气瓶" },
+      { id: "delivery", art: "delivery_beaker", x: 458, y: 164, label: "密闭导管" },
+      { id: "clamp", art: "spring_clamp", x: 544, y: 164, s: 0.72, label: "弹簧夹" },
+      { id: "beaker", x: 660, y: TABLE - 146, label: "盛水烧杯" },
+      { id: "reagent", x: 120, y: TABLE - 108, label: "红磷" }
+    ],
+    combustion_conditions: [
+      { id: "beaker", art: "condition_beaker", x: 420, y: TABLE - 210, label: "烧杯" },
+      { id: "cover", x: 700, y: TABLE - 20, label: "薄铜片" },
+      { id: "delivery", art: "delivery_air", x: 286, y: 128, s: 0.62, label: "通氧导管" },
+      { id: "tweezers", x: 730, y: TABLE - 42, label: "镊子" },
+      { id: "reagent", x: 210, y: TABLE - 108, label: "磷和氧气" }
+    ],
+    iron_rust: [
+      { id: "tube", art: "rust_tubes", x: 360, y: TABLE - 180, label: "三支对照试管" },
+      { id: "lamp", x: 700, y: TABLE - 136, label: "煮沸水用酒精灯" },
+      { id: "cotton", x: 581, y: 199, s: 0.3, label: "试管口棉花" },
+      { id: "reagent", x: 250, y: TABLE - 108, label: "铁钉、水等" }
+    ],
+    charcoal_reduce_cuo: [
+      { id: "stand", x: 248, y: TABLE - 240, label: "铁架台" },
+      { id: "tube", art: "heated_tube", x: 294, y: 142, label: "管口略向下的试管" },
+      { id: "lamp", x: 326, y: TABLE - 136, label: "高温加热" },
+      { id: "delivery", art: "delivery_water", x: 482, y: 185, label: "导管" },
+      { id: "lime_beaker", x: 616, y: TABLE - 158, label: "石灰水" },
+      { id: "reagent", x: 180, y: TABLE - 108, label: "木炭粉和氧化铜" }
+    ],
+    mass_conservation: [
+      { id: "balance", x: 230, y: TABLE - 108, label: "托盘天平" },
+      { id: "beaker", art: "sealed_flask", x: 455, y: TABLE - 188, label: "塞紧的锥形瓶" },
+      { id: "reagent", x: 700, y: TABLE - 108, label: "铁和硫酸铜" }
+    ],
+    metal_displace: [
+      { id: "goggles", x: 265, y: TABLE - 50, label: "护目镜" },
+      { id: "beaker", x: 465, y: TABLE - 146, label: "硫酸铜烧杯" },
+      { id: "rod", x: 445, y: 170, r: 62, ox: 20, oy: 11, label: "打磨铁钉" },
+      { id: "reagent", x: 640, y: TABLE - 108, label: "硫酸铜" }
+    ],
+    acid_indicator: [
+      { id: "goggles", x: 220, y: TABLE - 50, label: "护目镜" },
+      { id: "beaker", art: "indicator_pair", x: 390, y: TABLE - 174, label: "酸、碱两组容器" },
+      { id: "dropper", x: 755, y: 128, label: "专用滴管" },
+      { id: "reagent", x: 820, y: TABLE - 108, label: "两种指示剂" }
+    ],
+    dilute_h2so4: [
+      { id: "goggles", x: 250, y: TABLE - 50, label: "护目镜" },
+      { id: "beaker", x: 470, y: TABLE - 146, label: "先盛水的烧杯" },
+      { id: "rod", x: 440, y: 220, r: -34, ox: 94, oy: 11, label: "玻璃棒" },
+      { id: "reagent", x: 650, y: TABLE - 108, label: "水和浓硫酸" }
     ]
   };
+  SCENES.oxygen = SCENES.prep_oxygen_kmno4;
+  SCENES.gas_wet = SCENES.prep_hydrogen;
+  SCENES.gas_air = SCENES.prep_co2;
+  SCENES.burn = SCENES.iron_in_oxygen;
+  SCENES.oxide = SCENES.metal_oxide_acid;
 
   function defsHtml() {
     return '<defs>' +
@@ -422,7 +958,7 @@
   }
 
   function icon(id, size, color) {
-    var a = ART[id] || ART.reagent;
+    var a = (id === "clamp" && sceneExp === "air_oxygen" ? ART.spring_clamp : ART[id]) || ART.reagent;
     var w = size || 44;
     var h = Math.round(w * a.h / a.w);
     var paint = a.paint;
@@ -446,15 +982,17 @@
     (fx[key] || []).forEach(function (n) { n.setAttribute("visibility", on ? "visible" : "hidden"); });
   }
 
-  function layout(kind) {
+  var sceneExp = "";
+  function layout(kind, expId) {
     slots = {}; pieces = {}; fx = {};
-    var list = SCENES[kind] || SCENES.oxygen;
+    sceneExp = expId || kind || "";
+    var list = SCENES[sceneExp] || SCENES[kind] || SCENES.oxygen;
     list.forEach(function (spec) {
       var artId = spec.art || spec.id;
       var a = ART[artId] || ART.beaker;
       var slot = el("g", { "class": "slot", "data-slot": spec.id, transform: tf(spec) });
       slot.innerHTML = '<path class="slot-dash" d="' + a.outline + '" fill="none" stroke-linejoin="round" stroke-linecap="round"/>' +
-        '<text class="slot-label" x="' + (a.w / 2) + '" y="' + (a.h + 16) + '" text-anchor="middle">' + (spec.label || a.label) + "</text>";
+        '<text class="slot-label" x="' + (a.w / 2) + '" y="' + (a.h + 18) + '" text-anchor="middle">' + (spec.label || a.label) + "</text>";
       slot.style.display = "none";
       slots[spec.id] = slot;
       svg.appendChild(slot);
@@ -468,25 +1006,59 @@
     });
     fx.pop = [el("text", { x: 760, y: 120, "class": "fx-pop", fill: "#dc2626", "font-size": "28", "font-weight": "700", visibility: "hidden" }, "爆鸣！")];
     svg.appendChild(fx.pop[0]);
-    var jet = el("path", { d: "M210 128 q20 -28 8 -56", fill: "none", stroke: "#38bdf8", "stroke-width": "6", visibility: "hidden" });
+    var jet = el("path", { d: "M548 156 C 542 128, 566 124, 560 104 C 576 126, 570 146, 556 162", fill: "none", stroke: "#38bdf8", "stroke-width": "6", "stroke-linecap": "round", visibility: "hidden" });
     fx["fx-jet"] = [jet];
     svg.appendChild(jet);
+    if (sceneExp === "prep_hydrogen") {
+      var openTube = el("path", {
+        d: "M376 136 C 440 128, 510 150, 560 160",
+        fill: "none", stroke: "#94a3b8", "stroke-width": "9",
+        "stroke-linecap": "round", visibility: "hidden"
+      });
+      var openHi = el("path", {
+        d: "M376 136 C 440 128, 510 150, 560 160",
+        fill: "none", stroke: "#e0f2fe", "stroke-width": "5",
+        "stroke-linecap": "round", visibility: "hidden"
+      });
+      svg.appendChild(openTube);
+      svg.appendChild(openHi);
+      fx.h2Open = [openTube, openHi];
+    }
     var sparks = el("g", { visibility: "hidden" },
-      '<circle cx="560" cy="120" r="4" fill="#f97316"/><circle cx="580" cy="100" r="3" fill="#fbbf24"/><circle cx="540" cy="90" r="3" fill="#f97316"/>');
+      '<circle cx="520" cy="250" r="4" fill="#f97316"/><circle cx="548" cy="230" r="3" fill="#fbbf24"/><circle cx="500" cy="270" r="3" fill="#f97316"/>');
     fx["fx-sparks"] = [sparks];
     svg.appendChild(sparks);
     var steam = el("g", { visibility: "hidden" },
       '<ellipse cx="450" cy="140" rx="14" ry="8" fill="#cbd5e1" opacity=".45"/><ellipse cx="470" cy="118" rx="12" ry="7" fill="#e2e8f0" opacity=".4"/>');
     fx["fx-steam"] = [steam];
     svg.appendChild(steam);
+    var charcoal = el("g", { visibility: "hidden" },
+      '<circle cx="521" cy="156" r="31" fill="#fff" opacity=".22"/><circle cx="521" cy="156" r="20" fill="#fff" opacity=".48"/><circle cx="521" cy="156" r="9" fill="#fff"/><text x="521" y="112" text-anchor="middle" font-size="13" font-weight="700" fill="#475569">耀眼白光</text>');
+    fx["fx-charcoal-glow"] = [charcoal];
+    svg.appendChild(charcoal);
+    var sulfur = el("g", { visibility: "hidden" },
+      '<path class="sulfur-outer" d="M520 176 C490 142 515 120 520 96 C527 122 554 143 520 176z" fill="#93c5fd" opacity=".9"/>' +
+      '<path class="sulfur-inner" d="M520 169 C507 148 519 134 522 120 C531 142 536 151 520 169z" fill="#dbeafe"/>');
+    fx["fx-sulfur-flame"] = [sulfur];
+    svg.appendChild(sulfur);
+    var smoke = el("g", { visibility: "hidden" },
+      '<circle cx="474" cy="115" r="18" fill="#f8fafc" opacity=".88"/><circle cx="496" cy="100" r="25" fill="#fff" opacity=".82"/><circle cx="526" cy="116" r="20" fill="#f1f5f9" opacity=".86"/><circle cx="505" cy="136" r="24" fill="#fff" opacity=".72"/><text x="500" y="76" text-anchor="middle" font-size="12" font-weight="700" fill="#64748b">白烟</text>');
+    fx["fx-white-smoke"] = [smoke];
+    svg.appendChild(smoke);
   }
 
-  function init(host, sceneKey) {
+  function init(host, sceneKey, expId) {
     host.innerHTML = "";
-    svg = el("svg", { id: "bench", viewBox: "0 0 1000 520", preserveAspectRatio: "xMidYMid meet" });
+    svg = el("svg", { id: "bench", viewBox: "0 0 1100 600", preserveAspectRatio: "xMidYMid meet" });
     svg.innerHTML = defsHtml();
     host.appendChild(svg);
-    layout(sceneKey || "oxygen");
+    layout(sceneKey || "oxygen", expId || sceneKey);
+    refit();
+  }
+
+  function refit() {
+    if (!svg) return;
+    svg.setAttribute("viewBox", "0 0 1100 600");
   }
 
   function setSelecting(on, needMap) {
@@ -496,6 +1068,7 @@
       slots[k].style.display = selecting && needed[k] ? "" : "none";
       slots[k].classList.toggle("needed", !!(selecting && needed[k]));
     });
+    refit();
   }
   function hoverSlot(name) {
     Object.keys(slots).forEach(function (k) {
@@ -505,20 +1078,39 @@
   function setPiece(id, on) {
     if (!pieces[id]) return;
     pieces[id].el.dataset.placed = on ? "1" : "0";
+    if (id === "reagent") {
+      pieces[id].el.style.display = "none";
+      return;
+    }
     pieces[id].el.style.display = on ? "" : "none";
   }
   function applyEffects(st) {
     st = st || {};
-    vis("fx-powder", !!st.powder);
+    var massReacted = sceneExp === "mass_conservation" && !!st.mass_reacted;
+    var displacedCopper = sceneExp === "metal_displace" && !!st.metal;
+    vis("fx-powder", (!!st.powder || !!st.oxide) && st.liquid !== "blue");
     vis("fx-zinc", !!st.zinc);
     vis("fx-marble", !!st.marble);
-    vis("fx-acid", !!st.acid);
+    vis("fx-acid", !!st.acid || !!st.oxide_acid || st.liquid === "blue");
+    vis("fx-cover", !!st.air_collect);
+    vis("fx-cotton", !!st.cotton);
+    vis("fx-oxide", !!st.oxide && st.liquid !== "blue");
     vis("fx-flame", !!st.flame || !!st.heat);
-    vis("fx-gas", !!st.collected && !st.air_collect);
+    vis("fx-gas", (!!st.collected && !st.air_collect) || !!st.co2_fill);
     vis("fx-bottle-water", !!st.bottle_water);
+    vis("fx-water-rise", !!st.water_rise);
+    vis("fx-marks", !!st.bottle_water || !!st.water_rise);
+    vis("fx-hot-water", !!st.hot_water);
+    vis("fx-wp-air", !!st.wp_air);
+    vis("fx-rp-air", !!st.rp_air);
+    vis("fx-wp-water", !!st.wp_water);
+    vis("fx-wp-o2", !!st.wp_o2);
+    vis("fx-flame-wp", !!st.wp_air && !st.wp_o2 || !!st.flame);
+    vis("fx-rust", !!st.rust);
     vis("fx-drip", !!st.dripping);
     vis("fx-metal", !!st.metal);
     vis("fx-beaker-bubbles", !!st.acid_bubbles);
+    vis("fx-acid-bubbles", !!st.acid_bubbles || !!st.oxide_bubbles);
     vis("fx-h2", !!st.gases);
     vis("fx-o2", !!st.gases);
     vis("fx-ratio", !!st.ratio);
@@ -527,27 +1119,119 @@
     vis("fx-crystals", !!st.crystals);
     vis("fx-steam", !!st.heat);
     vis("fx-jet", !!st.jet_flame);
+    if (sceneExp === "prep_hydrogen" && pieces.delivery) {
+      var placed = pieces.delivery.el.dataset.placed === "1";
+      var openAir = placed && (!!st.jet_flame || !!st.pop);
+      pieces.delivery.el.style.display = openAir ? "none" : (placed ? "" : "none");
+      (fx.h2Open || []).forEach(function (n) {
+        n.setAttribute("visibility", openAir ? "visible" : "hidden");
+      });
+      if (pieces.test_tube && pieces.test_tube.el.dataset.placed === "1") {
+        pieces.test_tube.el.setAttribute("transform", st.pop
+          ? "translate(533,16) rotate(180 27 75)"
+          : tf(pieces.test_tube.spec));
+      }
+      if (fx.pop && fx.pop[0]) {
+        fx.pop[0].setAttribute("x", st.pop ? "640" : "760");
+        fx.pop[0].setAttribute("y", st.pop ? "70" : "120");
+      }
+    }
     vis("fx-sparks", !!st.sparks);
     vis("fx-pop", !!st.pop);
+    vis("fx-splint", !!st.splint_on);
+    vis("fx-charcoal-glow", !!st.charcoal_glow);
+    vis("fx-sulfur-flame", !!st.sulfur_flame);
+    vis("fx-white-smoke", !!st.white_smoke);
+    vis("fx-copper", !!st.copper || massReacted || displacedCopper);
+    vis("fx-flame-low", !!st.lit && !st.low_out);
+    vis("fx-flame-high", !!st.lit && !st.high_out);
+    vis("fx-co2-low", !!st.co2_low || !!st.co2_mid);
+    vis("fx-co2-mid", !!st.co2_mid);
+    vis("fx-smoke-low", !!st.low_out);
+    vis("fx-smoke-high", !!st.high_out);
     if (pieces.trough) {
       var shown = pieces.trough.el.dataset.placed === "1" && !st.air_collect;
       pieces.trough.el.style.display = shown ? "" : "none";
     }
     if (pieces.tube) {
       var spec = Object.assign({}, pieces.tube.spec);
-      if (st.upright) spec.r = 0;
-      else if (st.tilt_up) spec.r = 26;
-      else if (st.tilt_down) spec.r = -26;
+      if (pieces.tube.art !== ART.heated_tube) {
+        if (st.upright) spec.r = 0;
+        else if (st.tilt_up) spec.r = 62;
+        else if (st.tilt_down) spec.r = 100;
+      }
       pieces.tube.el.setAttribute("transform", tf(spec));
     }
+    if (pieces.bottle) {
+      var bs = Object.assign({}, pieces.bottle.spec);
+      if (st.air_collect) {
+        bs.r = 0;
+        delete bs.ox;
+        delete bs.oy;
+      }
+      if (st.pouring) {
+        bs.r = -50;
+        bs.ox = 80;
+        bs.oy = 16;
+        bs.x = (pieces.bottle.spec.x || 0) + 36;
+      }
+      pieces.bottle.el.setAttribute("transform", tf(bs));
+    }
+    (fx["fx-powder"] || []).forEach(function (n) {
+      var powderColors = {
+        purple: "#6b21a8",
+        white: "#f8fafc",
+        black: "#1e293b",
+        yellow: "#eab308",
+        red: "#dc2626"
+      };
+      var powderColor = st.oxide ? "#1e293b" : (powderColors[st.powder_color] || "#6b21a8");
+      n.querySelectorAll("[fill]").forEach(function (p, i) {
+        p.setAttribute("fill", i ? powderColor : powderColor);
+      });
+    });
+    (fx["fx-acid"] || []).forEach(function (n) {
+      if (st.liquid !== "blue") return;
+      n.querySelectorAll("[fill]").forEach(function (p) { p.setAttribute("fill", "#2563eb"); });
+    });
     (fx["fx-liquid"] || []).forEach(function (n) {
-      var colors = { pink: "#f9a8d4", pale: "#fce7f3", clear: "#7dd3fc" };
+      var colors = { pink: "#f9a8d4", pale: "#fce7f3", clear: "#7dd3fc", blue: "#2563eb" };
+      var liquidColor = displacedCopper ? "#93c5fd" : (colors[st.liquid] || colors.clear);
       n.querySelectorAll("[fill]").forEach(function (p) {
-        if (p.tagName.toLowerCase() !== "ellipse") p.setAttribute("fill", colors[st.liquid] || colors.clear);
+        if (p.tagName.toLowerCase() !== "ellipse") p.setAttribute("fill", liquidColor);
       });
       if (st.filtrate === false) n.setAttribute("visibility", "hidden");
       if (st.filtrate) n.setAttribute("visibility", "visible");
     });
+    (fx["fx-flask-liquid"] || []).forEach(function (n) {
+      n.setAttribute("fill", massReacted ? "#93c5fd" : "#2563eb");
+      n.setAttribute("visibility", massReacted ? "visible" : "hidden");
+    });
+    (fx["fx-inner-liquid"] || []).forEach(function (n) {
+      n.setAttribute("visibility", massReacted ? "hidden" : "visible");
+    });
+    (fx["fx-mass-iron"] || []).forEach(function (n) {
+      n.setAttribute("visibility", massReacted ? "hidden" : "visible");
+    });
+    (fx["fx-indicator-acid"] || []).forEach(function (n) {
+      n.setAttribute("fill", st.liquid === "pink" ? "#e0f2fe" : (st.liquid ? "#ef4444" : "#7dd3fc"));
+    });
+    (fx["fx-indicator-base"] || []).forEach(function (n) {
+      var c = st.liquid === "blue" ? "#2563eb" : (st.liquid === "pink" ? "#ec4899" : "#7dd3fc");
+      n.setAttribute("fill", c);
+    });
+    (fx["fx-sulfur-flame"] || []).forEach(function (n) {
+      var violet = st.sulfur_flame === "blue_violet";
+      var outer = n.querySelector(".sulfur-outer");
+      var inner = n.querySelector(".sulfur-inner");
+      if (outer) outer.setAttribute("fill", violet ? "#6d28d9" : "#60a5fa");
+      if (inner) inner.setAttribute("fill", violet ? "#a78bfa" : "#dbeafe");
+    });
+    if (sceneExp === "nh4hco3_decomp" && pieces.paper) {
+      pieces.paper.el.querySelectorAll("rect").forEach(function (n) {
+        n.setAttribute("fill", st.lime_milky ? "#2563eb" : "#fffef5");
+      });
+    }
     (fx["fx-lime-liquid"] || []).forEach(function (n) {
       n.querySelectorAll("path").forEach(function (p) {
         p.setAttribute("fill", st.lime_milky ? "#f8fafc" : "#e2e8f0");
@@ -556,6 +1240,7 @@
     (fx["fx-dish-liquid"] || []).forEach(function (n) {
       n.setAttribute("opacity", st.crystals ? "0.25" : "0.5");
     });
+    refit();
   }
   function clientToSvg(clientX, clientY) {
     if (!svg) return { x: 0, y: 0 };
@@ -569,12 +1254,14 @@
   }
   function specCenter(spec, art) {
     var s = spec.s || 1;
+    var ox = spec.ox != null ? spec.ox : 0;
+    var oy = spec.oy != null ? spec.oy : 0;
     var rad = (spec.r || 0) * Math.PI / 180;
-    var lx = art.w * s * 0.5;
-    var ly = art.h * s * 0.5;
+    var lx = art.w * s * 0.5 - ox;
+    var ly = art.h * s * 0.5 - oy;
     return {
-      x: spec.x + lx * Math.cos(rad) - ly * Math.sin(rad),
-      y: spec.y + lx * Math.sin(rad) + ly * Math.cos(rad)
+      x: spec.x + ox + lx * Math.cos(rad) - ly * Math.sin(rad),
+      y: spec.y + oy + lx * Math.sin(rad) + ly * Math.cos(rad)
     };
   }
   function snapR(spec, art) {
@@ -598,10 +1285,1861 @@
     });
     return best;
   }
+  function hitPiece(clientX, clientY) {
+    var best = "", bestA = 1e15;
+    Object.keys(pieces).forEach(function (k) {
+      var piece = pieces[k];
+      if (!piece || k === "reagent") return;
+      if (piece.el.style.display === "none" || piece.el.dataset.placed !== "1") return;
+      var r = piece.el.getBoundingClientRect();
+      if (!r.width || !r.height) return;
+      if (clientX < r.left || clientX > r.right || clientY < r.top || clientY > r.bottom) return;
+      var area = r.width * r.height;
+      if (area < bestA) { bestA = area; best = k; }
+    });
+    return best;
+  }
+  function highlight(id) {
+    Object.keys(pieces).forEach(function (k) {
+      if (pieces[k] && pieces[k].el) pieces[k].el.classList.toggle("hot-op", !!id && k === id);
+    });
+  }
 
   global.Lab2D = {
     init: init, icon: icon, setSelecting: setSelecting, hoverSlot: hoverSlot,
-    setPiece: setPiece, applyEffects: applyEffects, hitSlot: hitSlot
+    setPiece: setPiece, applyEffects: applyEffects, hitSlot: hitSlot,
+    hitPiece: hitPiece, highlight: highlight
+  };
+})(window);
+</script>
+  <script type="text/plain" id="lab3d-src">/* 宏观实验台 3D：实验室环境、物理玻璃器材、倒入/搅拌/加热。 */
+(function (global) {
+  var THREE = global.THREE;
+  if (!THREE) { console.error("THREE missing"); return; }
+
+  var renderer, scene, camera, canvas, raycaster, pointer;
+  var currentExpId = "";
+  var root, slots = {}, pieces = {}, fx = {};
+  var yaw = 0.46, pitch = 0.46, dist = 4.05;
+  var lookY = 1.18, orbiting = false, lastX = 0, lastY = 0;
+  var selecting = false, needed = {};
+  var clock = { t: 0 };
+  var pour = { on: false, t: 0, color: 0x38bdf8 };
+  var mix = { on: false, t: 0 };
+  var pops = [];
+
+  function mat(color, opts) {
+    opts = opts || {};
+    return new THREE.MeshStandardMaterial({
+      color: color,
+      roughness: opts.roughness != null ? opts.roughness : 0.45,
+      metalness: opts.metalness || 0,
+      transparent: !!opts.transparent,
+      opacity: opts.opacity != null ? opts.opacity : 1,
+      emissive: opts.emissive || 0x000000,
+      emissiveIntensity: opts.emissiveIntensity || 0,
+      envMapIntensity: opts.metalness > 0.4 ? 1.25 : 1,
+      side: opts.side || THREE.FrontSide
+    });
+  }
+  /* 参数对齐 three.js 官方透射玻璃示例：薄壁、低粗糙、折射率 1.5。
+     质感来自环境贴图里的灯箱，不靠把玻璃涂白。 */
+  function glass(tint) {
+    var m = new THREE.MeshPhysicalMaterial({
+      color: tint || 0xffffff,
+      metalness: 0,
+      roughness: 0.015,
+      transmission: 1,
+      thickness: 0.012,
+      ior: 1.5,
+      transparent: true,
+      opacity: 1,
+      envMapIntensity: 1,
+      specularIntensity: 1,
+      clearcoat: 1,
+      clearcoatRoughness: 0.02
+    });
+    if (m.attenuationColor) {
+      m.attenuationColor = new THREE.Color(0xffffff);
+      m.attenuationDistance = 2.5;
+    }
+    return m;
+  }
+  /* 瓶口、管口的厚边：只有这里发一点灰绿，薄壁保持能看见里面。 */
+  function glassRim(radius, tubeR) {
+    var lip = glass(0xc5d4c6);
+    lip.thickness = 0.2;
+    lip.roughness = 0.2;
+    lip.transmission = 0.7;
+    if (lip.attenuationColor) {
+      lip.attenuationColor = new THREE.Color(0x8eaa90);
+      lip.attenuationDistance = 0.06;
+    }
+    var ring = new THREE.Mesh(
+      new THREE.TorusGeometry(radius, tubeR || 0.007, 8, 32),
+      lip
+    );
+    ring.rotation.x = Math.PI / 2;
+    ring.castShadow = false;
+    return ring;
+  }
+  function liquidMat(color) {
+    return new THREE.MeshPhysicalMaterial({
+      color: color,
+      roughness: 0.12,
+      metalness: 0,
+      transparent: true,
+      opacity: 0.78,
+      transmission: 0.28,
+      thickness: 0.18
+    });
+  }
+  function add(parent, mesh, x, y, z) {
+    mesh.position.set(x || 0, y || 0, z || 0);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    parent.add(mesh);
+    return mesh;
+  }
+  function cyl(rTop, rBot, h, matl, seg) {
+    return new THREE.Mesh(new THREE.CylinderGeometry(rTop, rBot, h, seg || 32), matl);
+  }
+  function box(w, h, d, matl) {
+    return new THREE.Mesh(new THREE.BoxGeometry(w, h, d), matl);
+  }
+  function sph(r, matl, w, h) {
+    return new THREE.Mesh(new THREE.SphereGeometry(r, w || 24, h || 16), matl);
+  }
+  function lathe(pairs, matl, seg) {
+    var pts = pairs.map(function (p) { return new THREE.Vector2(p[0], p[1]); });
+    return new THREE.Mesh(new THREE.LatheGeometry(pts, seg || 36), matl);
+  }
+  function hexCss(c) {
+    return "#" + ("000000" + ((c >>> 0) & 0xffffff).toString(16)).slice(-6);
+  }
+  function parseColor(v) {
+    if (v == null) return 0x38bdf8;
+    if (typeof v === "number") return v;
+    return new THREE.Color(v).getHex();
+  }
+  function labelSprite(text, color) {
+    var c = document.createElement("canvas");
+    c.width = 512; c.height = 128;
+    var g = c.getContext("2d");
+    g.clearRect(0, 0, 512, 128);
+    g.font = "700 44px 'Noto Sans SC','PingFang SC',sans-serif";
+    g.fillStyle = "rgba(8,14,24,.55)";
+    var w = Math.min(480, g.measureText(text).width + 48);
+    roundRect(g, (512 - w) / 2, 28, w, 72, 18);
+    g.fill();
+    g.fillStyle = color || "#e8fffb";
+    g.textAlign = "center";
+    g.textBaseline = "middle";
+    g.fillText(text, 256, 64);
+    var tex = new THREE.CanvasTexture(c);
+    tex.anisotropy = 4;
+    var spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
+    spr.scale.set(0.78, 0.2, 1);
+    return spr;
+  }
+  function roundRect(g, x, y, w, h, r) {
+    g.beginPath();
+    g.moveTo(x + r, y);
+    g.arcTo(x + w, y, x + w, y + h, r);
+    g.arcTo(x + w, y + h, x, y + h, r);
+    g.arcTo(x, y + h, x, y, r);
+    g.arcTo(x, y, x + w, y, r);
+    g.closePath();
+  }
+  function bottleLabel(title, color) {
+    var c = document.createElement("canvas");
+    c.width = 256; c.height = 256;
+    var g = c.getContext("2d");
+    g.fillStyle = "#f7f4ea";
+    g.fillRect(0, 0, 256, 256);
+    g.fillStyle = hexCss(color || 0x0f766e);
+    g.fillRect(0, 0, 256, 18);
+    g.fillRect(0, 238, 256, 18);
+    g.fillStyle = "#1f2937";
+    g.font = "700 36px sans-serif";
+    g.textAlign = "center";
+    g.textBaseline = "middle";
+    wrapText(g, title || "试剂", 128, 128, 210, 40);
+    var tex = new THREE.CanvasTexture(c);
+    return new THREE.MeshStandardMaterial({ map: tex, roughness: 0.7 });
+  }
+  function wrapText(g, text, x, y, maxW, lh) {
+    var line = "", lines = [], i;
+    for (i = 0; i < text.length; i++) {
+      var t = line + text[i];
+      if (g.measureText(t).width > maxW && line) { lines.push(line); line = text[i]; }
+      else line = t;
+    }
+    if (line) lines.push(line);
+    var start = y - (lines.length - 1) * lh / 2;
+    lines.forEach(function (ln, n) { g.fillText(ln, x, start + n * lh); });
+  }
+
+  function makeSlot(name, title, x, y, z, color) {
+    var g = new THREE.Group();
+    var col = color || 0x2dd4bf;
+    var ring = new THREE.Mesh(
+      new THREE.TorusGeometry(0.16, 0.012, 10, 40),
+      mat(col, { emissive: col, emissiveIntensity: 0.55, roughness: 0.25, transparent: true, opacity: 0.95 })
+    );
+    ring.rotation.x = Math.PI / 2;
+    var pad = new THREE.Mesh(
+      new THREE.CircleGeometry(0.16, 32),
+      mat(col, { transparent: true, opacity: 0.16 })
+    );
+    pad.rotation.x = -Math.PI / 2;
+    pad.position.y = 0.012;
+    var diamond = new THREE.Mesh(
+      new THREE.OctahedronGeometry(0.055),
+      mat(col, { emissive: col, emissiveIntensity: 0.9, roughness: 0.2 })
+    );
+    diamond.position.y = 0.52;
+    var hit = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.22, 0.22, 0.7, 16),
+      new THREE.MeshBasicMaterial({ visible: false })
+    );
+    hit.position.y = 0.3;
+    var lab = labelSprite(title, "#ecfeff");
+    lab.position.set(0, 0.68, 0);
+    g.add(ring, pad, diamond, hit, lab);
+    g.position.set(x, y, z);
+    g.userData = { slot: name, bob: Math.random() * 6, diamond: diamond, ring: ring };
+    g.traverse(function (o) { o.userData.slot = name; });
+    slots[name] = g;
+    root.add(g);
+    return g;
+  }
+
+  function pieceGroup(id, builder, x, y, z) {
+    var g = new THREE.Group();
+    builder(g);
+    g.position.set(x, y, z);
+    g.visible = false;
+    g.userData = g.userData || {};
+    g.userData.baseY = y;
+    pieces[id] = g;
+    root.add(g);
+    return g;
+  }
+
+  function buildStand(g, tilt) {
+    var iron = mat(0x6b7280, { metalness: 0.82, roughness: 0.28 });
+    var base = mat(0x4b5563, { metalness: 0.7, roughness: 0.4 });
+    var screwMat = mat(0xd6d3d1, { metalness: 0.88, roughness: 0.22 });
+    add(g, cyl(0.18, 0.22, 0.045, base), 0, 0.025, 0);
+    add(g, cyl(0.026, 0.026, 0.78, iron), 0, 0.42, 0);
+    add(g, box(0.48, 0.022, 0.028, iron), 0.18, 0.42, 0);
+    add(g, box(0.045, 0.05, 0.045, iron), 0.43, 0.42, 0);
+    if (tilt == null) {
+      add(g, cyl(0.012, 0.012, 0.04, screwMat, 12), 0.43, 0.46, 0);
+      return;
+    }
+    var axis = new THREE.Vector3(-Math.sin(tilt), Math.cos(tilt), 0).normalize();
+    var holder = new THREE.Group();
+    holder.position.set(0.46, 0.42, 0);
+    holder.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), axis);
+    var jaw = new THREE.Mesh(new THREE.TorusGeometry(0.07, 0.007, 8, 28, Math.PI * 1.45), iron);
+    jaw.rotation.z = 0.9;
+    holder.add(jaw);
+    var screw = cyl(0.01, 0.01, 0.05, screwMat, 12);
+    screw.position.y = 0.09;
+    holder.add(screw);
+    add(holder, cyl(0.016, 0.016, 0.012, screwMat, 12), 0, 0.112, 0);
+    g.add(holder);
+  }
+  function buildTube(g, tilt) {
+    /* 试管要看见管内的药品和棉花。全透射会把管里的物体折射掉，改成薄的半透明玻璃。 */
+    var shell = glass(0xd4eaf8);
+    shell.transmission = 0;
+    shell.opacity = 0.28;
+    shell.transparent = true;
+    shell.depthWrite = false;
+    shell.roughness = 0.06;
+    shell.envMapIntensity = 0.35;
+    shell.side = THREE.DoubleSide;
+    shell.thickness = 0.012;
+    /* 外壁上去、内壁回来，才是有壁厚的空心试管，而不是一整块玻璃。 */
+    var body = lathe([
+      [0.002, 0.016], [0.048, 0.02], [0.052, 0.07], [0.052, 0.49],
+      [0.060, 0.515], [0.056, 0.532], [0.040, 0.532], [0.044, 0.50],
+      [0.044, 0.09], [0.002, 0.055]
+    ], shell, 48);
+    add(g, body, 0, 0, 0);
+    add(g, glassRim(0.056, 0.006), 0, 0.52, 0);
+    var powder = sph(0.042, mat(0x1e293b, { roughness: 0.8 }), 12, 10);
+    powder.scale.set(1, 0.45, 1);
+    fx.powder = add(g, powder, 0, 0.08, 0);
+    var copper = sph(0.038, mat(0xb45309, { roughness: 0.55, metalness: 0.45 }), 12, 10);
+    copper.scale.set(1.15, 0.34, 0.9);
+    fx.copper = add(g, copper, 0.012, 0.087, 0.005);
+    var zinc = box(0.05, 0.028, 0.036, mat(0xa8b0bb, { metalness: 0.55, roughness: 0.35 }));
+    fx.zinc = add(g, zinc, 0.01, 0.09, 0);
+    var marble = sph(0.024, mat(0xf8fafc, { roughness: 0.45 }));
+    fx.marble = add(g, marble, -0.01, 0.085, 0.01);
+    var acid = cyl(0.048, 0.05, 0.18, liquidMat(0x38bdf8), 28);
+    fx.acid = add(g, acid, 0, 0.16, 0);
+    fx.tubeBubbles = [];
+    for (var i = 0; i < 10; i++) {
+      var b = sph(0.008 + Math.random() * 0.006, mat(0xffffff, { transparent: true, opacity: 0.7 }), 8, 6);
+      b.visible = false;
+      fx.tubeBubbles.push(add(g, b, (Math.random() - 0.5) * 0.06, 0.12 + Math.random() * 0.12, (Math.random() - 0.5) * 0.06));
+    }
+    powder.visible = copper.visible = zinc.visible = marble.visible = acid.visible = false;
+    /* 管口内侧、橡皮塞之前。用哑光材质，白团才不会融进玻璃高光里。 */
+    fx.cotton = add(g, sph(0.032, mat(0xfafafa, { roughness: 0.96 })), 0, 0.4, 0);
+    fx.cotton.renderOrder = 4;
+    fx.cotton.visible = false;
+    if (tilt) g.rotation.z = tilt;
+    fx.tube = g;
+  }
+  function buildLamp(g) {
+    var ceramic = mat(0xd3542c, { roughness: 0.55 });
+    add(g, lathe([
+      [0.02, 0], [0.11, 0.008], [0.124, 0.032], [0.108, 0.07],
+      [0.096, 0.15], [0.09, 0.185], [0.058, 0.218], [0.046, 0.242]
+    ], ceramic, 36), 0, 0, 0);
+    var brass = mat(0xb08d4e, { metalness: 0.78, roughness: 0.3 });
+    add(g, cyl(0.06, 0.052, 0.02, brass, 24), 0, 0.252, 0);
+    add(g, cyl(0.018, 0.018, 0.012, brass, 16), 0, 0.266, 0);
+    add(g, cyl(0.007, 0.008, 0.042, mat(0xf3efe4, { roughness: 0.86 }), 10), 0, 0.286, 0);
+    var outer = new THREE.Mesh(
+      new THREE.ConeGeometry(0.04, 0.16, 18),
+      mat(0xff6a12, { emissive: 0xff4d00, emissiveIntensity: 1.4, transparent: true, opacity: 0.88 })
+    );
+    var inner = new THREE.Mesh(
+      new THREE.ConeGeometry(0.02, 0.1, 12),
+      mat(0xfff4c2, { emissive: 0xffe08a, emissiveIntensity: 2, transparent: true, opacity: 0.95 })
+    );
+    fx.flame = add(g, outer, 0, 0.38, 0);
+    fx.flameInner = add(g, inner, 0, 0.36, 0);
+    var light = new THREE.PointLight(0xff8a3d, 0, 3.2);
+    light.position.set(0, 0.42, 0);
+    light.castShadow = false;
+    g.add(light);
+    fx.flameLight = light;
+    outer.visible = inner.visible = false;
+  }
+  function buildClamp(g) {
+    var steel = mat(0xb8c0cc, { metalness: 0.78, roughness: 0.22 });
+    var grip = mat(0x1e3a5f, { roughness: 0.38, metalness: 0.15 });
+    var handle = cyl(0.016, 0.018, 0.42, grip, 12);
+    handle.rotation.z = 1.12;
+    add(g, handle, 0.18, 0.32, 0);
+    add(g, box(0.04, 0.03, 0.03, steel), 0.02, 0.34, 0);
+    [[0.28, 0.07], [0.18, 0.062]].forEach(function (p) {
+      var ring = new THREE.Mesh(new THREE.TorusGeometry(p[1], 0.009, 8, 24), steel);
+      ring.rotation.y = Math.PI / 2;
+      add(g, ring, 0, p[0], 0);
+    });
+    add(g, box(0.012, 0.12, 0.012, steel), 0.07, 0.23, 0);
+  }
+  function buildDeliveryPath(g, pts) {
+    var glassMat = glass(0xd5e7f2);
+    glassMat.thickness = 0.01;
+    glassMat.roughness = 0.02;
+    var vectors = pts.map(function (p) {
+      return new THREE.Vector3(p[0], p[1], p[2]);
+    });
+    if (vectors.length < 2) return;
+    var curve = new THREE.CatmullRomCurve3(vectors, false, "catmullrom", 0.2);
+    var mesh = new THREE.Mesh(
+      new THREE.TubeGeometry(curve, Math.max(32, vectors.length * 18), 0.0085, 8, false),
+      glassMat
+    );
+    mesh.castShadow = true;
+    g.add(mesh);
+  }
+  /* 导管画在世界坐标：起点从橡皮塞穿出，终点伸进集气瓶（瓶底或倒扣瓶口）。
+     axisOut 是试管口朝外的方向，橡皮塞沿这个方向做成圆台。 */
+  function hose(worldPts, axisOut) {
+    return function (g) {
+      var o = worldPts[0];
+      var pts = worldPts.map(function (p) {
+        return [p[0] - o[0], p[1] - o[1], p[2] - o[2]];
+      });
+      var axis = axisOut
+        ? new THREE.Vector3(axisOut[0], axisOut[1], axisOut[2])
+        : new THREE.Vector3(pts[1][0] - pts[0][0], pts[1][1] - pts[0][1], pts[1][2] - pts[0][2]);
+      if (axis.lengthSq() < 1e-8) axis.set(0, 1, 0);
+      axis.normalize();
+      var rubber = mat(0x6b2a14, { roughness: 0.84 });
+      var stopper = cyl(0.064, 0.026, 0.082, rubber, 22);
+      stopper.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), axis);
+      /* 橡皮塞大部分留在管外，只有细端伸进管口，免得挡住管内的棉花。 */
+      stopper.position.copy(axis.clone().multiplyScalar(0.02));
+      g.add(stopper);
+      buildDeliveryPath(g, pts);
+    };
+  }
+  function buildTrough(g) {
+    var plastic = mat(0x6f93ad, { roughness: 0.32, metalness: 0.06 });
+    var rim = mat(0x8eacbf, { roughness: 0.22, metalness: 0.08 });
+    add(g, box(1.15, 0.04, 0.62, plastic), 0, 0.02, 0);
+    add(g, box(1.15, 0.2, 0.035, plastic), 0, 0.12, 0.292);
+    add(g, box(1.15, 0.2, 0.035, plastic), 0, 0.12, -0.292);
+    add(g, box(0.035, 0.2, 0.62, plastic), 0.557, 0.12, 0);
+    add(g, box(0.035, 0.2, 0.62, plastic), -0.557, 0.12, 0);
+    add(g, box(1.18, 0.025, 0.05, rim), 0, 0.22, 0.3);
+    add(g, box(1.18, 0.025, 0.05, rim), 0, 0.22, -0.3);
+    add(g, box(0.05, 0.025, 0.66, rim), 0.57, 0.22, 0);
+    add(g, box(0.05, 0.025, 0.66, rim), -0.57, 0.22, 0);
+    fx.troughWater = add(g, box(1.04, 0.08, 0.5, liquidMat(0x5aa4c4)), 0, 0.08, 0);
+    var skin = new THREE.Mesh(
+      new THREE.PlaneGeometry(1.02, 0.48),
+      new THREE.MeshPhysicalMaterial({
+        color: 0x8ec4d8, roughness: 0.05, metalness: 0.02,
+        transparent: true, opacity: 0.2, envMapIntensity: 0.7
+      })
+    );
+    skin.rotation.x = -Math.PI / 2;
+    skin.castShadow = false;
+    add(g, skin, 0, 0.125, 0);
+  }
+  function buildBottle(g) {
+    var shell = glass(0xeef7f4);
+    shell.side = THREE.DoubleSide;
+    shell.thickness = 0.012;
+    /* 广口集气瓶：直筒、平底、厚瓶口，没有瓶颈。 */
+    add(g, lathe([
+      [0.002, 0.01], [0.108, 0.012], [0.112, 0.026], [0.104, 0.04],
+      [0.104, 0.43], [0.114, 0.45], [0.118, 0.462], [0.090, 0.462],
+      [0.096, 0.438], [0.096, 0.04], [0.002, 0.028]
+    ], shell, 48), 0, 0, 0);
+    add(g, glassRim(0.104, 0.008), 0, 0.456, 0);
+    fx.gas = add(g, cyl(0.088, 0.088, 0.1, mat(0xf8fafc, { transparent: true, opacity: 0.5 }), 16), 0, 0.26, 0);
+    fx.bottleWater = add(g, cyl(0.09, 0.09, 0.05, liquidMat(0x38bdf8), 16), 0, 0.08, 0);
+    fx.gas.visible = fx.bottleWater.visible = false;
+    fx.bottle = g;
+  }
+  function buildInvBottle(g) {
+    /* 口朝下的广口集气瓶：直筒，瓶口在水面下，瓶底朝上。 */
+    var shell = glass(0xeef7f4);
+    shell.side = THREE.DoubleSide;
+    shell.thickness = 0.012;
+    add(g, lathe([
+      [0.118, 0.002], [0.112, 0.016], [0.104, 0.032], [0.104, 0.45],
+      [0.108, 0.478], [0.002, 0.492], [0.002, 0.472], [0.096, 0.458],
+      [0.096, 0.036], [0.090, 0.002]
+    ], shell, 48), 0, 0, 0);
+    add(g, glassRim(0.104, 0.008), 0, 0.01, 0);
+    fx.gas = add(g, cyl(0.088, 0.088, 0.14, mat(0xf8fafc, { transparent: true, opacity: 0.5 }), 16), 0, 0.32, 0);
+    fx.bottleWater = add(g, cyl(0.088, 0.09, 0.028, liquidMat(0x38bdf8), 20), 0, 0.03, 0);
+    fx.gas.visible = fx.bottleWater.visible = false;
+    fx.bottle = g;
+  }
+  function buildSplint(g) {
+    add(g, box(0.022, 0.34, 0.022, mat(0xb45309, { roughness: 0.7 })), 0, 0.2, 0);
+    fx.splintGlow = add(g, sph(0.038, mat(0xfbbf24, { emissive: 0xf59e0b, emissiveIntensity: 0.55 })), 0, 0.4, 0);
+    fx.splintFlame = add(g, new THREE.Mesh(
+      new THREE.ConeGeometry(0.035, 0.13, 14),
+      mat(0xfff3a3, { emissive: 0xff8a00, emissiveIntensity: 1.8, transparent: true, opacity: 0.94 })
+    ), 0, 0.48, 0);
+    fx.splintFlame.visible = false;
+  }
+  function vesselMat() {
+    var m = glass();
+    m.side = THREE.DoubleSide;
+    m.thickness = 0.02;
+    m.roughness = 0.08;
+    m.envMapIntensity = 0.28;
+    return m;
+  }
+  function buildBeaker(g) {
+    add(g, lathe([
+      [0.002, 0.01], [0.175, 0.012], [0.188, 0.028], [0.18, 0.04],
+      [0.18, 0.34], [0.198, 0.368], [0.168, 0.382], [0.172, 0.35],
+      [0.172, 0.045], [0.002, 0.032]
+    ], vesselMat(), 40), 0, 0, 0);
+    add(g, glassRim(0.183, 0.007), 0, 0.372, 0);
+    var spout = box(0.06, 0.03, 0.04, vesselMat());
+    spout.rotation.z = -0.4;
+    add(g, spout, 0.19, 0.37, 0);
+    fx.liquid = add(g, cyl(0.165, 0.155, 0.14, liquidMat(0x7dd3fc), 28), 0, 0.12, 0);
+    fx.metal = add(g, box(0.08, 0.028, 0.05, mat(0x94a3b8, { metalness: 0.55 })), 0, 0.14, 0);
+    fx.metal.visible = false;
+    fx.beakerBubbles = [];
+    for (var i = 0; i < 12; i++) {
+      var b = sph(0.01 + Math.random() * 0.008, mat(0xffffff, { transparent: true, opacity: 0.7 }), 8, 6);
+      b.visible = false;
+      fx.beakerBubbles.push(add(g, b, (Math.random() - 0.5) * 0.14, 0.1 + Math.random() * 0.1, (Math.random() - 0.5) * 0.14));
+    }
+  }
+  function buildDropper(g) {
+    add(g, sph(0.048, mat(0xef4444, { roughness: 0.45 })), 0, 0.24, 0);
+    add(g, cyl(0.014, 0.014, 0.2, glass(0xe0f2fe), 14), 0, 0.1, 0);
+    fx.drip = add(g, sph(0.014, liquidMat(0x38bdf8)), 0, 0, 0);
+    fx.drip.visible = false;
+  }
+  function buildRod(g) {
+    var m = cyl(0.011, 0.011, 0.46, glass(0xf1f5f9), 12);
+    m.rotation.z = 0.42;
+    add(g, m, 0.1, 0.24, 0);
+  }
+  function buildGoggles(g) {
+    add(g, box(0.3, 0.07, 0.07, mat(0x134e4a, { roughness: 0.4 })), 0, 0.18, 0);
+    add(g, sph(0.046, glass(0xffffff)), -0.07, 0.18, 0.03);
+    add(g, sph(0.046, glass(0xffffff)), 0.07, 0.18, 0.03);
+  }
+  function buildFunnel(g) {
+    var bowl = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.22, 28, 1, true), glass(0xdbeafe));
+    bowl.rotation.x = Math.PI;
+    add(g, bowl, 0, 0.42, 0);
+    add(g, glassRim(0.18, 0.007), 0, 0.53, 0);
+    add(g, cyl(0.02, 0.02, 0.18, vesselMat(), 16), 0, 0.22, 0);
+    var paper = new THREE.Mesh(new THREE.ConeGeometry(0.15, 0.16, 18, 1, true), mat(0xf8fafc, { transparent: true, opacity: 0.88 }));
+    paper.rotation.x = Math.PI;
+    fx.filterPaper = add(g, paper, 0, 0.44, 0);
+    fx.residue = add(g, sph(0.05, mat(0xa8a29e, { roughness: 0.8 })), 0, 0.46, 0);
+    fx.filterPaper.visible = fx.residue.visible = false;
+  }
+  function buildPaper(g) {
+    fx.testPaper = add(g, box(0.16, 0.004, 0.22, mat(0xfca5a5, { roughness: 0.9 })), 0, 0.02, 0);
+  }
+  function buildSpoon(g) {
+    var steel = mat(0xcbd5e1, { metalness: 0.72, roughness: 0.24 });
+    var handle = cyl(0.009, 0.009, 0.36, steel, 10);
+    handle.rotation.z = Math.PI / 2;
+    add(g, handle, 0.16, 0.12, 0);
+    var bowl = sph(0.052, steel, 20, 12);
+    bowl.scale.set(1.25, 0.3, 0.8);
+    add(g, bowl, -0.04, 0.12, 0);
+  }
+  function buildTweezers(g) {
+    var steel = mat(0xb8c0cc, { metalness: 0.78, roughness: 0.22 });
+    [-1, 1].forEach(function (side) {
+      var arm = box(0.42, 0.012, 0.018, steel);
+      arm.rotation.z = side * 0.07;
+      add(g, arm, 0.16, 0.13 + side * 0.018, 0);
+    });
+    add(g, box(0.06, 0.045, 0.026, steel), -0.04, 0.13, 0);
+  }
+  function buildCotton(g) {
+    var cotton = new THREE.Group();
+    for (var i = 0; i < 7; i++) {
+      add(cotton, sph(0.035, mat(0xffffff, { roughness: 0.95 }), 12, 8),
+        (i % 3 - 1) * 0.035, 0.04 + Math.floor(i / 3) * 0.025, (i % 2) * 0.025);
+    }
+    g.add(cotton);
+  }
+  /* 塞进试管口的小团棉花，直径要小于试管，挡在橡皮塞内侧。 */
+  function buildCottonPlug(g) {
+    /* 疏松小团收在试管内径里，略深于管口，让橡皮塞留在它外侧。 */
+    var fluff = mat(0xfafafa, { roughness: 0.96 });
+    var shade = mat(0xd6d3d1, { roughness: 1 });
+    [[0, 0, 0, 0.032, fluff], [-0.01, 0.01, 0.004, 0.014, shade],
+      [0.011, -0.008, -0.003, 0.013, fluff], [0, 0.004, -0.008, 0.011, shade]].forEach(function (p) {
+      add(g, sph(p[3], p[4], 12, 8), p[0], p[1], p[2]);
+    });
+  }
+  function buildTestTube(g) {
+    add(g, lathe([
+      [0.002, 0.014], [0.04, 0.016], [0.044, 0.05], [0.044, 0.37],
+      [0.052, 0.392], [0.034, 0.404], [0.036, 0.37], [0.036, 0.06], [0.002, 0.04]
+    ], vesselMat(), 32), 0, 0, 0);
+    add(g, glassRim(0.046, 0.005), 0, 0.394, 0);
+  }
+  function buildAbsorber(g) {
+    add(g, lathe([
+      [0.002, 0.01], [0.12, 0.012], [0.128, 0.03], [0.12, 0.28],
+      [0.06, 0.35], [0.055, 0.44], [0.064, 0.458], [0.042, 0.458],
+      [0.046, 0.36], [0.1, 0.28], [0.1, 0.04], [0.002, 0.03]
+    ], vesselMat(), 36), 0, 0, 0);
+    add(g, glassRim(0.055, 0.005), 0, 0.45, 0);
+    add(g, cyl(0.105, 0.11, 0.12, liquidMat(0x93c5fd), 20), 0, 0.09, 0);
+  }
+  function buildSpringClamp(g) {
+    var steel = mat(0x94a3b8, { metalness: 0.8, roughness: 0.24 });
+    add(g, box(0.18, 0.025, 0.035, steel), 0, 0.1, 0);
+    var a = box(0.13, 0.018, 0.025, steel); a.rotation.z = 0.28; add(g, a, -0.08, 0.13, 0);
+    var b = box(0.13, 0.018, 0.025, steel); b.rotation.z = -0.28; add(g, b, 0.08, 0.13, 0);
+    add(g, new THREE.Mesh(new THREE.TorusGeometry(0.035, 0.008, 8, 18), steel), 0, 0.1, 0);
+  }
+  function buildConicalFlask(g) {
+    add(g, lathe([
+      [0.002, 0.012], [0.19, 0.02], [0.2, 0.05], [0.14, 0.32],
+      [0.058, 0.46], [0.052, 0.56], [0.06, 0.578], [0.04, 0.578],
+      [0.044, 0.46], [0.12, 0.32], [0.17, 0.06], [0.002, 0.04]
+    ], vesselMat(), 40), 0, 0, 0);
+    add(g, glassRim(0.052, 0.005), 0, 0.57, 0);
+    fx.massLiquid = add(g, cyl(0.13, 0.17, 0.12, liquidMat(0x2563eb), 24), 0, 0.1, 0);
+    fx.massLiquid.visible = false;
+    var inner = new THREE.Group();
+    add(inner, cyl(0.038, 0.038, 0.25, glass(0xdbeafe), 16), 0, 0.14, 0);
+    fx.innerLiquid = add(inner, cyl(0.031, 0.031, 0.1, liquidMat(0x2563eb), 14), 0, 0.08, 0);
+    inner.rotation.z = -0.48;
+    inner.position.set(0.03, 0.23, 0);
+    g.add(inner);
+    add(g, cyl(0.062, 0.04, 0.06, mat(0x6b2a14, { roughness: 0.84 }), 18), 0, 0.6, 0);
+    fx.massIron = add(g, box(0.025, 0.19, 0.025, mat(0x94a3b8, { metalness: 0.68 })), -0.1, 0.16, 0);
+    fx.massCopper = add(g, box(0.034, 0.11, 0.032, mat(0xb45309, { metalness: 0.48 })), -0.1, 0.13, 0.002);
+    fx.massCopper.visible = false;
+  }
+  function buildIndicatorSet(g) {
+    function cup(x, z, label) {
+      var cupGroup = new THREE.Group();
+      add(cupGroup, lathe([
+        [0.002, 0.008], [0.082, 0.01], [0.09, 0.024], [0.086, 0.24],
+        [0.096, 0.262], [0.074, 0.27], [0.076, 0.24], [0.076, 0.03], [0.002, 0.022]
+      ], vesselMat(), 28), 0, 0, 0);
+      add(cupGroup, glassRim(0.086, 0.005), 0, 0.264, 0);
+      var liq = add(cupGroup, cyl(0.077, 0.075, 0.1, liquidMat(0x7dd3fc), 18), 0, 0.08, 0);
+      var lab = labelSprite(label, "#e2e8f0"); lab.scale.set(0.38, 0.1, 1); lab.position.set(0, 0.34, 0);
+      cupGroup.add(lab); cupGroup.position.set(x, 0, z); g.add(cupGroup);
+      return liq;
+    }
+    fx.indAcidLitmus = cup(-0.42, 0, "盐酸+石蕊");
+    fx.indBaseLitmus = cup(-0.14, 0, "碱+石蕊");
+    fx.indAcidPhen = cup(0.18, 0, "盐酸+酚酞");
+    fx.indBasePhen = cup(0.46, 0, "碱+酚酞");
+  }
+  function buildBurnSpoon(g, substance) {
+    buildSpoon(g);
+    var sampleColor = substance === "sulfur" ? 0xeab308 : (substance === "phosphorus" ? 0xdc2626 : 0x1e293b);
+    fx.burnSample = add(g, sph(0.035, mat(sampleColor, { roughness: 0.8 })),
+      -0.04, 0.145, 0);
+    fx.burnFlame = add(g, new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.18, 18),
+      mat(0x60a5fa, { emissive: 0x3b82f6, emissiveIntensity: 2, transparent: true, opacity: 0.92 })),
+      -0.04, 0.25, 0);
+    fx.burnFlame.visible = false;
+  }
+  function buildDish(g) {
+    var porcelain = mat(0xf4f4f5, { roughness: 0.38, metalness: 0.02 });
+    add(g, lathe([
+      [0.03, 0.008], [0.16, 0.012], [0.205, 0.03], [0.19, 0.062], [0.16, 0.072], [0.14, 0.05]
+    ], porcelain, 36), 0, 0, 0);
+    fx.dishLiquid = add(g, cyl(0.15, 0.14, 0.022, liquidMat(0x7dd3fc), 20), 0, 0.04, 0);
+    fx.crystals = new THREE.Group();
+    for (var i = 0; i < 7; i++) {
+      var c = box(0.028, 0.022, 0.028, mat(0xe0f2fe, { roughness: 0.25 }));
+      c.position.set((i % 3 - 1) * 0.05, 0.055, (i < 3 ? -0.035 : 0.035));
+      c.rotation.y = i * 0.7;
+      fx.crystals.add(c);
+    }
+    fx.crystals.visible = false;
+    g.add(fx.crystals);
+  }
+  function buildGauze(g) {
+    var iron = mat(0x9ca3af, { metalness: 0.72, roughness: 0.32 });
+    var ring = new THREE.Mesh(new THREE.RingGeometry(0.15, 0.2, 28), iron);
+    ring.rotation.x = -Math.PI / 2;
+    add(g, ring, 0, 0.02, 0);
+    add(g, cyl(0.145, 0.145, 0.012, mat(0xe7e5e4, { roughness: 0.72 }), 28), 0, 0.02, 0);
+  }
+  function buildCell(g) {
+    var plastic = mat(0x6f93ad, { roughness: 0.32, metalness: 0.06 });
+    var rim = mat(0x8eacbf, { roughness: 0.22, metalness: 0.08 });
+    add(g, box(1.46, 0.04, 0.74, plastic), 0, 0.02, 0);
+    add(g, box(1.46, 0.2, 0.03, plastic), 0, 0.13, 0.355);
+    add(g, box(1.46, 0.2, 0.03, plastic), 0, 0.13, -0.355);
+    add(g, box(0.03, 0.2, 0.74, plastic), 0.715, 0.13, 0);
+    add(g, box(0.03, 0.2, 0.74, plastic), -0.715, 0.13, 0);
+    add(g, box(1.5, 0.02, 0.045, rim), 0, 0.23, 0.36);
+    add(g, box(1.5, 0.02, 0.045, rim), 0, 0.23, -0.36);
+    add(g, box(1.36, 0.08, 0.64, liquidMat(0x5aa4c4)), 0, 0.08, 0);
+    add(g, box(0.04, 0.28, 0.04, mat(0x1d4ed8, { metalness: 0.6 })), -0.35, 0.2, 0);
+    add(g, box(0.04, 0.28, 0.04, mat(0xdc2626, { metalness: 0.6 })), 0.35, 0.2, 0);
+  }
+  function buildPower(g) {
+    add(g, box(0.38, 0.16, 0.22, mat(0x111827, { roughness: 0.38 })), 0, 0.2, 0);
+    add(g, sph(0.028, mat(0xdc2626, { roughness: 0.3 })), -0.12, 0.22, 0.12);
+    add(g, sph(0.028, mat(0x1d4ed8, { roughness: 0.3 })), 0.12, 0.22, 0.12);
+    var pos = labelSprite("+", "#fecaca");
+    pos.scale.set(0.28, 0.08, 1);
+    pos.position.set(-0.12, 0.34, 0.14);
+    var neg = labelSprite("−", "#bfdbfe");
+    neg.scale.set(0.28, 0.08, 1);
+    neg.position.set(0.12, 0.34, 0.14);
+    g.add(pos, neg);
+  }
+  function buildTubes(g) {
+    function gasTube(x) {
+      var shell = lathe([
+        [0.058, 0.0], [0.05, 0.02], [0.046, 0.28], [0.002, 0.3],
+        [0.002, 0.275], [0.038, 0.26], [0.038, 0.03], [0.046, 0.0]
+      ], vesselMat(), 28);
+      add(g, shell, x, 0.29, 0);
+      add(g, glassRim(0.052, 0.005), x, 0.3, 0);
+    }
+    gasTube(-0.35);
+    gasTube(0.35);
+    fx.h2gas = add(g, cyl(0.042, 0.042, 0.18, mat(0xe0f2fe, { transparent: true, opacity: 0.55 }), 16), -0.35, 0.48, 0);
+    fx.o2gas = add(g, cyl(0.042, 0.042, 0.09, mat(0xffedd5, { transparent: true, opacity: 0.55 }), 16), 0.35, 0.40, 0);
+    fx.h2gas.visible = fx.o2gas.visible = false;
+    fx.h2 = labelSprite("− H₂", "#99f6e4"); fx.o2 = labelSprite("+ O₂", "#fdba74");
+    fx.h2.position.set(-0.35, 0.68, 0.08); fx.o2.position.set(0.35, 0.68, 0.08);
+    fx.h2.visible = fx.o2.visible = false;
+    g.add(fx.h2, fx.o2);
+    fx.ratio = labelSprite("H₂ : O₂ ≈ 2 : 1", "#99f6e4");
+    fx.ratio.scale.set(1.2, 0.22, 1);
+    fx.ratio.position.set(0, 0.1, 0.45);
+    fx.ratio.visible = false;
+    g.add(fx.ratio);
+  }
+  function buildBalance(g) {
+    add(g, box(0.44, 0.035, 0.16, mat(0x78716c, { metalness: 0.4 })), 0, 0.08, 0);
+    add(g, box(0.035, 0.16, 0.035, mat(0x57534e)), 0, 0.16, 0);
+    add(g, cyl(0.08, 0.08, 0.018, mat(0xa8a29e, { metalness: 0.5 }), 20), -0.16, 0.1, 0);
+    add(g, cyl(0.08, 0.08, 0.018, mat(0xa8a29e, { metalness: 0.5 }), 20), 0.16, 0.1, 0);
+  }
+  function buildCylinder(g) {
+    add(g, lathe([
+      [0.002, 0.008], [0.068, 0.01], [0.072, 0.39], [0.082, 0.41],
+      [0.055, 0.424], [0.06, 0.39], [0.06, 0.03], [0.002, 0.024]
+    ], vesselMat(), 32), 0, 0, 0);
+    add(g, glassRim(0.074, 0.005), 0, 0.412, 0);
+  }
+  function buildReagent(g, color, title) {
+    var col = color || 0x7c3aed;
+    add(g, lathe([
+      [0.002, 0.008], [0.055, 0.01], [0.06, 0.03], [0.05, 0.17],
+      [0.03, 0.21], [0.028, 0.25], [0.034, 0.262], [0.022, 0.262],
+      [0.024, 0.21], [0.042, 0.17], [0.046, 0.04], [0.002, 0.028]
+    ], vesselMat(), 28), 0, 0, 0);
+    var fill = cyl(0.045, 0.048, 0.12, liquidMat(col), 20);
+    add(g, fill, 0, 0.08, 0);
+    add(g, cyl(0.03, 0.03, 0.04, mat(0x44403c, { roughness: 0.5 })), 0, 0.27, 0);
+    var lab = new THREE.Mesh(new THREE.PlaneGeometry(0.08, 0.08), bottleLabel(title || "药品", col));
+    lab.position.set(0, 0.1, 0.056);
+    g.add(lab);
+  }
+  /* 螺旋铁丝从瓶口垂下，下端系火柴，伸到瓶底水层上方。 */
+  function buildWire(g) {
+    var pts = [new THREE.Vector3(0, 0.62, 0)];
+    var top = 0.42, bot = 0.16, turns = 4.5, n = 64;
+    for (var i = 0; i <= n; i++) {
+      var t = i / n;
+      var ang = t * turns * Math.PI * 2;
+      pts.push(new THREE.Vector3(Math.cos(ang) * 0.036, top - t * (top - bot), Math.sin(ang) * 0.036));
+    }
+    g.add(new THREE.Mesh(
+      new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 96, 0.006, 6, false),
+      mat(0x94a3b8, { metalness: 0.75, roughness: 0.28 })
+    ));
+    add(g, cyl(0.005, 0.005, 0.04, mat(0xf5f0e6, { roughness: 0.75 }), 8), 0, bot - 0.02, 0);
+    add(g, sph(0.016, mat(0xb91c1c, { roughness: 0.5 })), 0, bot - 0.045, 0);
+  }
+  function buildCover(g) {
+    add(g, cyl(0.14, 0.14, 0.016, glass(0xe2e8f0), 24), 0, 0.02, 0);
+  }
+  function buildCandleBeaker(g) {
+    add(g, lathe([
+      [0.002, 0.012], [0.24, 0.014], [0.26, 0.03], [0.25, 0.5],
+      [0.28, 0.53], [0.23, 0.545], [0.24, 0.5], [0.24, 0.04], [0.002, 0.03]
+    ], vesselMat(), 40), 0, 0, 0);
+    add(g, glassRim(0.255, 0.008), 0, 0.532, 0);
+    function candle(x, h, flameKey) {
+      add(g, cyl(0.032, 0.034, h, mat(0xf8fafc, { roughness: 0.7 }), 12), x, h / 2 + 0.02, 0);
+      add(g, cyl(0.004, 0.004, 0.028, mat(0x44403c), 6), x, h + 0.03, 0);
+      var flame = add(g, sph(0.024, mat(0xf97316, { emissive: 0xea580c, emissiveIntensity: 0.85 })), x, h + 0.07, 0);
+      var inner = add(g, sph(0.012, mat(0xfde68a, { emissive: 0xfacc15, emissiveIntensity: 0.9 })), x, h + 0.065, 0);
+      flame.visible = inner.visible = false;
+      fx[flameKey] = flame;
+      fx[flameKey + "Inner"] = inner;
+    }
+    candle(-0.09, 0.16, "flameLow");
+    candle(0.1, 0.32, "flameHigh");
+    fx.co2Low = add(g, cyl(0.24, 0.23, 0.12, mat(0x64748b, { transparent: true, opacity: 0.32 }), 20), 0, 0.08, 0);
+    fx.co2Mid = add(g, cyl(0.24, 0.23, 0.26, mat(0x94a3b8, { transparent: true, opacity: 0.28 }), 20), 0, 0.16, 0);
+    fx.co2Low.visible = fx.co2Mid.visible = false;
+    var lo = labelSprite("较低处", "#334155");
+    lo.scale.set(0.42, 0.1, 1);
+    lo.position.set(-0.09, 0.04, 0.28);
+    var hi = labelSprite("较高处", "#334155");
+    hi.scale.set(0.42, 0.1, 1);
+    hi.position.set(0.1, 0.04, 0.28);
+    g.add(lo, hi);
+  }
+  function buildConditionBeaker(g) {
+    add(g, lathe([
+      [0.002, 0.012], [0.24, 0.014], [0.26, 0.03], [0.25, 0.5],
+      [0.28, 0.53], [0.23, 0.545], [0.24, 0.5], [0.24, 0.04], [0.002, 0.03]
+    ], vesselMat(), 40), 0, 0, 0);
+    add(g, glassRim(0.255, 0.008), 0, 0.532, 0);
+    fx.hotWater = add(g, cyl(0.24, 0.23, 0.28, liquidMat(0xfb923c), 20), 0, 0.16, 0);
+    add(g, box(0.5, 0.012, 0.28, mat(0xb45309, { metalness: 0.45 })), 0, 0.34, 0);
+    fx.wpAir = add(g, sph(0.03, mat(0xf8fafc)), -0.12, 0.38, 0);
+    fx.flameWp = add(g, sph(0.022, mat(0xf97316, { emissive: 0xea580c, emissiveIntensity: 0.85 })), -0.12, 0.44, 0);
+    fx.rpAir = add(g, sph(0.03, mat(0xdc2626)), 0.12, 0.38, 0);
+    fx.wpWater = add(g, sph(0.028, mat(0xf8fafc)), 0, 0.12, 0);
+    fx.wpO2 = add(g, sph(0.02, mat(0xf97316, { emissive: 0xea580c, emissiveIntensity: 0.7 })), 0, 0.2, 0);
+    fx.hotWater.visible = fx.wpAir.visible = fx.flameWp.visible = fx.rpAir.visible = fx.wpWater.visible = fx.wpO2.visible = false;
+  }
+  function buildRustTubes(g) {
+    function tube(x, label, withWater, oil) {
+      var shell = lathe([
+        [0.002, 0.012], [0.048, 0.014], [0.05, 0.4], [0.058, 0.418],
+        [0.04, 0.43], [0.042, 0.39], [0.042, 0.04], [0.002, 0.03]
+      ], vesselMat(), 24);
+      add(g, shell, x, 0, 0);
+      add(g, glassRim(0.052, 0.004), x, 0.418, 0);
+      if (withWater) add(g, cyl(0.04, 0.04, 0.16, liquidMat(0x38bdf8), 16), x, 0.1, 0);
+      if (oil) add(g, cyl(0.04, 0.04, 0.03, liquidMat(0xca8a04), 16), x, 0.2, 0);
+      var nail = add(g, box(0.018, 0.12, 0.018, mat(0x94a3b8, { metalness: 0.55 })), x, 0.12, 0);
+      if (label === "水+空气") fx.rustNail = nail;
+      var t = labelSprite(label, "#334155");
+      t.scale.set(0.5, 0.12, 1);
+      t.position.set(x, 0.02, 0.12);
+      g.add(t);
+    }
+    tube(-0.28, "水+空气", true, false);
+    tube(0, "油封隔空气", true, true);
+    tube(0.28, "干燥剂", false, false);
+  }
+
+  function buildLime(g) {
+    add(g, lathe([
+      [0.002, 0.01], [0.15, 0.012], [0.162, 0.026], [0.155, 0.28],
+      [0.172, 0.308], [0.145, 0.322], [0.148, 0.29], [0.148, 0.04], [0.002, 0.028]
+    ], vesselMat(), 40), 0, 0, 0);
+    add(g, glassRim(0.16, 0.006), 0, 0.312, 0);
+    var spout = box(0.055, 0.024, 0.036, vesselMat());
+    spout.rotation.z = -0.4;
+    add(g, spout, 0.175, 0.31, 0);
+    fx.limeLiquid = add(g, cyl(0.148, 0.138, 0.12, liquidMat(0xe8f1f8), 20), 0, 0.1, 0);
+  }
+
+  function tileFloor() {
+    var geo = new THREE.PlaneGeometry(18, 18, 18, 18);
+    var pos = geo.attributes.position;
+    var colors = [];
+    for (var i = 0; i < pos.count; i++) {
+      var x = pos.getX(i), y = pos.getY(i);
+      var odd = (Math.floor(x + 9) + Math.floor(y + 9)) % 2;
+      var c = odd ? 0.16 : 0.13;
+      colors.push(c, c + 0.01, c + 0.03);
+    }
+    geo.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+    var mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
+      vertexColors: true, roughness: 0.88, metalness: 0.04
+    }));
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.receiveShadow = true;
+    return mesh;
+  }
+
+  function buildRoom() {
+    root = new THREE.Group();
+    scene.add(root);
+    add(root, tileFloor(), 0, 0, 0);
+    var wall = mat(0xd7e3ee, { roughness: 0.9 });
+    add(root, box(14, 5.2, 0.12, wall), 0, 2.5, -3.4);
+    add(root, box(0.12, 5.2, 8, wall), -5.4, 2.5, 0);
+    add(root, box(0.12, 5.2, 8, wall), 5.4, 2.5, 0);
+    var win = box(2.6, 1.55, 0.04, mat(0x9ecfff, { roughness: 0.08, metalness: 0.15, transparent: true, opacity: 0.55 }));
+    add(root, win, 1.5, 2.85, -3.33);
+    add(root, box(2.76, 0.06, 0.08, mat(0xf8fafc)), 1.5, 3.64, -3.32);
+    add(root, box(2.76, 0.06, 0.08, mat(0xf8fafc)), 1.5, 2.06, -3.32);
+    var cabinet = mat(0x3f4a57, { roughness: 0.48, metalness: 0.12 });
+    add(root, box(3.4, 1.7, 0.42, cabinet), -2.6, 2.55, -3.12);
+    add(root, box(1.5, 0.62, 0.03, glass(0xcfe8ff)), -3.35, 2.7, -2.9);
+    add(root, box(1.5, 0.62, 0.03, glass(0xcfe8ff)), -1.85, 2.7, -2.9);
+    [[-3.4, 0x7c3aed], [-3.05, 0x16a34a], [-2.7, 0xdc2626], [-2.35, 0x0284c7], [-2.0, 0xd97706]].forEach(function (b) {
+      add(root, cyl(0.045, 0.05, 0.16 + Math.random() * 0.06, mat(b[1], { roughness: 0.35 })), b[0], 2.05, -2.88);
+    });
+    var epoxy = mat(0x4a545f, { roughness: 0.34, metalness: 0.16 });
+    add(root, box(5.4, 0.12, 2.2, epoxy), 0, 0.98, 0.05);
+    add(root, box(5.5, 0.06, 0.08, mat(0x1c2128, { roughness: 0.5 })), 0, 0.92, 1.14);
+    var oak = mat(0x6b4a2b, { roughness: 0.62 });
+    [[-2.4, 0.9], [2.4, 0.9], [-2.4, -0.8], [2.4, -0.8]].forEach(function (p) {
+      add(root, box(0.12, 0.92, 0.12, oak), p[0], 0.46, p[1]);
+    });
+    add(root, box(5.3, 0.7, 2.05, mat(0x3b2a1a, { roughness: 0.7 })), 0, 0.35, 0.05);
+    var led = box(3.2, 0.03, 0.06, mat(0xf8fafc, { emissive: 0xf1f5ff, emissiveIntensity: 1.4 }));
+    add(root, led, -2.4, 3.38, -2.88);
+    add(root, cyl(0.05, 0.05, 0.08, mat(0x94a3b8, { metalness: 0.6 })), 2.25, 1.08, 0.9);
+    add(root, cyl(0.012, 0.012, 0.12, mat(0xcbd5e1, { metalness: 0.7 })), 2.25, 1.18, 0.9);
+  }
+
+  function makeFx(kind) {
+    fx.bubbles = [];
+    for (var i = 0; i < 12; i++) {
+      var b = sph(0.014, mat(0xffffff, { transparent: true, opacity: 0.75 }), 8, 6);
+      b.visible = false;
+      fx.bubbles.push(add(root, b, 1.0, 1.2, 0.2));
+    }
+    fx.sparks = [];
+    for (i = 0; i < 8; i++) {
+      var s = sph(0.012, mat(0xf97316, { emissive: 0xf97316, emissiveIntensity: 0.9 }), 8, 6);
+      s.visible = false;
+      fx.sparks.push(add(root, s, 1.1, 1.4, 0));
+    }
+    fx.smoke = [];
+    for (i = 0; i < 10; i++) {
+      var sm = sph(0.035 + (i % 3) * 0.008,
+        mat(0xffffff, { transparent: true, opacity: 0.34, roughness: 1 }), 10, 8);
+      sm.visible = false;
+      fx.smoke.push(add(root, sm, 0.05 + (i % 2) * 0.03, 1.48 + (i % 5) * 0.06, 0.06));
+    }
+    fx.charcoalLight = new THREE.PointLight(0xffffff, 0, 2.8);
+    fx.charcoalLight.position.set(0.05, 1.55, 0.06);
+    root.add(fx.charcoalLight);
+    fx.jet = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.12, 10), mat(0x38bdf8, { emissive: 0x38bdf8, emissiveIntensity: 0.6 }));
+    fx.jet.position.set(-0.55, 1.45, 0.1);
+    fx.jet.visible = false;
+    root.add(fx.jet);
+    fx.pop = labelSprite("爆鸣！", "#fecaca");
+    fx.pop.scale.set(0.95, 0.28, 1);
+    fx.pop.position.set(1.6, 1.7, -0.2);
+    fx.pop.visible = false;
+    root.add(fx.pop);
+    if (kind === "evaporation") {
+      fx.steam = [];
+      for (i = 0; i < 8; i++) {
+        var st = sph(0.03, mat(0xcbd5e1, { transparent: true, opacity: 0.32 }), 8, 6);
+        st.visible = false;
+        fx.steam.push(add(root, st, (i - 3) * 0.05, 1.78, 0.05));
+      }
+    }
+    fx.stream = cyl(0.012, 0.008, 0.32, liquidMat(0x7dd3fc), 10);
+    fx.stream.visible = false;
+    root.add(fx.stream);
+    fx.pourer = new THREE.Group();
+    buildReagent(fx.pourer, 0x38bdf8, "加入");
+    fx.pourer.visible = false;
+    root.add(fx.pourer);
+  }
+
+  function layout(kind, expId) {
+    var y = 1.05;
+    var id = expId || kind || "oxygen";
+    function S(name, title, x, z, c) { makeSlot(name, title, x, y, z, c || 0x2dd4bf); }
+    function placeHose(hid, pts, axis) {
+      var o = pts[0];
+      var mid = pts[Math.floor(pts.length / 2)];
+      S(hid, "导管", mid[0], mid[2], 0x94a3b8);
+      pieceGroup(hid, hose(pts, axis), o[0], o[1], o[2]);
+    }
+    function mouthAxis(tilt) {
+      return [-Math.sin(tilt), Math.cos(tilt), 0];
+    }
+    function invertBottle(g) {
+      buildInvBottle(g);
+    }
+    function tiltTube(angle) {
+      return function (g) {
+        buildTube(g, angle);
+        g.userData.tilt0 = angle;
+      };
+    }
+    var L = {
+      prep_oxygen_kmno4: function () {
+        /* 固体加热：灯在闭口端下，试管口略向下，导管通入水槽倒扣集气瓶。 */
+        var sx = -1.65, sz = 0;
+        var clampX = sx + 0.46, clampY = y + 0.42;
+        var tilt = -1.66;
+        var tx = clampX - 0.28, ty = clampY - 0.006, tz = sz;
+        var mouth = [tx + 0.53, ty - 0.047, tz];
+        var troughX = 0.22, troughZ = 0.08;
+        fx.collectAt = { x: troughX, y: 1.18, z: troughZ };
+        S("stand", "铁架台", sx, sz);
+        S("tube", "试管", tx, tz, 0x38bdf8);
+        S("lamp", "酒精灯", tx + 0.02, 0.08, 0xf59e0b);
+        S("trough", "水槽", troughX, 0.22, 0x0ea5e9);
+        S("bottle", "集气瓶", troughX, -0.2, 0x38bdf8);
+        S("splint", "木条", 1.45, -0.28, 0xf59e0b);
+        /* 药匙放在台面左前角，不要搁在酒精灯和水槽之间，避免看成棉花。 */
+        S("spoon", "药匙", -2.15, 0.62, 0xcbd5e1);
+        /* 棉花在试管口内侧、橡皮塞之前。 */
+        var cottonAt = 0.46;
+        S("cotton", "棉花", tx - Math.sin(tilt) * cottonAt, tz, 0xf8fafc);
+        S("reagent", "药品", sx, -0.38, 0xa78bfa);
+        pieceGroup("stand", function (g) { buildStand(g, tilt); }, sx, y, sz);
+        pieceGroup("tube", tiltTube(tilt), tx, ty, tz);
+        pieceGroup("lamp", buildLamp, tx + 0.02, y, 0.08);
+        placeHose("delivery", [
+          mouth,
+          [mouth[0] + 0.48, mouth[1] - 0.02, 0.02],
+          [troughX - 0.42, 1.17, troughZ],
+          [troughX - 0.05, 1.185, troughZ],
+          [troughX, 1.21, troughZ]
+        ], mouthAxis(tilt));
+        pieceGroup("trough", buildTrough, troughX, y, troughZ);
+        pieceGroup("bottle", invertBottle, troughX, y + 0.12, troughZ);
+        pieceGroup("splint", buildSplint, 1.45, y, -0.28);
+        var spoon = pieceGroup("spoon", buildSpoon, -2.15, y, 0.62);
+        spoon.rotation.y = 0.8;
+        var plug = new THREE.Group();
+        buildCottonPlug(plug);
+        /* 管轴上、距管口约两厘米的内侧。z 必须是 0，否则会鼓出玻璃。 */
+        plug.position.set(0, 0.4, 0);
+        plug.visible = false;
+        fx.tube.add(plug);
+        pieces.cotton = plug;
+        plug.name = "cotton-plug";
+      },
+      nh4hco3_decomp: function () {
+        var sx = -1.45, sz = 0;
+        var clampX = sx + 0.46, clampY = y + 0.42;
+        var tilt = -1.66;
+        var tx = clampX - 0.28, ty = clampY - 0.006, tz = sz;
+        var mouth = [tx + 0.53, ty - 0.047, tz];
+        S("stand", "铁架台", sx, sz);
+        S("tube", "试管", tx, tz, 0x38bdf8);
+        S("lamp", "酒精灯", tx + 0.02, 0.08, 0xf59e0b);
+        S("paper", "试纸", mouth[0] + 0.08, -0.12, 0xf87171);
+        S("lime_beaker", "石灰水", mouth[0] + 0.38, 0.08, 0x94a3b8);
+        S("reagent", "药品", sx, -0.38, 0xa78bfa);
+        pieceGroup("stand", function (g) { buildStand(g, tilt); }, sx, y, sz);
+        pieceGroup("tube", tiltTube(tilt), tx, ty, tz);
+        pieceGroup("lamp", buildLamp, tx + 0.02, y, 0.08);
+        pieceGroup("paper", buildPaper, mouth[0] + 0.08, y + 0.08, -0.12);
+        pieceGroup("lime_beaker", buildLime, mouth[0] + 0.38, y, 0.08);
+        placeHose("delivery", [
+          mouth,
+          [mouth[0] + 0.2, mouth[1] - 0.02, 0.03],
+          [mouth[0] + 0.38, y + 0.24, 0.08],
+          [mouth[0] + 0.38, y + 0.08, 0.08]
+        ], mouthAxis(tilt));
+      },
+      prep_hydrogen: function () {
+        /* 固液不加热：试管直立夹在铁架台，导管通入水槽倒扣集气瓶。 */
+        var sx = -1.55, sz = 0;
+        var tubeX = sx + 0.46;
+        var mouth = [tubeX, y + 0.53, sz];
+        var troughX = 0.22, troughZ = 0.08;
+        fx.collectAt = { x: troughX, y: 1.18, z: troughZ };
+        S("stand", "铁架台", sx, sz);
+        S("tube", "试管", tubeX, sz, 0x38bdf8);
+        S("trough", "水槽", troughX, 0.22, 0x0ea5e9);
+        S("bottle", "集气瓶", troughX, -0.2, 0x38bdf8);
+        S("splint", "木条", 1.4, -0.28, 0xf59e0b);
+        S("test_tube", "验纯试管", 1.08, 0.12, 0x38bdf8);
+        S("reagent", "药品", sx, -0.38, 0xa78bfa);
+        pieceGroup("stand", function (g) { buildStand(g, 0); }, sx, y, sz);
+        pieceGroup("tube", tiltTube(0), tubeX, y, sz);
+        placeHose("delivery", [
+          mouth,
+          [mouth[0] + 0.4, mouth[1] - 0.02, 0.02],
+          [troughX - 0.42, 1.17, troughZ],
+          [troughX - 0.05, 1.185, troughZ],
+          [troughX, 1.21, troughZ]
+        ], [0, 1, 0]);
+        pieceGroup("trough", buildTrough, troughX, y, troughZ);
+        pieceGroup("bottle", invertBottle, troughX, y + 0.12, troughZ);
+        pieceGroup("splint", buildSplint, 1.4, y, -0.28);
+        var purity = pieceGroup("test_tube", buildTestTube, 1.08, y, 0.12);
+        purity.userData.home = purity.position.clone();
+        /* 验纯、点燃时改走这根：管口露在空气里，不伸进水下的集气瓶。 */
+        var openEnd = [mouth[0] + 0.62, mouth[1] + 0.12, 0.04];
+        fx.h2OpenEnd = openEnd;
+        fx.h2JetAt = { x: openEnd[0] + 0.07, y: openEnd[1] + 0.04, z: openEnd[2] };
+        fx.h2Open = pieceGroup("h2_open", hose([
+          mouth,
+          [mouth[0] + 0.28, mouth[1] + 0.06, 0.02],
+          openEnd
+        ], [0, 1, 0]), mouth[0], mouth[1], mouth[2]);
+        fx.h2Open.visible = false;
+      },
+      prep_co2: function () {
+        /* 向上排空气：试管直立，导管伸入正放集气瓶底部，瓶口盖玻璃片，石灰水烧杯在右侧。 */
+        var sx = -1.55, sz = 0;
+        var tubeX = sx + 0.46;
+        var mouth = [tubeX, y + 0.53, sz];
+        var bx = -0.08, bz = 0.04;
+        fx.collectAt = { x: bx, y: y + 0.06, z: bz };
+        S("stand", "铁架台", sx, sz);
+        S("tube", "试管", tubeX, sz, 0x38bdf8);
+        S("bottle", "集气瓶", bx, bz, 0x38bdf8);
+        S("lime_beaker", "石灰水", bx + 0.78, 0.12, 0x94a3b8);
+        S("splint", "木条", 1.42, -0.28, 0xf59e0b);
+        S("reagent", "药品", sx, -0.38, 0xa78bfa);
+        pieceGroup("stand", function (g) { buildStand(g, 0); }, sx, y, sz);
+        pieceGroup("tube", tiltTube(0), tubeX, y, sz);
+        placeHose("delivery", [
+          mouth,
+          [mouth[0] + 0.22, mouth[1], 0.02],
+          [bx, mouth[1] - 0.04, bz],
+          [bx, y + 0.06, bz]
+        ], [0, 1, 0]);
+        pieceGroup("bottle", function (g) {
+          buildBottle(g);
+          add(g, cyl(0.13, 0.13, 0.014, glass(0xe2e8f0), 24), 0, 0.47, 0);
+        }, bx, y, bz);
+        pieceGroup("lime_beaker", buildLime, bx + 0.78, y, 0.12);
+        pieceGroup("splint", buildSplint, 1.42, y, -0.28);
+      },
+      iron_in_oxygen: function () {
+        S("lamp", "酒精灯", -0.95, 0.1, 0xf59e0b);
+        S("wire", "铁丝", 0.05, -0.22, 0xfb7185);
+        S("bottle", "集气瓶", 0.05, 0.08, 0x38bdf8);
+        S("cover", "玻璃片", 0.72, -0.18, 0xcbd5e1);
+        S("reagent", "药品", -0.95, -0.35, 0xa78bfa);
+        pieceGroup("lamp", buildLamp, -0.95, y, 0.1);
+        pieceGroup("bottle", buildBottle, 0.05, y, 0.06);
+        /* 直柄伸出瓶口，螺旋和火柴头在瓶内、水面之上。 */
+        pieceGroup("wire", buildWire, 0.05, y, 0.06);
+        pieceGroup("cover", buildCover, 0.72, y, -0.18);
+        fx.collectAt = { x: 0.05, y: 1.4, z: 0.06 };
+      },
+      neutralization: function () {
+        S("goggles", "护目镜", -1.25, -0.18);
+        S("beaker", "烧杯", 0, 0.08);
+        S("dropper", "胶头滴管", 0, -0.22, 0xf87171);
+        S("rod", "玻璃棒", 0.32, 0.1, 0x94a3b8);
+        S("reagent", "药品", 0.85, -0.22, 0xa78bfa);
+        pieceGroup("goggles", buildGoggles, -1.25, y, -0.18);
+        pieceGroup("beaker", buildBeaker, 0, y, 0.06);
+        pieceGroup("dropper", buildDropper, 0, y + 0.32, 0.06);
+        pieceGroup("rod", buildRod, 0.16, y, 0.08);
+      },
+      metal_acid: function () {
+        S("goggles", "护目镜", -1.25, -0.18);
+        S("beaker", "烧杯", 0, 0.06);
+        S("rod", "玻璃棒", 0.18, 0.08, 0x94a3b8);
+        S("reagent", "药品", 0.85, -0.22, 0xa78bfa);
+        pieceGroup("goggles", buildGoggles, -1.25, y, -0.18);
+        pieceGroup("beaker", buildBeaker, 0, y, 0.06);
+        pieceGroup("rod", buildRod, 0.16, y, 0.08);
+      },
+      solution_prep: function () {
+        S("balance", "天平", -1.25, 0.1, 0xf59e0b);
+        S("paper", "称量纸", -1.38, 0.1, 0xcbd5e1);
+        S("cylinder", "量筒", 0.55, 0.1, 0x38bdf8);
+        S("beaker", "烧杯", 0, 0.06);
+        S("rod", "玻璃棒", 0.18, 0.08, 0x94a3b8);
+        S("reagent", "药品", 1.1, -0.22, 0xa78bfa);
+        pieceGroup("balance", buildBalance, -1.25, y, 0.1);
+        pieceGroup("paper", buildPaper, -1.38, y + 0.12, 0.1);
+        pieceGroup("cylinder", buildCylinder, 0.55, y, 0.1);
+        pieceGroup("beaker", buildBeaker, 0, y, 0.06);
+        pieceGroup("rod", buildRod, 0.16, y, 0.08);
+      },
+      electrolysis: function () {
+        S("cell", "水槽", 0.2, 0.16, 0x0ea5e9);
+        S("power", "电源", -1.35, 0.08, 0xf59e0b);
+        S("tubes", "集气管", 0.2, -0.2, 0x38bdf8);
+        S("splint", "木条", 1.45, -0.28, 0xf59e0b);
+        S("reagent", "水", 0.2, -0.4, 0xa78bfa);
+        pieceGroup("cell", buildCell, 0.2, y, 0.08);
+        pieceGroup("power", buildPower, -1.35, y, 0.08);
+        pieceGroup("tubes", buildTubes, 0.2, y, 0.08);
+        pieceGroup("splint", buildSplint, 1.45, y, -0.28);
+      },
+      filtration: function () {
+        var sx = -0.35, sz = 0;
+        var fx_ = sx + 0.46;
+        S("stand", "铁架台", sx, sz);
+        S("funnel", "漏斗", fx_, -0.2, 0x38bdf8);
+        S("paper", "滤纸", 0.95, -0.22, 0xcbd5e1);
+        S("source_beaker", "浊液烧杯", -1.05, -0.12, 0xa8a29e);
+        S("beaker", "烧杯", fx_, 0.22, 0x94a3b8);
+        S("rod", "玻璃棒", fx_ + 0.12, -0.12, 0x94a3b8);
+        S("reagent", "浊液", 0.95, 0.12, 0xa78bfa);
+        pieceGroup("stand", buildStand, sx, y, sz);
+        pieceGroup("funnel", buildFunnel, fx_, y, sz);
+        pieceGroup("paper", buildPaper, 0.95, y, -0.22);
+        /* 烧杯口靠玻璃棒，棒靠滤纸，漏斗颈靠接收烧杯内壁。 */
+        var src = pieceGroup("source_beaker", buildBeaker, fx_ - 0.47, y + 0.34, 0.12);
+        src.rotation.z = -0.7;
+        pieceGroup("beaker", function (g) { buildBeaker(g); fx.filtrate = fx.liquid; }, fx_ + 0.1, y, sz);
+        pieceGroup("rod", buildRod, fx_ - 0.06, y + 0.32, 0.14);
+      },
+      evaporation: function () {
+        S("stand", "三脚架", 0, 0.06, 0x94a3b8);
+        S("gauze", "陶土网", 0, 0.06, 0xcbd5e1);
+        S("dish", "蒸发皿", 0, 0.06, 0x38bdf8);
+        S("lamp", "酒精灯", 0, 0.06, 0xf59e0b);
+        S("rod", "玻璃棒", 0.38, -0.06, 0x94a3b8);
+        S("reagent", "溶液", 1.05, -0.18, 0xa78bfa);
+        pieceGroup("lamp", buildLamp, 0, y, 0.06);
+        /* 灯焰顶约在桌面上方 0.46，网和蒸发皿要高于焰尖。 */
+        pieceGroup("stand", function (g) {
+          add(g, box(0.7, 0.035, 0.035, mat(0x64748b, { metalness: 0.55 })), 0, 0.52, 0.16);
+          add(g, box(0.035, 0.52, 0.035, mat(0x475569, { metalness: 0.55 })), -0.28, 0.26, 0.16);
+          add(g, box(0.035, 0.52, 0.035, mat(0x475569, { metalness: 0.55 })), 0.28, 0.26, 0.16);
+          add(g, box(0.035, 0.52, 0.035, mat(0x475569, { metalness: 0.55 })), 0, 0.26, -0.2);
+        }, 0, y, 0.06);
+        pieceGroup("gauze", buildGauze, 0, y + 0.54, 0.06);
+        pieceGroup("dish", buildDish, 0, y + 0.57, 0.06);
+        pieceGroup("rod", buildRod, 0.38, y + 0.55, -0.06);
+      },
+      metal_oxide_acid: function () {
+        var tilt = -0.92;
+        var tx = 0.02, ty = y + 0.12, tz = 0.06;
+        S("tube", "试管", tx, tz, 0x38bdf8);
+        S("lamp", "酒精灯", tx, 0.22, 0xf59e0b);
+        S("rod", "试管夹", tx + 0.35, -0.18, 0x94a3b8);
+        S("spoon", "药匙或纸槽", 0.82, -0.2, 0x94a3b8);
+        S("reagent", "药品", -0.95, 0.08, 0xa78bfa);
+        pieceGroup("lamp", buildLamp, tx, y, tz);
+        pieceGroup("tube", tiltTube(tilt), tx, ty, tz);
+        pieceGroup("rod", buildClamp, tx + 0.15, ty + 0.24, tz);
+        pieceGroup("spoon", buildSpoon, 0.82, y, -0.2);
+      },
+      co2_candles: function () {
+        S("bottle", "二氧化碳", -0.95, 0.08, 0x64748b);
+        S("beaker", "烧杯", 0.35, 0.08, 0x38bdf8);
+        pieceGroup("bottle", buildBottle, -0.95, y, 0.08);
+        pieceGroup("beaker", buildCandleBeaker, 0.35, y, 0.08);
+      },
+      air_oxygen: function () {
+        S("lamp", "酒精灯", -1.05, 0.1, 0xf59e0b);
+        S("wire", "燃烧匙", 0.02, -0.22, 0xfb7185);
+        S("bottle", "集气瓶", 0.02, 0.08, 0x38bdf8);
+        S("beaker", "烧杯", 0.85, 0.1, 0x0ea5e9);
+        S("delivery", "密闭导管", 0.43, 0.08, 0x94a3b8);
+        S("clamp", "弹簧夹", 0.48, -0.16, 0xcbd5e1);
+        S("reagent", "红磷", -1.05, -0.35, 0xa78bfa);
+        pieceGroup("lamp", buildLamp, -1.05, y, 0.1);
+        pieceGroup("bottle", function (g) {
+          buildBottle(g);
+          for (var i = 1; i < 5; i++) {
+            var mark = new THREE.Mesh(new THREE.TorusGeometry(0.116, 0.003, 6, 32),
+              mat(0x0f766e, { emissive: 0x0f766e, emissiveIntensity: 0.3 }));
+            mark.rotation.x = Math.PI / 2;
+            add(g, mark, 0, 0.08 + i * 0.065, 0);
+          }
+        }, 0.02, y, 0.06);
+        /* 燃烧匙从瓶口伸入，勺头在瓶内，柄留在塞外。 */
+        pieceGroup("wire", function (g) {
+          var steel = mat(0xcbd5e1, { metalness: 0.72, roughness: 0.24 });
+          add(g, cyl(0.009, 0.009, 0.42, steel, 10), 0, 0.36, 0);
+          var bowl = sph(0.042, steel, 16, 10);
+          bowl.scale.set(1.15, 0.32, 0.85);
+          add(g, bowl, 0, 0.13, 0);
+          fx.burnSample = add(g, sph(0.028, mat(0xdc2626, { roughness: 0.8 })), 0, 0.15, 0);
+          fx.burnFlame = add(g, new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.16, 16),
+            mat(0x60a5fa, { emissive: 0x3b82f6, emissiveIntensity: 2, transparent: true, opacity: 0.92 })), 0, 0.26, 0);
+          fx.burnFlame.visible = false;
+        }, 0.02, y, 0.06);
+        pieceGroup("beaker", buildBeaker, 0.85, y, 0.08);
+        placeHose("delivery", [
+          [0.1, y + 0.46, 0.06],
+          [0.42, y + 0.48, 0.06],
+          [0.85, y + 0.28, 0.08],
+          [0.85, y + 0.1, 0.08]
+        ], [1, 0, 0]);
+        var clamp = pieceGroup("clamp", buildSpringClamp, 0.3, y + 0.38, 0.06);
+        clamp.rotation.y = Math.PI / 2;
+        fx.collectAt = { x: 0.02, y: 1.4, z: 0.06 };
+      },
+      combustion_conditions: function () {
+        S("beaker", "烧杯", 0.05, 0.08, 0x38bdf8);
+        S("cover", "薄铜片", 0.05, -0.18, 0xb45309);
+        S("delivery", "通氧导管", -0.62, 0.08, 0x94a3b8);
+        S("tweezers", "镊子", 0.82, -0.2, 0x94a3b8);
+        S("reagent", "磷和氧气", -1.0, -0.24, 0xa78bfa);
+        pieceGroup("beaker", buildConditionBeaker, 0.05, y, 0.08);
+        pieceGroup("cover", buildCover, 0.72, y, -0.18);
+        pieceGroup("tweezers", buildTweezers, 0.82, y, -0.2);
+        placeHose("delivery", [
+          [-0.72, y + 0.42, 0.08],
+          [-0.42, y + 0.42, 0.08],
+          [0.05, y + 0.2, 0.08],
+          [0.05, y + 0.1, 0.08]
+        ]);
+      },
+      charcoal_in_oxygen: function () {
+        S("lamp", "酒精灯", -1.05, 0.08, 0xf59e0b);
+        S("wire", "坩埚钳", 0.02, -0.2, 0x94a3b8);
+        S("bottle", "氧气瓶", 0.02, 0.08, 0x38bdf8);
+        S("lime_beaker", "石灰水", 0.86, 0.08, 0xe2e8f0);
+        S("reagent", "木炭和氧气", -1.05, -0.34, 0xa78bfa);
+        pieceGroup("lamp", buildLamp, -1.05, y, 0.08);
+        pieceGroup("bottle", buildBottle, 0.02, y, 0.06);
+        pieceGroup("wire", function (g) { buildBurnSpoon(g, "charcoal"); }, 0.02, y + 0.18, 0.06);
+        pieceGroup("lime_beaker", buildLime, 0.86, y, 0.08);
+        fx.collectAt = { x: 0.02, y: 1.45, z: 0.06 };
+      },
+      sulfur_in_oxygen: function () {
+        S("lamp", "酒精灯", -1.18, 0.08, 0xf59e0b);
+        S("wire", "燃烧匙", -0.12, -0.18, 0x94a3b8);
+        S("bottle", "氧气瓶", -0.12, 0.08, 0x38bdf8);
+        S("goggles", "护目镜", 0.72, -0.2, 0x2dd4bf);
+        S("absorber", "尾气吸收瓶", 0.95, 0.1, 0x60a5fa);
+        S("reagent", "硫和氧气", -1.18, -0.34, 0xa78bfa);
+        pieceGroup("lamp", buildLamp, -1.18, y, 0.08);
+        pieceGroup("bottle", buildBottle, -0.12, y, 0.06);
+        pieceGroup("wire", function (g) {
+          var steel = mat(0xcbd5e1, { metalness: 0.72, roughness: 0.24 });
+          add(g, cyl(0.008, 0.008, 0.34, steel, 10), 0, 0.4, 0);
+          var bowl = sph(0.036, steel, 14, 10);
+          bowl.scale.set(1.1, 0.32, 0.8);
+          add(g, bowl, 0, 0.2, 0);
+          fx.burnSample = add(g, sph(0.026, mat(0xeab308, { roughness: 0.75 })), 0, 0.22, 0);
+          fx.burnFlame = add(g, new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.14, 14),
+            mat(0x60a5fa, { emissive: 0x3b82f6, emissiveIntensity: 2, transparent: true, opacity: 0.92 })), 0, 0.32, 0);
+          fx.burnFlame.visible = false;
+        }, -0.12, y, 0.06);
+        pieceGroup("goggles", buildGoggles, 0.72, y, -0.2);
+        var absorber = pieceGroup("absorber", buildAbsorber, 0.95, y, 0.1);
+        /* 导管从瓶口沿前方通入碱液液面下，避免被瓶壁挡住看不见。 */
+        buildDeliveryPath(absorber, [
+          [-0.9, 0.5, 0.1],
+          [-0.4, 0.58, 0.12],
+          [0.04, 0.5, 0.1],
+          [0.04, 0.06, 0.08]
+        ]);
+      },
+      charcoal_reduce_cuo: function () {
+        var sx = -1.42, tx = -1.22, ty = y + 0.42, tilt = -1.66;
+        var mouth = [tx + 0.53, ty - 0.047, 0.02];
+        S("stand", "铁架台", sx, 0.02);
+        S("tube", "反应试管", tx, 0.02, 0x38bdf8);
+        S("lamp", "酒精灯", tx - 0.05, 0.14, 0xf59e0b);
+        S("delivery", "导管", -0.28, 0.02, 0x94a3b8);
+        S("lime_beaker", "石灰水", 0.45, 0.08, 0xe2e8f0);
+        S("reagent", "混合粉末", sx, -0.38, 0xa78bfa);
+        pieceGroup("stand", function (g) { buildStand(g, tilt); }, sx, y, 0.02);
+        pieceGroup("tube", tiltTube(tilt), tx, ty, 0.02);
+        pieceGroup("lamp", buildLamp, tx - 0.05, y, 0.14);
+        pieceGroup("lime_beaker", buildLime, 0.45, y, 0.08);
+        placeHose("delivery", [
+          mouth, [-0.45, mouth[1], 0.02], [0.45, y + 0.25, 0.08], [0.45, y + 0.08, 0.08]
+        ], mouthAxis(tilt));
+      },
+      mass_conservation: function () {
+        S("balance", "天平", -0.72, 0.08, 0xf59e0b);
+        S("beaker", "密闭锥形瓶", 0.12, 0.08, 0x38bdf8);
+        S("reagent", "铁和硫酸铜", 1.05, -0.24, 0xa78bfa);
+        pieceGroup("balance", buildBalance, -0.72, y, 0.08);
+        pieceGroup("beaker", buildConicalFlask, 0.12, y + 0.1, 0.08);
+      },
+      metal_displace: function () {
+        S("goggles", "护目镜", -1.05, -0.2, 0x2dd4bf);
+        S("beaker", "硫酸铜烧杯", 0.02, 0.08, 0x38bdf8);
+        S("rod", "打磨铁钉", 0.15, 0.06, 0x94a3b8);
+        S("reagent", "硫酸铜", 0.92, -0.24, 0xa78bfa);
+        pieceGroup("goggles", buildGoggles, -1.05, y, -0.2);
+        pieceGroup("beaker", buildBeaker, 0.02, y, 0.08);
+        pieceGroup("rod", function (g) {
+          fx.displaceIron = add(g, box(0.025, 0.36, 0.025, mat(0x94a3b8, { metalness: 0.68 })), 0, 0.24, 0);
+          fx.displaceCopper = add(g, box(0.033, 0.2, 0.032, mat(0xb45309, { metalness: 0.48 })), 0, 0.17, 0);
+          fx.displaceCopper.visible = false;
+        }, 0.08, y + 0.08, 0.08);
+      },
+      acid_indicator: function () {
+        S("goggles", "护目镜", -1.16, -0.2, 0x2dd4bf);
+        S("beaker", "两组容器", 0.05, 0.08, 0x38bdf8);
+        S("dropper", "专用滴管", 0.05, -0.24, 0xf87171);
+        S("reagent", "酸碱和指示剂", 1.02, -0.24, 0xa78bfa);
+        pieceGroup("goggles", buildGoggles, -1.16, y, -0.2);
+        pieceGroup("beaker", buildIndicatorSet, 0.05, y, 0.08);
+        pieceGroup("dropper", buildDropper, 0.05, y + 0.42, 0.08);
+      },
+      dilute_h2so4: function () {
+        S("goggles", "护目镜", -1.18, -0.2, 0x2dd4bf);
+        S("beaker", "盛水烧杯", 0.02, 0.08, 0x38bdf8);
+        S("rod", "玻璃棒", 0.18, 0.08, 0x94a3b8);
+        S("reagent", "浓硫酸和水", 0.94, -0.24, 0xa78bfa);
+        pieceGroup("goggles", buildGoggles, -1.18, y, -0.2);
+        pieceGroup("beaker", buildBeaker, 0.02, y, 0.08);
+        pieceGroup("rod", buildRod, 0.17, y + 0.06, 0.08);
+      },
+      iron_rust: function () {
+        S("tube", "对照试管", 0, 0.06, 0x38bdf8);
+        S("lamp", "酒精灯", -0.9, 0.08, 0xf59e0b);
+        S("cotton", "棉花", 0.28, 0.06, 0xf8fafc);
+        S("reagent", "铁钉、水等", 1.05, -0.24, 0xa78bfa);
+        pieceGroup("tube", buildRustTubes, 0, y, 0.06);
+        pieceGroup("lamp", buildLamp, -0.9, y, 0.08);
+        /* 第三支试管口：棉花挡住空气中的水蒸气，下面才是干燥剂。 */
+        pieceGroup("cotton", buildCottonPlug, 0.28, y + 0.44, 0.06);
+      }
+    };
+    L.oxygen = L.prep_oxygen_kmno4;
+    L.gas_wet = L.prep_hydrogen;
+    L.gas_air = L.prep_co2;
+    L.burn = L.iron_in_oxygen;
+    L.oxide = L.metal_oxide_acid;
+    (L[id] || L[kind] || L.prep_oxygen_kmno4)();
+    makeFx(kind);
+  }
+
+  /* 室内灯箱环境，取自 three.js RoomEnvironment（上游是 model-viewer）。
+     玻璃和金属映的是这几块亮面，而不是一面灰墙。 */
+  function buildStudioEnv() {
+    var s = new THREE.Scene();
+    var geometry = new THREE.BoxGeometry();
+    geometry.deleteAttribute("uv");
+    var roomMaterial = new THREE.MeshStandardMaterial({ side: THREE.BackSide });
+    var boxMaterial = new THREE.MeshStandardMaterial();
+    function area(intensity) {
+      var material = new THREE.MeshBasicMaterial();
+      material.color.setScalar(intensity);
+      return material;
+    }
+    var mainLight = new THREE.PointLight(0xffffff, 5, 28, 2);
+    mainLight.position.set(0.418, 16.199, 0.3);
+    s.add(mainLight);
+    var room = new THREE.Mesh(geometry, roomMaterial);
+    room.position.set(-0.757, 13.219, 0.717);
+    room.scale.set(31.713, 28.305, 28.591);
+    s.add(room);
+    [[-10.906, 2.009, 1.846, 0, -0.195, 0, 2.328, 7.905, 4.651],
+      [-5.607, -0.754, -0.758, 0, 0.994, 0, 1.97, 1.534, 3.955],
+      [6.167, 0.857, 7.803, 0, 0.561, 0, 3.927, 6.285, 3.687],
+      [-2.017, 0.018, 6.124, 0, 0.333, 0, 2.002, 4.566, 2.064],
+      [2.291, -0.756, -2.621, 0, -0.286, 0, 1.546, 1.552, 1.496],
+      [-2.193, -0.369, -5.547, 0, 0.516, 0, 3.875, 3.487, 2.986]].forEach(function (b) {
+      var box = new THREE.Mesh(geometry, boxMaterial);
+      box.position.set(b[0], b[1], b[2]);
+      box.rotation.set(b[3], b[4], b[5]);
+      box.scale.set(b[6], b[7], b[8]);
+      s.add(box);
+    });
+    [[-16.116, 14.37, 8.208, 0.1, 2.428, 2.739, 50],
+      [-16.109, 18.021, -8.207, 0.1, 2.425, 2.751, 50],
+      [14.904, 12.198, -1.832, 0.15, 4.265, 6.331, 17],
+      [-0.462, 8.89, 14.52, 4.38, 5.441, 0.088, 43],
+      [3.235, 11.486, -12.541, 2.5, 2, 0.1, 20],
+      [0, 20, 0, 1, 0.1, 1, 100]].forEach(function (L) {
+      var light = new THREE.Mesh(geometry, area(L[6]));
+      light.position.set(L[0], L[1], L[2]);
+      light.scale.set(L[3], L[4], L[5]);
+      s.add(light);
+    });
+    return s;
+  }
+  function setupEnv() {
+    var g = new THREE.PMREMGenerator(renderer);
+    var s = buildStudioEnv();
+    scene.environment = g.fromScene(s, 0.04).texture;
+    g.dispose();
+    var dumped = [];
+    s.traverse(function (obj) {
+      if (obj.geometry && dumped.indexOf(obj.geometry) < 0) {
+        dumped.push(obj.geometry);
+        obj.geometry.dispose();
+      }
+      if (obj.material && dumped.indexOf(obj.material) < 0) {
+        dumped.push(obj.material);
+        obj.material.dispose();
+      }
+    });
+  }
+
+  function updateCamera() {
+    pitch = Math.max(0.16, Math.min(1.12, pitch));
+    camera.position.set(
+      Math.sin(yaw) * Math.cos(pitch) * dist,
+      lookY + Math.sin(pitch) * dist * 0.72,
+      Math.cos(yaw) * Math.cos(pitch) * dist
+    );
+    camera.lookAt(0, lookY, 0.05);
+  }
+
+  function tick(now) {
+    requestAnimationFrame(tick);
+    clock.t = now;
+    Object.keys(slots).forEach(function (k) {
+      var s = slots[k];
+      if (!s.visible) return;
+      var bob = 0.52 + Math.sin(now * 0.003 + s.userData.bob) * 0.05;
+      if (s.userData.diamond) s.userData.diamond.position.y = bob;
+      if (s.userData.ring) s.userData.ring.rotation.z = now * 0.001;
+    });
+    if (fx.flame && fx.flame.visible) {
+      var flick = 0.88 + Math.sin(now * 0.021) * 0.16 + Math.sin(now * 0.053) * 0.08;
+      fx.flame.scale.set(0.92 + Math.sin(now * 0.04) * 0.08, flick, 1);
+      if (fx.flameInner) fx.flameInner.scale.y = 0.9 + Math.sin(now * 0.03) * 0.12;
+      if (fx.flameLight) fx.flameLight.intensity = 1.6 + Math.sin(now * 0.03) * 0.45;
+    }
+    var cx = (fx.collectAt && fx.collectAt.x) || 0.4;
+    var cy0 = (fx.collectAt && fx.collectAt.y) || 1.16;
+    var cz = (fx.collectAt && fx.collectAt.z) || 0.08;
+    (fx.bubbles || []).forEach(function (b, i) {
+      if (!b.visible) return;
+      b.position.y += 0.006;
+      if (b.position.y > cy0 + 0.42) b.position.y = cy0;
+      b.position.x = cx + Math.sin(now * 0.01 + i) * 0.04;
+      b.position.z = cz;
+    });
+    (fx.beakerBubbles || []).concat(fx.tubeBubbles || []).forEach(function (b, i) {
+      if (!b.visible) return;
+      b.position.y += 0.004;
+      if (b.position.y > 0.32) b.position.y = 0.1;
+    });
+    (fx.steam || []).forEach(function (s, i) {
+      if (!s.visible) return;
+      s.position.y += 0.004;
+      if (s.position.y > 2.15) s.position.y = 1.72;
+      s.material.opacity = 0.18 + Math.sin(now * 0.01 + i) * 0.1;
+    });
+    (fx.sparks || []).forEach(function (s, i) {
+      if (!s.visible) return;
+      s.position.x = cx + Math.sin(now * 0.02 + i) * 0.08;
+      s.position.y = cy0 + 0.18 + Math.cos(now * 0.03 + i) * 0.1;
+      s.position.z = cz;
+    });
+    (fx.smoke || []).forEach(function (s, i) {
+      if (!s.visible) return;
+      s.position.y += 0.0025 + (i % 3) * 0.0005;
+      s.position.x += Math.sin(now * 0.003 + i) * 0.0007;
+      if (s.position.y > 1.95) s.position.y = 1.46;
+      s.material.opacity = 0.2 + Math.sin(now * 0.006 + i) * 0.09;
+    });
+    if (fx.burnFlame && fx.burnFlame.visible) {
+      fx.burnFlame.scale.y = 0.9 + Math.sin(now * 0.028) * 0.16;
+    }
+    Object.keys(pieces).forEach(function (k) {
+      var g = pieces[k];
+      if (!g || !g.userData.shown) return;
+      if (k === highlightId) g.scale.setScalar(1 + Math.sin(now * 0.008) * 0.045);
+      else if (Math.abs(g.scale.x - 1) > 0.001) g.scale.setScalar(1);
+    });
+    if (pour.on) tickPour(0.016);
+    if (mix.on) tickMix(0.016);
+    for (var i = pops.length - 1; i >= 0; i--) {
+      pops[i].t += 0.05;
+      var k = Math.min(1, pops[i].t);
+      var s = 1 - Math.pow(1 - k, 3);
+      pops[i].obj.scale.setScalar(0.2 + 0.8 * s);
+      if (k >= 1) pops.splice(i, 1);
+    }
+    renderer.render(scene, camera);
+  }
+  function tickPour(dt) {
+    pour.t += dt;
+    var bottle = fx.pourer;
+    if (!bottle) { pour.on = false; return; }
+    bottle.visible = true;
+    var target = pieces.tube || pieces.beaker || pieces.dish;
+    var tx = target ? target.position.x - 0.38 : -0.4;
+    var ty = target ? target.position.y + 0.42 : 1.45;
+    var tz = target ? target.position.z : 0.1;
+    bottle.position.set(tx, ty, tz);
+    if (pour.t < 0.35) bottle.rotation.z = -pour.t * 2.2;
+    else if (pour.t < 1.15) {
+      bottle.rotation.z = -0.77;
+      if (fx.stream) {
+        fx.stream.visible = true;
+        fx.stream.material.color.setHex(pour.color);
+        fx.stream.position.set(tx + 0.18, ty - 0.18, tz);
+      }
+      var liq = fx.acid || fx.liquid;
+      if (liq) {
+        liq.visible = true;
+        liq.scale.y = Math.min(1, 0.35 + pour.t * 0.6);
+      }
+    } else {
+      if (fx.stream) fx.stream.visible = false;
+      bottle.rotation.z += (0 - bottle.rotation.z) * 0.12;
+      if (pour.t > 1.7) {
+        bottle.visible = false;
+        bottle.rotation.z = 0;
+        pour.on = false;
+      }
+    }
+  }
+  function tickMix(dt) {
+    mix.t += dt;
+    var rod = pieces.rod;
+    if (rod && rod.visible) rod.rotation.y = Math.sin(mix.t * 14) * 0.55;
+    var liq = fx.liquid || fx.acid;
+    if (liq) liq.rotation.y += 0.08;
+    if (mix.t > 1.25) {
+      mix.on = false;
+      if (rod) rod.rotation.y = 0;
+    }
+  }
+
+  function onPointerDown(e) {
+    if (e.button !== 0) return;
+    orbiting = true;
+    lastX = e.clientX; lastY = e.clientY;
+  }
+  function onPointerMove(e) {
+    if (!orbiting) return;
+    yaw -= (e.clientX - lastX) * 0.0055;
+    pitch -= (e.clientY - lastY) * 0.0045;
+    lastX = e.clientX; lastY = e.clientY;
+    updateCamera();
+  }
+  function onPointerUp() { orbiting = false; }
+  function onWheel(e) {
+    dist = Math.max(2.8, Math.min(7.2, dist + e.deltaY * 0.0035));
+    updateCamera();
+  }
+
+  function init(el, sceneKey, expId) {
+    canvas = el;
+    currentExpId = expId || sceneKey || "";
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color(0xc5d3df);
+    scene.fog = new THREE.Fog(0xc5d3df, 11, 22);
+    camera = new THREE.PerspectiveCamera(34, 1, 0.08, 40);
+    renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: false });
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.08;
+    if (THREE.SRGBColorSpace) renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    raycaster = new THREE.Raycaster();
+    pointer = new THREE.Vector2();
+    setupEnv();
+    scene.add(new THREE.HemisphereLight(0xf3f7fb, 0x5c5348, 0.55));
+    var sun = new THREE.DirectionalLight(0xfff8ee, 1.55);
+    sun.position.set(3.2, 6.4, 2.2);
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(1024, 1024);
+    sun.shadow.bias = -0.0004;
+    sun.shadow.camera.near = 1;
+    sun.shadow.camera.far = 16;
+    sun.shadow.camera.left = -4;
+    sun.shadow.camera.right = 4;
+    sun.shadow.camera.top = 4;
+    sun.shadow.camera.bottom = -4;
+    scene.add(sun);
+    scene.add(new THREE.AmbientLight(0xffffff, 0.12));
+    var fill = new THREE.DirectionalLight(0xd7e6f5, 0.45);
+    fill.position.set(-3.5, 2.4, 2.6);
+    scene.add(fill);
+    buildRoom();
+    layout(sceneKey || "oxygen", expId);
+    updateCamera();
+    resize();
+    canvas.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp);
+    canvas.addEventListener("wheel", onWheel, { passive: true });
+    requestAnimationFrame(tick);
+  }
+
+  function resize() {
+    if (!canvas || !renderer) return;
+    var w = canvas.clientWidth || 640;
+    var h = canvas.clientHeight || 380;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / Math.max(h, 1);
+    camera.updateProjectionMatrix();
+  }
+
+  function setSelecting(on, needMap) {
+    selecting = !!on;
+    needed = needMap || {};
+    Object.keys(slots).forEach(function (k) {
+      slots[k].visible = selecting && !!needed[k];
+    });
+  }
+  function setPiece(id, on) {
+    if (!pieces[id]) return;
+    if (id === "reagent") {
+      pieces[id].visible = false;
+      return;
+    }
+    var show = !!on;
+    pieces[id].userData.shown = show;
+    if (show) {
+      pieces[id].visible = true;
+      pieces[id].scale.setScalar(1);
+    } else {
+      pieces[id].visible = false;
+    }
+  }
+  function applyEffects(st) {
+    st = st || {};
+    if (fx.powder) {
+      fx.powder.visible = (!!st.powder || !!st.oxide) && st.liquid !== "blue";
+      var powderColors = { purple: 0x3b0764, white: 0xf8fafc, black: 0x111827 };
+      fx.powder.material.color.setHex(powderColors[st.powder_color] || 0x1e293b);
+    }
+    if (fx.copper) fx.copper.visible = !!st.copper;
+    if (fx.zinc) fx.zinc.visible = !!st.zinc;
+    if (fx.marble) fx.marble.visible = !!st.marble;
+    if (fx.cotton) fx.cotton.visible = !!st.cotton;
+    if (fx.acid) {
+      fx.acid.visible = !!st.acid || !!st.oxide_acid || st.liquid === "blue";
+      if (st.liquid === "blue") fx.acid.material.color.setHex(0x2563eb);
+    }
+    var lit = !!st.flame || !!st.heat;
+    if (fx.flame) fx.flame.visible = lit;
+    if (fx.flameInner) fx.flameInner.visible = lit;
+    if (fx.flameLight) fx.flameLight.intensity = lit ? 1.6 : 0;
+    if (fx.splintFlame) fx.splintFlame.visible = !!st.splint_on;
+    if (fx.splintGlow) {
+      fx.splintGlow.visible = true;
+      fx.splintGlow.material.emissiveIntensity = st.splint_on ? 2.4 : 0.55;
+    }
+    if (fx.burnFlame) {
+      var sulfur = st.sulfur_flame;
+      fx.burnFlame.visible = !!sulfur || !!st.charcoal_glow;
+      if (st.charcoal_glow) {
+        fx.burnFlame.material.color.setHex(0xffffff);
+        fx.burnFlame.material.emissive.setHex(0xffffff);
+        fx.burnFlame.material.emissiveIntensity = 3;
+        fx.burnFlame.scale.set(1.35, 1.3, 1.35);
+      } else if (sulfur) {
+        var pale = sulfur === "pale_blue";
+        fx.burnFlame.material.color.setHex(pale ? 0x93c5fd : 0x6d28d9);
+        fx.burnFlame.material.emissive.setHex(pale ? 0x60a5fa : 0x4338ca);
+        fx.burnFlame.material.emissiveIntensity = pale ? 1.7 : 2.8;
+        fx.burnFlame.scale.set(pale ? 0.8 : 1.15, pale ? 0.85 : 1.25, pale ? 0.8 : 1.15);
+      }
+    }
+    if (fx.charcoalLight) fx.charcoalLight.intensity = st.charcoal_glow ? 2.8 : 0;
+    (fx.smoke || []).forEach(function (s) { s.visible = !!st.white_smoke; });
+    (fx.bubbles || []).forEach(function (b) { b.visible = !!st.bubbles; });
+    (fx.tubeBubbles || []).forEach(function (b) { b.visible = !!st.acid_bubbles || !!st.oxide_bubbles || !!st.bubbles; });
+    if (fx.gas) fx.gas.visible = (!!st.collected && !st.air_collect) || !!st.co2_fill;
+    if (fx.flameLow) fx.flameLow.visible = !!st.lit && !st.low_out;
+    if (fx.flameLowInner) fx.flameLowInner.visible = !!st.lit && !st.low_out;
+    if (fx.flameHigh) fx.flameHigh.visible = !!st.lit && !st.high_out;
+    if (fx.flameHighInner) fx.flameHighInner.visible = !!st.lit && !st.high_out;
+    if (fx.co2Low) fx.co2Low.visible = !!st.co2_low || !!st.co2_mid;
+    if (fx.co2Mid) fx.co2Mid.visible = !!st.co2_mid;
+    if (pieces.bottle && st.pouring) pieces.bottle.rotation.z = -0.72;
+    else if (pieces.bottle) pieces.bottle.rotation.z = 0;
+    if (fx.bottleWater) {
+      fx.bottleWater.visible = !!st.bottle_water || !!st.water_rise;
+      if (st.water_rise) fx.bottleWater.scale.set(1, 2.4, 1);
+      else fx.bottleWater.scale.set(1, 1, 1);
+    }
+    if (fx.hotWater) fx.hotWater.visible = !!st.hot_water;
+    if (fx.wpAir) fx.wpAir.visible = !!st.wp_air;
+    if (fx.flameWp) fx.flameWp.visible = !!st.wp_air;
+    if (fx.rpAir) fx.rpAir.visible = !!st.rp_air;
+    if (fx.wpWater) fx.wpWater.visible = !!st.wp_water;
+    if (fx.wpO2) fx.wpO2.visible = !!st.wp_o2;
+    if (fx.rustNail && st.rust) fx.rustNail.material.color.setHex(0xb45309);
+    if (fx.troughWater && pieces.trough) pieces.trough.visible = pieces.trough.visible && !st.air_collect;
+    if (fx.pop) fx.pop.visible = !!st.pop;
+    if (currentExpId === "prep_hydrogen" && pieces.delivery) {
+      var openAir = !!pieces.delivery.userData.shown && (!!st.jet_flame || !!st.pop);
+      pieces.delivery.visible = !!pieces.delivery.userData.shown && !openAir;
+      if (fx.h2Open) fx.h2Open.visible = openAir;
+      if (pieces.test_tube && pieces.test_tube.userData.home) {
+        if (st.pop && pieces.test_tube.userData.shown && fx.h2OpenEnd) {
+          pieces.test_tube.rotation.z = Math.PI;
+          pieces.test_tube.position.set(fx.h2OpenEnd[0], fx.h2OpenEnd[1] + 0.4, fx.h2OpenEnd[2]);
+        } else {
+          pieces.test_tube.rotation.z = 0;
+          pieces.test_tube.position.copy(pieces.test_tube.userData.home);
+          pieces.test_tube.visible = !!pieces.test_tube.userData.shown;
+        }
+      }
+      if (fx.pop && fx.h2OpenEnd && st.pop) {
+        fx.pop.position.set(fx.h2OpenEnd[0] + 0.42, fx.h2OpenEnd[1] + 0.28, fx.h2OpenEnd[2]);
+      }
+      if (fx.jet && fx.h2JetAt && st.jet_flame) {
+        fx.jet.position.set(fx.h2JetAt.x, fx.h2JetAt.y, fx.h2JetAt.z);
+        fx.jet.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(0.92, 0.35, 0).normalize());
+      }
+    }
+    if (fx.jet) fx.jet.visible = !!st.jet_flame;
+    (fx.sparks || []).forEach(function (s) { s.visible = !!st.sparks; });
+    if (fx.tube) {
+      var rot = st.upright ? 0 : (st.tilt_up ? 0.28 : (typeof fx.tube.userData.tilt0 === "number" ? fx.tube.userData.tilt0 : -0.28));
+      if (st.upright || st.tilt_up || st.tilt_down) fx.tube.rotation.z = rot;
+    }
+    if (fx.liquid) {
+      var colors = { pink: 0xf9a8d4, pale: 0xfce7f3, clear: 0x7dd3fc, blue: 0x2563eb };
+      fx.liquid.material.color.setHex(colors[st.liquid] || colors.clear);
+      if (st.filtrate === false) fx.liquid.visible = false;
+      if (st.filtrate) fx.liquid.visible = true;
+    }
+    if (fx.drip) fx.drip.visible = !!st.dripping;
+    if (fx.metal) fx.metal.visible = !!st.metal;
+    if (fx.testPaper) fx.testPaper.material.color.setHex(st.wet_paper && st.lime_milky ? 0x2563eb : 0xf87171);
+    if (currentExpId === "metal_displace" && fx.displaceCopper) {
+      fx.displaceCopper.visible = !!st.metal;
+      if (fx.liquid && st.metal) fx.liquid.material.color.setHex(0x60a5fa);
+    }
+    if (currentExpId === "mass_conservation" && fx.massLiquid) {
+      var reacted = !!st.mass_reacted;
+      fx.massLiquid.material.color.setHex(reacted ? 0x86b7a7 : 0x2563eb);
+      fx.massLiquid.visible = reacted;
+      if (fx.innerLiquid) fx.innerLiquid.visible = !reacted;
+      if (fx.massIron) fx.massIron.visible = !reacted;
+      if (fx.massCopper) fx.massCopper.visible = reacted;
+    }
+    if (currentExpId === "acid_indicator" && fx.indAcidLitmus) {
+      fx.indAcidLitmus.material.color.setHex(0x7c3aed);
+      fx.indBaseLitmus.material.color.setHex(0x7c3aed);
+      fx.indAcidPhen.material.color.setHex(0x7dd3fc);
+      fx.indBasePhen.material.color.setHex(0x7dd3fc);
+      if (st.liquid === "red") fx.indAcidLitmus.material.color.setHex(0xdc2626);
+      if (st.liquid === "blue") {
+        fx.indAcidLitmus.material.color.setHex(0xdc2626);
+        fx.indBaseLitmus.material.color.setHex(0x2563eb);
+      }
+      if (st.liquid === "pink") {
+        fx.indAcidLitmus.material.color.setHex(0xdc2626);
+        fx.indBaseLitmus.material.color.setHex(0x2563eb);
+        fx.indBasePhen.material.color.setHex(0xec4899);
+      }
+    }
+    (fx.beakerBubbles || []).forEach(function (b) { b.visible = !!st.acid_bubbles; });
+    if (fx.h2) fx.h2.visible = !!st.gases;
+    if (fx.o2) fx.o2.visible = !!st.gases;
+    if (fx.h2gas) fx.h2gas.visible = !!st.gases;
+    if (fx.o2gas) fx.o2gas.visible = !!st.gases;
+    if (fx.ratio) fx.ratio.visible = !!st.ratio;
+    if (fx.filterPaper) fx.filterPaper.visible = !!st.paper;
+    if (fx.residue) fx.residue.visible = !!st.residue;
+    if (fx.limeLiquid) fx.limeLiquid.material.color.setHex(st.lime_milky ? 0xf8fafc : 0xe0f2fe);
+    if (fx.crystals) fx.crystals.visible = !!st.crystals;
+    if (fx.dishLiquid) fx.dishLiquid.material.opacity = st.crystals ? 0.25 : 0.55;
+    (fx.steam || []).forEach(function (s) { s.visible = !!st.heat; });
+  }
+  function hoverSlot(name) {
+    Object.keys(slots).forEach(function (k) {
+      var s = slots[k];
+      var hot = k === name;
+      if (s.userData.diamond) s.userData.diamond.scale.setScalar(hot ? 1.35 : 1);
+    });
+  }
+  function hitSlot(clientX, clientY) {
+    if (!canvas) return "";
+    var r = canvas.getBoundingClientRect();
+    pointer.x = ((clientX - r.left) / r.width) * 2 - 1;
+    pointer.y = -((clientY - r.top) / r.height) * 2 + 1;
+    raycaster.setFromCamera(pointer, camera);
+    var list = [];
+    Object.keys(slots).forEach(function (k) {
+      if (slots[k].visible) slots[k].traverse(function (o) { if (o.isMesh) list.push(o); });
+    });
+    var hits = raycaster.intersectObjects(list, false);
+    return hits.length && hits[0].object.userData.slot ? hits[0].object.userData.slot : "";
+  }
+  var highlightId = "";
+  function highlight(id) { highlightId = id || ""; }
+  function hitPiece(clientX, clientY) {
+    if (!canvas) return "";
+    var r = canvas.getBoundingClientRect();
+    pointer.x = ((clientX - r.left) / r.width) * 2 - 1;
+    pointer.y = -((clientY - r.top) / r.height) * 2 + 1;
+    raycaster.setFromCamera(pointer, camera);
+    var list = [];
+    Object.keys(pieces).forEach(function (k) {
+      var g = pieces[k];
+      if (!g || !g.visible || k === "reagent" || !g.userData.shown) return;
+      g.traverse(function (o) {
+        if (o.isMesh) { o.userData.piece = k; list.push(o); }
+      });
+    });
+    var hits = raycaster.intersectObjects(list, false);
+    return hits.length ? (hits[0].object.userData.piece || "") : "";
+  }
+  function playPour(color) {
+    pour.on = true;
+    pour.t = 0;
+    pour.color = parseColor(color);
+    if (fx.pourer) fx.pourer.visible = true;
+  }
+  function playMix() {
+    mix.on = true;
+    mix.t = 0;
+  }
+  function playPlace(id) {
+    if (pieces[id]) setPiece(id, true);
+  }
+  function resetView() {
+    yaw = 0.42; pitch = 0.38; dist = 4.4;
+    updateCamera();
+  }
+
+  global.Lab3D = {
+    init: init, resize: resize, setSelecting: setSelecting,
+    setPiece: setPiece, applyEffects: applyEffects, hitSlot: hitSlot, hoverSlot: hoverSlot,
+    hitPiece: hitPiece, highlight: highlight,
+    playPour: playPour, playMix: playMix, playPlace: playPlace, resetView: resetView
   };
 })(window);
 </script>
@@ -612,10 +3150,38 @@
     var selectedR = {};
     var stepIndex = 0;
     var lockedSelect = false;
+    var finished = false;
     var hazard = 0;
     var okCount = 0;
     var scene = {};
     var drag = null;
+    var mode = "3d";
+    var lab3dReady = false;
+    var playing = false;
+    var playTimer = 0;
+    var heatC = 25;
+    var showingPrinciple = true;
+    var canHeat = (DATA.required_apparatus || []).indexOf("lamp") >= 0;
+    var shelfQuery = "";
+    var journal = [];
+    var AUX = { stand: 1, tripod: 1, spoon: 1, tweezers: 1, cotton: 1, clamp: 1, splint: 1, paper: 1, rod: 1, goggles: 1, gauze: 1, cover: 1, wire: 1, dropper: 1 };
+    var ACTION_RULES = [
+      [/滤纸/, "paper"],
+      [/漏斗/, "funnel"],
+      [/蒸发皿|结晶/, "dish"],
+      [/滴管|滴加|滴定/, "dropper"],
+      [/玻璃棒|搅拌/, "rod"],
+      [/棉花/, "cotton"],
+      [/木条|验纯|复燃|爆鸣/, "splint"],
+      [/酒精灯|点燃|加热|灯芯|熄灭/, "lamp"],
+      [/集气瓶|玻璃片/, "bottle"],
+      [/水槽/, "trough"],
+      [/护目镜/, "goggles"],
+      [/电源|通电|电解/, "power"],
+      [/导管|气密/, "delivery"],
+      [/烧杯/, "beaker"],
+      [/药匙|加入|装药|倾倒|倒入|取用/, "tube"]
+    ];
 
     function $(id) { return document.getElementById(id); }
     function report(q, a, correct) {
@@ -632,20 +3198,21 @@
       el.style.display = "block";
       setTimeout(function () { el.style.display = "none"; }, 2200);
     }
-    function addLog(text, bad) {
-      var d = document.createElement("div");
-      d.className = "obs" + (bad ? " hazard" : "");
-      d.textContent = text;
-      $("log").prepend(d);
-    }
     function current() { return DATA.steps[stepIndex]; }
     function allItems() { return [].concat(DATA.inventory.apparatus || [], DATA.inventory.reagents || []); }
     function isPlaced(id, reagent) { return reagent ? !!selectedR[id] : !!selectedA[id]; }
     function iconOf(item, reagent) {
       if (!window.Lab2D) return "";
-      return window.Lab2D.icon(reagent ? "reagent" : item.id, 42, item.color);
+      var id = reagent ? "reagent" : item.id;
+      if (item.name === "试管夹") id = "clamp";
+      return window.Lab2D.icon(id, 42, item.color);
     }
-
+    function engines() {
+      var list = [];
+      if (window.Lab2D) list.push(window.Lab2D);
+      if (lab3dReady && window.Lab3D) list.push(window.Lab3D);
+      return list;
+    }
     function neededSlots() {
       var set = {};
       allItems().forEach(function (it) {
@@ -655,8 +3222,28 @@
       return set;
     }
     function refreshSlots() {
-      var selecting = current() && current().need === "select" && !lockedSelect;
-      if (window.Lab2D) window.Lab2D.setSelecting(selecting, neededSlots());
+      var selecting = !showingPrinciple && current() && current().need === "select" && !lockedSelect && !finished;
+      engines().forEach(function (eng) {
+        if (eng.setSelecting) eng.setSelecting(selecting, neededSlots());
+      });
+    }
+    function phFromScene() {
+      if (scene.ph_unknown) return "—";
+      if (scene.ph != null && isFinite(Number(scene.ph))) return Number(scene.ph).toFixed(1);
+      if (scene.liquid === "red") return "1.5";
+      if (scene.liquid === "pink") return "10.2";
+      if (scene.liquid === "pale") return "8.4";
+      if (scene.liquid === "blue") return "4.2";
+      if (scene.acid_bubbles || scene.acid) return "1.5";
+      if (scene.liquid === "clear" && (selectedR.hcl || selectedR.h2so4)) return "1.8";
+      return "7.0";
+    }
+    function updateMeters() {
+      $("ph").textContent = phFromScene();
+      var t = heatC;
+      if (scene.flame || scene.heat) t = Math.max(t, 72);
+      $("temp").textContent = t + " ℃";
+      $("heat-val").textContent = heatC + "℃";
     }
     function applyScene(extra) {
       extra = extra || {};
@@ -665,46 +3252,265 @@
         scene._boot = true;
       }
       Object.keys(extra).forEach(function (k) { scene[k] = extra[k]; });
-      if (window.Lab2D) {
+      if (canHeat && selectedA.lamp && heatC >= 55) {
+        scene.flame = true;
+        scene.heat = true;
+      }
+      engines().forEach(function (eng) {
         (DATA.inventory.apparatus || []).forEach(function (it) {
-          window.Lab2D.setPiece(it.id, !!selectedA[it.id]);
+          if (eng.setPiece) eng.setPiece(it.id, !!selectedA[it.id]);
         });
         var hasR = (DATA.required_reagents || []).some(function (id) { return selectedR[id]; });
-        window.Lab2D.setPiece("reagent", hasR);
-        window.Lab2D.applyEffects(Object.assign({ paper: !!selectedA.paper || !!scene.paper }, scene));
+        if (eng.setPiece) eng.setPiece("reagent", hasR);
+        if (eng.applyEffects) eng.applyEffects(Object.assign({ paper: !!selectedA.paper || !!scene.paper }, scene));
+      });
+      refreshSlots();
+      updateMeters();
+    }
+    function nameOf(id) {
+      var lists = [].concat(DATA.inventory.apparatus || [], DATA.inventory.reagents || []);
+      for (var i = 0; i < lists.length; i++) if (lists[i].id === id) return lists[i].name;
+      return id || "";
+    }
+    function reagentForm(item) {
+      var n = item.name || "";
+      if (/固体/.test(n)) return "固体药品";
+      if (/溶液|稀|浓|水|酚酞|石蕊|试液|酒精|浊液|滤液|石灰水|硫酸$|盐酸$|硝酸/.test(n)) return "液体药品";
+      return "固体药品";
+    }
+    function apparatusGroup(item) { return AUX[item.id] ? "辅助器材" : "反应仪器"; }
+    function doseNow() {
+      var s = current();
+      return !!(s && s.need === "action" && /加入|倾倒|滴|取用|装药|药匙/.test((s.title || "") + (s.action_label || "")));
+    }
+    function actionTarget(step) {
+      if (!step) return "";
+      var text = (step.title || "") + (step.action_label || "");
+      var i, id;
+      for (i = 0; i < ACTION_RULES.length; i++) {
+        if (!ACTION_RULES[i][0].test(text)) continue;
+        id = ACTION_RULES[i][1];
+        if (selectedA[id]) return id;
+      }
+      var fb = ["tube", "beaker", "dish", "bottle", "funnel", "lamp", "cell", "rod"];
+      for (i = 0; i < fb.length; i++) if (selectedA[fb[i]]) return fb[i];
+      var keys = Object.keys(selectedA);
+      return keys.length ? keys[0] : "";
+    }
+    function isVessel(id) { return /tube|beaker|dish|bottle|flask|funnel|cell/.test(id || ""); }
+    function activeEngine() {
+      return mode === "3d" && window.Lab3D && lab3dReady ? window.Lab3D : window.Lab2D;
+    }
+    function syncHighlight() {
+      var id = "";
+      var step = current();
+      if (!showingPrinciple && !finished && step && step.need === "action") id = actionTarget(step);
+      engines().forEach(function (eng) { if (eng.highlight) eng.highlight(id); });
+    }
+    function note(text, ok) {
+      if (!text) return;
+      journal.push({ text: text, ok: ok !== false });
+    }
+    function kindOf(step) {
+      if (!step) return "结论";
+      if (step.guide) return step.guide;
+      if (step.need === "select") return "准备";
+      if (step.need === "action") return "操作";
+      return "现象";
+    }
+    function guideCount() { return (DATA.steps || []).length + 2; }
+    function renderGuide() {
+      var total = guideCount();
+      var idx = finished ? total : (showingPrinciple ? 1 : stepIndex + 2);
+      $("guide-n").textContent = idx + " / " + total;
+      var rail = $("guide-rail");
+      if (rail) {
+        rail.innerHTML = "";
+        for (var i = 0; i < total; i++) {
+          var dot = document.createElement("i");
+          if (i + 1 < idx) dot.className = "done";
+          else if (i + 1 === idx) dot.className = "now";
+          rail.appendChild(dot);
+        }
+      }
+      if (finished) {
+        $("guide-title").innerHTML = '<span class="g-kind">结论</span>实验小结';
+        $("guide-body").textContent = (DATA.complete && DATA.complete.summary) || "实验完成。";
+      } else if (showingPrinciple) {
+        $("guide-title").innerHTML = '<span class="g-kind">原理</span>实验原理';
+        $("guide-body").textContent = DATA.goal || DATA.subtitle || "";
+      } else {
+        var s = current();
+        if (s) {
+          $("guide-title").innerHTML = '<span class="g-kind">' + kindOf(s) + "</span>" + s.title;
+          var html = "<div>" + (s.hint || "") + "</div>";
+          if (s.need === "choice") {
+            html += '<div style="margin-top:10px" id="choices"></div>';
+          } else if (s.need === "action") {
+            html += '<p class="op-tip">点击台上发亮的器材。加药品时，也可把试剂拖到容器口再松开。</p>';
+            html += '<button class="btn" type="button" id="btn-act">' + (s.action_label || "执行操作") + "</button>";
+          }
+          $("guide-body").innerHTML = html;
+          if (s.need === "choice") {
+            var box = $("choices");
+            (s.choices || []).forEach(function (c) {
+              var btn = document.createElement("button");
+              btn.type = "button"; btn.className = "choice"; btn.textContent = c.label;
+              btn.onclick = function () { pickChoice(c); };
+              box.appendChild(btn);
+            });
+          } else if (s.need === "action") {
+            var act = $("btn-act");
+            if (act) act.onclick = function () { doAction(); };
+          }
+        }
       }
       refreshSlots();
+      syncOps();
+      syncHighlight();
+      syncDropHint();
+      renderCabinet();
     }
-
-    function renderHeader() {
-      $("badge").textContent = DATA.badge || "虚拟实验台";
-      $("title").textContent = DATA.title;
-      $("subtitle").textContent = (DATA.subtitle || "") + (DATA.goal ? " · 目标：" + DATA.goal : "");
-      $("equation").textContent = DATA.equation || "";
+    function syncDropHint() {
+      var hint = $("drop-hint");
+      if (!hint) return;
+      if (finished) hint.textContent = "可打开实验报告，或点重做再来一次";
+      else if (showingPrinciple) hint.textContent = "看完原理后，从左侧器件库取用器材和药品";
+      else if (current() && current().need === "select") hint.textContent = "拖到形状相同的虚线工位，或点「加入」。点台上的器材可取回";
+      else if (current() && current().need === "action") hint.textContent = "点击发亮器材：" + (nameOf(actionTarget(current())) || "按步骤操作");
+      else hint.textContent = "在右侧选择操作。选错会记一次安全提示";
     }
-    function makeTile(item, reagent) {
-      var b = document.createElement("div");
-      b.className = "tile" + (isPlaced(item.id, reagent) ? " placed" : "");
-      b.innerHTML = '<div class="ico">' + iconOf(item, reagent) + "</div><span>" + item.name + "</span>";
-      b.addEventListener("pointerdown", function (e) {
-        if (e.button != null && e.button !== 0) return;
-        startDrag(e, item, reagent);
+    function syncOps() {
+      var btn = $("btn-primary");
+      var label = $("ops-step");
+      if (!btn || !label) return;
+      if (finished) {
+        label.textContent = "实验完成";
+        btn.textContent = "实验报告";
+        btn.disabled = false;
+        return;
+      }
+      if (showingPrinciple) {
+        label.textContent = "先看实验原理";
+        btn.textContent = "开始操作";
+        btn.disabled = false;
+        return;
+      }
+      var s = current();
+      label.textContent = s ? ((stepIndex + 1) + ". " + s.title) : "";
+      if (!s) { btn.disabled = true; return; }
+      if (s.need === "select") {
+        var n = missingRequired().length;
+        btn.textContent = n ? ("还差 " + n + " 件") : "组装完成";
+        btn.disabled = false;
+      } else if (s.need === "action") {
+        btn.textContent = s.action_label || "执行操作";
+        btn.disabled = false;
+      } else {
+        btn.textContent = "在右侧选择";
+        btn.disabled = true;
+      }
+    }
+    function openReport() {
+      $("report-title").textContent = DATA.title || "实验报告";
+      $("report-eq").textContent = DATA.equation || "";
+      $("report-eq").style.display = DATA.equation ? "" : "none";
+      $("report-sum").textContent = (DATA.complete && DATA.complete.summary) || "";
+      var ol = $("report-log");
+      ol.innerHTML = "";
+      if (!journal.length) {
+        var empty = document.createElement("li");
+        empty.textContent = "按步骤操作后，现象会记在这里。";
+        ol.appendChild(empty);
+      }
+      journal.forEach(function (row) {
+        var li = document.createElement("li");
+        if (!row.ok) li.className = "bad";
+        li.textContent = row.text;
+        ol.appendChild(li);
       });
-      return b;
+      $("report-safe").textContent = "正确操作 " + okCount + " 步，安全提示 " + hazard + " 次。";
+      $("report").classList.remove("hidden");
     }
     function renderCabinet() {
-      $("apparatus").innerHTML = ""; $("reagents").innerHTML = "";
-      (DATA.inventory.apparatus || []).forEach(function (item) { $("apparatus").appendChild(makeTile(item, false)); });
-      (DATA.inventory.reagents || []).forEach(function (item) { $("reagents").appendChild(makeTile(item, true)); });
-    }
-    function renderSteps() {
-      $("steps").innerHTML = "";
-      DATA.steps.forEach(function (s, i) {
-        var d = document.createElement("div");
-        d.className = "step" + (i < stepIndex ? " done" : i === stepIndex ? " now" : "");
-        d.textContent = (i + 1) + ". " + s.title;
-        $("steps").appendChild(d);
+      var box = $("cabinet");
+      if (!box) return;
+      box.innerHTML = "";
+      var groups = { "反应仪器": [], "辅助器材": [], "固体药品": [], "液体药品": [] };
+      (DATA.inventory.apparatus || []).forEach(function (item) {
+        if (shelfQuery && item.name.indexOf(shelfQuery) < 0) return;
+        groups[apparatusGroup(item)].push({ item: item, reagent: false });
       });
+      (DATA.inventory.reagents || []).forEach(function (item) {
+        if (shelfQuery && item.name.indexOf(shelfQuery) < 0) return;
+        groups[reagentForm(item)].push({ item: item, reagent: true });
+      });
+      var order = ["反应仪器", "辅助器材", "固体药品", "液体药品"];
+      var any = false;
+      order.forEach(function (title) {
+        var list = groups[title];
+        if (!list.length) return;
+        any = true;
+        var h = document.createElement("div");
+        h.className = "sec-title";
+        h.textContent = title;
+        box.appendChild(h);
+        var wrap = document.createElement("div");
+        wrap.className = title.indexOf("药品") >= 0 ? "bottles" : "chips";
+        list.forEach(function (row) { wrap.appendChild(cabinetItem(row.item, row.reagent)); });
+        box.appendChild(wrap);
+      });
+      if (!any) {
+        var empty = document.createElement("div");
+        empty.className = "sec-title";
+        empty.textContent = "没有匹配的器材";
+        box.appendChild(empty);
+      }
+    }
+    function cabinetItem(item, reagent) {
+      var placed = isPlaced(item.id, reagent);
+      var dosing = reagent && doseNow() && (DATA.required_reagents || []).indexOf(item.id) >= 0;
+      var canReturn = placed && !reagent && current() && current().need === "select" && !lockedSelect && !finished;
+      var node = document.createElement("div");
+      node.className = (reagent ? "bottle" : "chip") + (placed ? " placed" : "") + (dosing ? " dose" : "");
+      var action = dosing ? "倾倒" : (canReturn ? "取回" : (placed ? "已放" : "+ 加入"));
+      node.innerHTML = '<div class="ico">' + iconOf(item, reagent) + '</div><div class="name">' + item.name +
+        '</div><button class="add" type="button">' + action + "</button>";
+      node.querySelector(".add").onclick = function (e) {
+        e.stopPropagation();
+        e.preventDefault();
+        if (canReturn) { unplace(item.id); return; }
+        if (dosing) { doAction(); return; }
+        if (placed) return;
+        addItem(item, reagent);
+      };
+      node.addEventListener("pointerdown", function (e) {
+        if (e.target.classList.contains("add")) return;
+        if (e.button != null && e.button !== 0) return;
+        if (canReturn && !e.target.classList.contains("add")) {
+          /* 拖动优先；没拖开再取回由 click 处理 */
+        }
+        startDrag(e, item, reagent);
+      });
+      if (canReturn) {
+        node.addEventListener("click", function (e) {
+          if (e.target.classList.contains("add")) return;
+          if (node.dataset.dragged === "1") { node.dataset.dragged = ""; return; }
+          unplace(item.id);
+        });
+      }
+      return node;
+    }
+    function unplace(id) {
+      if (finished || lockedSelect || !current() || current().need !== "select") {
+        toast("组装完成后请点重做再调整", "bad");
+        return;
+      }
+      delete selectedA[id];
+      delete selectedR[id];
+      renderCabinet();
+      applyScene({});
+      toast("已取回 " + nameOf(id), "ok");
     }
     function missingRequired() {
       var miss = [];
@@ -712,12 +3518,16 @@
       (DATA.required_reagents || []).forEach(function (id) { if (!selectedR[id]) miss.push(id); });
       return miss;
     }
+    function findItem(id, reagent) {
+      var list = reagent ? DATA.inventory.reagents : DATA.inventory.apparatus;
+      for (var i = 0; i < (list || []).length; i++) if (list[i].id === id) return list[i];
+      return null;
+    }
     function tryFinishSelect() {
       if (missingRequired().length) return;
       lockedSelect = true;
       okCount += 1;
-      addLog("仪器已放到对应虚线工位，药品已加入。", false);
-      report(current().title, "拖放组装完成", true);
+      report(current().title, "组装完成", true);
       toast("组装完成，开始实验", "ok");
       next();
     }
@@ -726,27 +3536,71 @@
       else selectedA[item.id] = true;
       renderCabinet();
       applyScene({});
-      addLog("已放置：" + item.name, false);
+      if (lab3dReady && window.Lab3D) {
+        if (reagent && Lab3D.playPour) Lab3D.playPour(item.color || "#38bdf8");
+        else if (!reagent && Lab3D.playPlace) Lab3D.playPlace(item.id);
+      }
       report(current().title, "放置 " + item.name, true);
       tryFinishSelect();
     }
-    function startDrag(e, item, reagent) {
-      if (lockedSelect || !current() || current().need !== "select") return;
+    function addItem(item, reagent) {
+      if (finished) return;
+      if (showingPrinciple) {
+        toast("先看完实验原理，再取用药品", "bad");
+        return;
+      }
+      if (!current() || current().need !== "select" || lockedSelect) {
+        toast("请按右侧讲解的步骤操作", "bad");
+        return;
+      }
       if (isPlaced(item.id, reagent)) return;
+      if (item.slot) {
+        placeItem(item, reagent);
+        return;
+      }
+      failPlace(item);
+    }
+    function failPlace(item) {
+      hazard += 1;
+      note("放错了「" + item.name + "」：" + (item.slot ? "没有放到对应工位" : "不是本实验需要的"), false);
+      report(current().title, "放错 " + item.name, false);
+      toast(item.slot ? "请拖到形状相同的虚线位置" : "这件不是本实验需要的", "bad");
+      renderCabinet();
+      document.querySelectorAll(".bottle, .chip").forEach(function (t) {
+        if (t.textContent.indexOf(item.name) >= 0) {
+          t.classList.add("wrong");
+          setTimeout(function () { t.classList.remove("wrong"); }, 1200);
+        }
+      });
+    }
+    function canDragItem(item, reagent) {
+      if (finished || showingPrinciple) return false;
+      var step = current();
+      if (!step) return false;
+      if (step.need === "select" && !lockedSelect && !isPlaced(item.id, reagent)) return true;
+      if (reagent && doseNow() && (DATA.required_reagents || []).indexOf(item.id) >= 0) return true;
+      return false;
+    }
+    function startDrag(e, item, reagent) {
+      if (!canDragItem(item, reagent)) return;
       e.preventDefault();
-      var g = $("ghost");
+      var g = $("drag-ghost");
       g.innerHTML = iconOf(item, reagent);
       g.classList.remove("hidden");
-      drag = { item: item, reagent: reagent, ghost: g };
+      drag = { item: item, reagent: reagent, ghost: g, x: e.clientX, y: e.clientY, moved: false };
       moveGhost(e);
       window.addEventListener("pointermove", onMove);
       window.addEventListener("pointerup", onUp);
     }
     function moveGhost(e) {
       if (!drag) return;
+      if (Math.hypot(e.clientX - drag.x, e.clientY - drag.y) > 8) drag.moved = true;
       drag.ghost.style.left = (e.clientX + 10) + "px";
       drag.ghost.style.top = (e.clientY + 10) + "px";
-      if (window.Lab2D) window.Lab2D.hoverSlot(window.Lab2D.hitSlot(e.clientX, e.clientY, drag.item.slot));
+      var eng = activeEngine();
+      if (eng && eng.hoverSlot && current() && current().need === "select") {
+        eng.hoverSlot(eng.hitSlot(e.clientX, e.clientY, drag.item.slot));
+      }
     }
     function onMove(e) { moveGhost(e); }
     function onUp(e) {
@@ -755,102 +3609,311 @@
       if (!drag) return;
       drag.ghost.classList.add("hidden");
       drag.ghost.innerHTML = "";
-      if (window.Lab2D) window.Lab2D.hoverSlot("");
-      var hit = window.Lab2D ? window.Lab2D.hitSlot(e.clientX, e.clientY, drag.item.slot) : "";
+      var eng = activeEngine();
+      if (eng && eng.hoverSlot) eng.hoverSlot("");
+      var hit = eng && eng.hitSlot ? eng.hitSlot(e.clientX, e.clientY, drag.item.slot) : "";
+      var piece = eng && eng.hitPiece ? eng.hitPiece(e.clientX, e.clientY) : "";
       var want = drag.item.slot || "";
       var item = drag.item;
       var reagent = drag.reagent;
+      var moved = drag.moved;
       drag = null;
+      if (reagent && doseNow()) {
+        var target = actionTarget(current());
+        if (!moved || (piece && (piece === target || isVessel(piece)))) { doAction(); return; }
+        toast("把药品拖到容器口再松开", "bad");
+        return;
+      }
+      if (!moved && item.slot && current() && current().need === "select") {
+        placeItem(item, reagent);
+        return;
+      }
       if (want && hit === want) {
         placeItem(item, reagent);
         return;
       }
-      hazard += 1;
-      addLog((want ? "工位不对：" : "这件东西本实验不用：") + item.name, true);
-      report(current().title, "放错 " + item.name, false);
-      toast(want ? "请拖到形状相同的虚线位置" : "这件不是本实验需要的", "bad");
-      renderCabinet();
-      document.querySelectorAll(".tile").forEach(function (t) {
-        if (t.textContent.indexOf(item.name) >= 0) {
-          t.classList.add("wrong");
-          setTimeout(function () { t.classList.remove("wrong"); }, 1200);
-        }
-      });
+      failPlace(item);
     }
     function next(sceneExtra) {
       stepIndex += 1;
       if (stepIndex >= DATA.steps.length) { finish(); return; }
-      renderSteps();
-      renderActions();
       applyScene(sceneExtra || {});
+      renderGuide();
     }
     function finish() {
+      finished = true;
       lockedSelect = true;
-      $("step-hint").textContent = DATA.complete.title + " · " + DATA.complete.summary;
-      $("actions").innerHTML = "";
-      addLog(DATA.complete.summary, false);
-      addLog("正确操作 " + okCount + " 步" + (hazard ? "，安全失误 " + hazard + " 次。" : "，没有安全失误。"), hazard > 0);
+      playing = false;
+      heatC = 25;
+      $("heat").value = "25";
+      $("btn-play").textContent = "▶";
+      applyScene({
+        flame: false, heat: false, bubbles: false, acid_bubbles: false,
+        sparks: false, jet_flame: false, pop: false, dripping: false,
+        sulfur_flame: false, charcoal_glow: false, white_smoke: false,
+        splint_on: false, pouring: false
+      });
+      renderGuide();
       report(DATA.title, "完成实验", true);
       toast("实验完成", "ok");
-      renderSteps();
       refreshSlots();
     }
-    function renderActions() {
+    function doAction() {
       var s = current();
-      if (!s) return;
-      $("step-hint").textContent = s.title + "：" + (s.hint || "");
-      var box = $("actions"); box.innerHTML = "";
-      if (s.need === "select") {
-        var tip = document.createElement("p");
-        tip.className = "hint-bar";
-        tip.style.margin = "0";
-        tip.textContent = "从左上角把器材拖到形状相同的虚线工位，药品拖到「药品」虚线。放对卡住，放错弹回。";
-        box.appendChild(tip);
-      } else if (s.need === "action") {
-        var b = document.createElement("button");
-        b.className = "btn"; b.textContent = s.action_label || "执行操作";
-        b.onclick = function () {
-          okCount += 1;
-          if (s.phenomenon) addLog(s.phenomenon, false);
-          report(s.title, s.action_label || "操作", true);
-          toast(s.phenomenon || "操作完成", "ok");
-          next(s.scene || {});
-        };
-        box.appendChild(b);
-      } else if (s.need === "choice") {
-        (s.choices || []).forEach(function (c) {
-          var btn = document.createElement("button");
-          btn.type = "button"; btn.className = "choice"; btn.textContent = c.label;
-          btn.onclick = function () {
-            if (c.correct) {
-              okCount += 1;
-              addLog(c.ok || "操作正确。", false);
-              report(s.title, c.label, true);
-              toast(c.ok || "正确", "ok");
-              var sc = Object.assign({}, s.scene || {}, c.scene || {});
-              if (c.id === "tilt_down") sc.tilt_down = true;
-              if (c.id === "tilt_up") sc.tilt_up = true;
-              next(sc);
-            } else {
-              hazard += 1;
-              addLog(c.hazard || "这样不安全。", true);
-              report(s.title, c.label, false);
-              toast(c.hazard || "请重新选择", "bad");
-            }
-          };
-          box.appendChild(btn);
-        });
+      if (!s || s.need !== "action" || finished) return false;
+      okCount += 1;
+      note((s.title ? s.title + "：" : "") + (s.phenomenon || s.action_label || "操作完成"), true);
+      report(s.title, s.action_label || "操作", true);
+      if (lab3dReady && window.Lab3D) {
+        var lab = s.action_label || s.title || "";
+        if (/混合|振荡|搅拌/.test(lab) && Lab3D.playMix) Lab3D.playMix();
+        else if (/加入|倒|滴|取用/.test(lab) && Lab3D.playPour) Lab3D.playPour(itemColor(s));
+      }
+      toast(s.phenomenon || "操作完成", "ok");
+      next(s.scene || {});
+      return true;
+    }
+    function itemColor(s) {
+      if (s && s.scene && s.scene.liquid === "blue") return "#2563eb";
+      if (s && s.scene && s.scene.oxide) return "#1e293b";
+      return "#38bdf8";
+    }
+    function pickChoice(c) {
+      var s = current();
+      if (!s || s.need !== "choice" || finished) return;
+      if (c.correct) {
+        okCount += 1;
+        note(c.ok || c.label, true);
+        report(s.title, c.label, true);
+        toast(c.ok || "正确", "ok");
+        var sc = Object.assign({}, s.scene || {}, c.scene || {});
+        if (c.id === "tilt_down") sc.tilt_down = true;
+        if (c.id === "tilt_up") sc.tilt_up = true;
+        next(sc);
+      } else {
+        hazard += 1;
+        note(c.hazard || "这样不安全。", false);
+        report(s.title, c.label, false);
+        toast(c.hazard || "请重新选择", "bad");
+        var hazardNote = document.createElement("div");
+        hazardNote.className = "obs hazard";
+        hazardNote.textContent = c.hazard || "这样不安全。";
+        $("guide-body").appendChild(hazardNote);
       }
     }
+    function onPrimary() {
+      if (finished) { openReport(); return; }
+      if (showingPrinciple) {
+        showingPrinciple = false;
+        renderGuide();
+        return;
+      }
+      var s = current();
+      if (!s) return;
+      if (s.need === "select") {
+        if (missingRequired().length) toast("还缺：" + missingNames().join("、"), "bad");
+        else tryFinishSelect();
+        return;
+      }
+      if (s.need === "action") doAction();
+    }
+    function missingNames() {
+      return missingRequired().map(function (id) { return nameOf(id) || id; });
+    }
+    function onBenchPointer(e) {
+      if (drag || finished || showingPrinciple) return;
+      var eng = activeEngine();
+      if (!eng || !eng.hitPiece) return;
+      var id = eng.hitPiece(e.clientX, e.clientY);
+      if (!id) return;
+      var step = current();
+      if (step && step.need === "select" && !lockedSelect && selectedA[id]) {
+        unplace(id);
+        return;
+      }
+      if (step && step.need === "action") {
+        var target = actionTarget(step);
+        if (!target || id === target || (doseNow() && isVessel(id))) doAction();
+        else toast("请操作发亮的「" + nameOf(target) + "」", "bad");
+      }
+    }
+    function resetLab() {
+      selectedA = {}; selectedR = {}; scene = {}; stepIndex = 0; lockedSelect = false;
+      finished = false; hazard = 0; okCount = 0; journal = [];
+      heatC = 25; playing = false; showingPrinciple = true;
+      $("report").classList.add("hidden");
+      $("heat").value = "25";
+      $("btn-play").textContent = "▶";
+      clearTimeout(playTimer);
+      renderCabinet();
+      applyScene({});
+      renderGuide();
+      toast("已清空，重新开始", "ok");
+    }
+    function gotoGuide(dir) {
+      playing = false;
+      $("btn-play").textContent = "▶";
+      clearTimeout(playTimer);
+      if (dir < 0) {
+        toast("可用清空容器重做", "bad");
+        return;
+      }
+      if (showingPrinciple) {
+        showingPrinciple = false;
+        renderGuide();
+        return;
+      }
+      if (finished) return;
+      if (current() && current().need === "action") { doAction(); return; }
+      if (current() && current().need === "select" && !missingRequired().length) { tryFinishSelect(); return; }
+      toast("请先完成当前步骤", "bad");
+    }
+    function autoTick() {
+      if (!playing || finished) return;
+      if (showingPrinciple) {
+        showingPrinciple = false;
+        renderGuide();
+        playTimer = setTimeout(autoTick, 1100);
+        return;
+      }
+      var s = current();
+      if (!s) { finish(); return; }
+      if (s.need === "select") {
+        var miss = missingRequired();
+        if (!miss.length) { tryFinishSelect(); playTimer = setTimeout(autoTick, 900); return; }
+        var id = miss[0];
+        var isR = (DATA.required_reagents || []).indexOf(id) >= 0;
+        var item = findItem(id, isR);
+        if (item) placeItem(item, isR);
+        playTimer = setTimeout(autoTick, 800);
+        return;
+      }
+      if (s.need === "action") {
+        doAction();
+        playTimer = setTimeout(autoTick, 1200);
+        return;
+      }
+      if (s.need === "choice") {
+        var ok = (s.choices || []).filter(function (c) { return c.correct; })[0];
+        if (ok) pickChoice(ok);
+        playTimer = setTimeout(autoTick, 1300);
+      }
+    }
+    function togglePlay() {
+      playing = !playing;
+      $("btn-play").textContent = playing ? "❚❚" : "▶";
+      if (playing) autoTick();
+      else clearTimeout(playTimer);
+    }
+    function setMode(next) {
+      mode = next;
+      document.body.classList.toggle("mode-3d", mode === "3d");
+      document.body.classList.toggle("mode-2d", mode === "2d");
+      $("tab-2d").classList.toggle("on", mode === "2d");
+      $("tab-3d").classList.toggle("on", mode === "3d");
+      $("view-2d").classList.toggle("hidden", mode !== "2d");
+      $("view-3d").classList.toggle("hidden", mode !== "3d");
+      $("btn-cam").classList.toggle("hidden", mode !== "3d");
+      if (mode === "3d") {
+        if (!lab3dReady) $("boot3d").classList.remove("hidden");
+        ensure3d();
+      } else {
+        $("boot3d").classList.add("hidden");
+      }
+      applyScene({});
+      requestAnimationFrame(function () {
+        if (lab3dReady && window.Lab3D && window.Lab3D.resize) window.Lab3D.resize();
+      });
+    }
+    function boot3d() {
+      if (lab3dReady) return true;
+      if (!window.THREE) return false;
+      if (!window.Lab3D) {
+        var src = $("lab3d-src");
+        if (src) {
+          try { (0, eval)(src.textContent); } catch (e) { return false; }
+        }
+      }
+      if (!window.Lab3D) return false;
+      window.Lab3D.init($("view-3d"), DATA.scene || "oxygen", DATA.id);
+      lab3dReady = true;
+      $("boot3d").classList.add("hidden");
+      applyScene({});
+      return true;
+    }
+    function ensure3d() {
+      if (boot3d()) return;
+      if ($("three-cdn")) return;
+      var s = document.createElement("script");
+      s.id = "three-cdn";
+      s.src = "https://cdn.jsdelivr.net/npm/three@0.160.1/build/three.min.js";
+      s.onload = function () {
+        if (!boot3d()) {
+          $("boot3d").classList.add("hidden");
+          toast("3D 引擎未加载，已留在 2D", "bad");
+          setMode("2d");
+        }
+      };
+      s.onerror = function () {
+        $("boot3d").classList.add("hidden");
+        toast("3D 资源加载失败，使用 2D 示意", "bad");
+        setMode("2d");
+      };
+      document.head.appendChild(s);
+    }
 
-    if (window.Lab2D) window.Lab2D.init($("view"), DATA.scene || "oxygen");
+    $("tab-2d").onclick = function () { setMode("2d"); };
+    $("tab-3d").onclick = function () { setMode("3d"); };
+    $("btn-cam").onclick = function () {
+      if (lab3dReady && window.Lab3D && Lab3D.resetView) Lab3D.resetView();
+    };
+    $("btn-primary").onclick = onPrimary;
+    $("btn-clear").onclick = resetLab;
+    $("btn-shelf").onclick = function () {
+      var shelf = $("shelf");
+      var collapsed = shelf.classList.toggle("collapsed");
+      document.body.classList.toggle("shelf-collapsed", collapsed);
+      $("btn-shelf").textContent = collapsed ? "›" : "‹";
+    };
+    $("shelf-q").addEventListener("input", function () {
+      shelfQuery = ($("shelf-q").value || "").trim();
+      renderCabinet();
+    });
+    $("report-close").onclick = function () { $("report").classList.add("hidden"); };
+    $("view-2d").addEventListener("pointerup", onBenchPointer);
+    $("view-3d").addEventListener("pointerup", onBenchPointer);
+    $("btn-play").onclick = togglePlay;
+    $("btn-prev").onclick = function () { gotoGuide(-1); };
+    $("btn-next").onclick = function () { gotoGuide(1); };
+    $("heat").oninput = function () {
+      heatC = Number($("heat").value) || 0;
+      applyScene({});
+      var s = current();
+      if (s && s.id === "heat" && s.need === "choice" && heatC >= 60 && selectedA.lamp) {
+        var ok = (s.choices || []).filter(function (c) { return c.correct; })[0];
+        if (ok) pickChoice(ok);
+      }
+    };
+
+    $("badge").textContent = DATA.badge || "虚拟实验台";
+    $("title").textContent = DATA.title;
+    $("subtitle").textContent = DATA.subtitle || "";
+    $("equation").textContent = DATA.equation || "";
+    $("equation").style.display = DATA.equation ? "" : "none";
+    $("drop-hint").textContent = "看完原理后，从左侧器件库取用器材和药品";
+    if (!canHeat) {
+      $("heat-meter").style.display = "none";
+      $("hud-meters").classList.add("no-heat");
+    }
+
+    if (window.Lab2D) window.Lab2D.init($("view-2d"), DATA.scene || "oxygen", DATA.id);
     else toast("实验台未能加载", "bad");
-    renderHeader();
     renderCabinet();
-    renderSteps();
-    renderActions();
     applyScene({});
+    renderGuide();
+    setMode("3d");
   })();
   </script>
+  <!-- edu-lab:23 -->
 </body>
 </html>

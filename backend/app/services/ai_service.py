@@ -3,6 +3,8 @@ import asyncio
 import copy
 import json
 import logging
+import re
+from datetime import datetime
 from types import SimpleNamespace
 
 from sqlalchemy import select
@@ -213,23 +215,111 @@ def _resp_content(resp) -> str:
     return content or ""
 
 
-async def do_generate_courseware(courseware_id: int):
+class _GenAbort(Exception):
+    """可预期的生成失败，消息直接展示给教师。"""
+
+
+def _describe_gen_error(exc: BaseException) -> str:
+    if isinstance(exc, _GenAbort):
+        return str(exc)
+    text = str(exc).lower()
+    if any(m in text for m in ("timeout", "timed out", "524", "504")):
+        return "大模型响应超时，请稍后重新生成"
+    if "429" in text or "rate limit" in text or "overloaded" in text:
+        return "大模型繁忙或被限流，请稍后重新生成"
+    if any(m in text for m in ("401", "403", "authentication", "api key", "api_key", "unauthorized")):
+        return "大模型鉴权失败，请到系统设置检查 API Key"
+    if "context" in text and ("length" in text or "too long" in text or "maximum" in text):
+        return "所选课本内容过长，超出模型上下文，请缩小章节或页码范围"
+    if any(m in text for m in ("connection", "502", "503", "unavailable")):
+        return "连接大模型服务失败，请稍后重新生成"
+    return f"生成出错：{str(exc)[:160]}"
+
+
+def _build_image_catalog(imgs, chapters) -> str:
+    """课本图没有图注，用页码 + 所在最细一级小节标题让模型判断这张图讲什么。"""
+    lines = []
+    for img in imgs:
+        page = img.page_number
+        section = ""
+        if page:
+            best_span = None
+            for c in chapters:
+                if c.page_start and c.page_end and c.page_start <= page <= c.page_end:
+                    span = c.page_end - c.page_start
+                    # 同跨度时后出现的通常是子节，更具体
+                    if best_span is None or span <= best_span:
+                        best_span, section = span, (c.title or "").strip()
+        kind = "整页截图" if "/page_" in (img.object_name or "") else "插图"
+        where = f"第 {page} 页" if page else "页码未知"
+        if section:
+            where += f"，小节「{section[:40]}」"
+        caption = (getattr(img, "caption", None) or "").strip()
+        if caption:
+            where += f"，图注「{caption[:60]}」"
+        lines.append(f"- 图#{img.id}：{where}（{kind}）")
+    return "\n".join(lines)
+
+
+_CW_PROGRESS_TTL = 3600
+
+
+async def _no_progress(stage: str, detail: str = "") -> None:
+    return None
+
+
+def _courseware_progress_reporter(cw, task_id: str | None):
+    """返回 report(stage, detail)：写 Redis 快照供状态接口轮询，并发布到任务频道。"""
+    from app.models.courseware import courseware_progress_key
+
+    steps = [{"key": "prepare", "label": "读取课本内容"}, {"key": "blueprint", "label": "设计教学蓝图"}]
+    if cw.textbook_id:
+        steps.append({"key": "bank", "label": "匹配题库真题"})
+    if cw.is_interactive:
+        steps.append({"key": "interactive", "label": "制作互动页"})
+    if _teacher_intent(cw):
+        steps.append({"key": "intent", "label": "落实教师想法"})
+    steps.append({"key": "save", "label": "保存课件"})
+    key = courseware_progress_key(cw.id)
+
+    async def report(stage: str, detail: str = "") -> None:
+        payload = {"stage": stage, "detail": detail, "steps": steps}
+        try:
+            from app.core.redis_client import get_redis
+            redis = await get_redis()
+            await redis.set(key, json.dumps(payload, ensure_ascii=False), ex=_CW_PROGRESS_TTL)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("课件 %s 写进度失败：%s", cw.id, e)
+        await _publish_progress(task_id, payload)
+
+    return report
+
+
+async def do_generate_courseware(courseware_id: int, task_id: str | None = None):
     async with AsyncSessionLocal() as db:
         result = await db.execute(select(Courseware).where(Courseware.id == courseware_id))
         cw = result.scalar_one_or_none()
         if not cw:
             # 行可能尚未提交（极端时序），抛错让任务重试
             raise ValueError(f"课件 {courseware_id} 不存在，稍后重试")
+        # 投递后才回写 task_id，所以开头允许为空；不一致说明已被新一轮生成取代
+        if task_id and cw.task_id and cw.task_id != task_id:
+            logger.info("课件 %s 任务 %s 已被 %s 取代，跳过", cw.id, task_id, cw.task_id)
+            return
 
         cw.gen_status = ParseStatus.processing
+        cw.gen_started_at = datetime.now()
+        cw.gen_error = None
         await db.commit()
 
+        progress = _courseware_progress_reporter(cw, task_id)
+        await progress("prepare")
+        content = None
+        error: str | None = None
         try:
             cfg = await _get_default_llm(cw.teacher_id, db)
             if not cfg:
-                cw.gen_status = ParseStatus.failed
-                await db.commit()
-                return
+                raise _GenAbort("未配置可用的大模型，请管理员到系统设置添加并设为默认")
 
             # 获取课本内容
             chapter_content = ""
@@ -237,6 +327,7 @@ async def do_generate_courseware(courseware_id: int):
             subject_name = ""
             subject_block = ""
             subject_interactive = ""
+            bank_scope: dict | None = None
             if cw.textbook_id:
                 # 依据教师选择的「章节多选」或「页码范围」筛选课本内容
                 chapter_ids = None
@@ -312,12 +403,10 @@ async def do_generate_courseware(courseware_id: int):
                         TextbookImage.page_number >= img_lo,
                         TextbookImage.page_number <= img_hi,
                     )
-                img_q = img_q.order_by(TextbookImage.sort_order).limit(40)
+                img_q = img_q.order_by(TextbookImage.page_number, TextbookImage.sort_order).limit(40)
                 imgs = (await db.execute(img_q)).scalars().all()
                 if imgs:
-                    image_catalog = "\n".join(
-                        f"- 图#{img.id}（位于课本第 {img.page_number} 页）" for img in imgs
-                    )
+                    image_catalog = _build_image_catalog(imgs, chapters)
 
                 # 解析该课本所属科目的专属提示词
                 tb = (await db.execute(
@@ -327,22 +416,44 @@ async def do_generate_courseware(courseware_id: int):
                     subject_name, subject_block, subject_interactive = await _resolve_subject_prompt(
                         db, cw.teacher_id, tb.subject_id
                     )
+                    if tb.subject_id and tb.grade_id:
+                        bank_scope = {"subject_id": tb.subject_id, "grade_id": tb.grade_id}
 
             content = await _generate_lesson_content(
                 cfg, cw, chapter_content, image_catalog,
                 subject_name, subject_block, subject_interactive,
+                progress=progress, bank_scope=bank_scope,
             )
+            await progress("save")
+        except Exception as e:
+            if isinstance(e, _GenAbort):
+                logger.warning("课件 %s 生成中止：%s", cw.id, e)
+            else:
+                logger.exception("课件 %s 生成失败：%s", cw.id, e)
+            error = _describe_gen_error(e)
+            await db.rollback()
+
+        # 生成期间教师可能又点了重新生成，或任务已被判超时回收
+        await db.refresh(cw)
+        if task_id and cw.task_id != task_id:
+            logger.info("课件 %s 任务 %s 结束时已被取代（当前 %s），丢弃结果", cw.id, task_id, cw.task_id)
+            return
+
+        if content is not None:
             cw.content = content
             cw.gen_status = ParseStatus.done
+            cw.gen_error = None
             await save_courseware_version(db, cw, cw.teacher_id, skip_if_same=False)
-        except Exception as e:
-            logger.exception("课件 %s 生成失败：%s", cw.id, e)
+        elif isinstance(cw.content, dict) and cw.content.get("slides"):
+            cw.gen_status = ParseStatus.done
+            cw.gen_error = f"本次重新生成失败：{error}；已保留上一版内容"[:500]
+        else:
             cw.gen_status = ParseStatus.failed
-        finally:
-            await db.commit()
+            cw.gen_error = (error or "生成失败")[:500]
+        await db.commit()
 
         # 生成成功后异步把知识点回填到知识图谱（best-effort，不影响课件本身）
-        if cw.gen_status == ParseStatus.done:
+        if content is not None:
             try:
                 from app.tasks.knowledge_tasks import persist_courseware_kps_task
                 persist_courseware_kps_task.delay(cw.id)
@@ -539,17 +650,44 @@ def _normalize_knowledge_points(raw_points: list, max_points: int = 4) -> list[d
         name = str(p.get("name") or p.get("title") or "").strip()
         if not name:
             name = f"知识点{i + 1}"
+        fixes = _mistake_fixes(p.get("common_mistakes"), 3)
         out.append({
             "name": name[:64],
             "plain_explanation": str(p.get("plain_explanation") or p.get("explanation") or "").strip(),
             "core_concepts": _str_list(p.get("core_concepts"), 5),
-            "common_mistakes": _str_list(p.get("common_mistakes"), 3),
+            "common_mistakes": [f["wrong"] for f in fixes],
+            "mistake_fixes": fixes,
             "life_example": str(p.get("life_example") or "").strip(),
             "activity_goal": str(p.get("activity_goal") or "").strip(),
             "deep_dive": str(p.get("deep_dive") or "").strip(),
             "teacher_focus": str(p.get("teacher_focus") or "").strip(),
+            "image_ids": _image_id_list(p.get("image_ids")),
         })
     return out[:max_points]
+
+
+def _mistake_fixes(raw, limit: int = 3) -> list[dict]:
+    """易错项统一成 {wrong, right}；旧格式只有误区字符串时 right 为空。"""
+    out: list[dict] = []
+    for item in raw if isinstance(raw, list) else []:
+        if isinstance(item, dict):
+            wrong = str(item.get("wrong") or item.get("mistake") or "").strip()
+            right = str(item.get("right") or item.get("fix") or item.get("correct") or "").strip()
+        else:
+            wrong, right = str(item or "").strip(), ""
+        if wrong:
+            out.append({"wrong": wrong, "right": right})
+    return out[:limit]
+
+
+def _image_id_list(raw, limit: int = 2) -> list[int]:
+    """模型写的图号可能是 123 / "123" / "#123" / "图#123"，统一成去重的 int。"""
+    out: list[int] = []
+    for x in raw if isinstance(raw, list) else []:
+        digits = "".join(ch for ch in str(x) if ch.isdigit())
+        if digits and int(digits) not in out:
+            out.append(int(digits))
+    return out[:limit]
 
 
 def _normalize_intro(raw) -> dict:
@@ -567,7 +705,44 @@ def _normalize_intro(raw) -> dict:
         "subtitle": str(raw.get("subtitle") or "").strip(),
         "content": str(raw.get("content") or "").strip(),
         "steps": steps,
+        "image_ids": _image_id_list(raw.get("image_ids")),
     }
+
+
+_TEACHER_ONLY_RE = re.compile(r"强调|提醒学生|引导学生|让学生|组织学生|请学生|教师用|备课")
+_TEACHER_DEMO_RE = re.compile(r"(教师|老师)[^，。；！？]{0,12}?(展示|演示|出示|播放|拿出|点燃|进行)")
+_STUDENT_DO_RE = re.compile(r"(?<![让请])学生(观察|思考|讨论|回答|说出|猜测|预测)")
+_ASK_STUDENT_RE = re.compile(r"^(请|让|引导)学生(先)?(预测|猜测|猜一猜|思考|回答|说出|讨论|观察)[：:，,]")
+
+
+def _student_voice_steps(steps: list[dict]) -> tuple[list[dict], list[str]]:
+    """导入步骤投影给学生：教师操作句挪进讲稿，「教师展示…」「学生观察…」改成学生视角。"""
+    out: list[dict] = []
+    moved: list[str] = []
+    for st in steps:
+        kept = []
+        for sent in re.findall(r"[^。；！？]+[。；！？]?", st.get("detail") or ""):
+            sent = _ASK_STUDENT_RE.sub("", sent.strip())
+            if not sent:
+                continue
+            if _TEACHER_ONLY_RE.search(sent):
+                moved.append(sent.strip())
+                continue
+            sent = _TEACHER_DEMO_RE.sub(lambda m: "" if m.group(2) in ("展示", "出示", "播放", "拿出", "进行") else m.group(2), sent)
+            sent = _STUDENT_DO_RE.sub(r"\1", sent)
+            kept.append(sent.strip("，、 "))
+        detail = "".join(kept).strip()
+        if detail:
+            out.append({**st, "detail": detail})
+    if not out:
+        return steps, []
+    return out, moved
+
+
+def _short_point_name(name: str, limit: int = 14) -> str:
+    """互动页标题只用知识点名冒号前的部分，太长时不截断以免断词。"""
+    head = re.split(r"[：:]", name or "", maxsplit=1)[0].strip()
+    return head if head and len(head) <= limit else (name or "").strip()
 
 
 def _normalize_exercises(raw) -> list[dict]:
@@ -605,23 +780,86 @@ def _normalize_example(raw) -> dict | None:
     return {"prompt": prompt, "solution": solution}
 
 
-def _normalize_blueprint(obj: dict, *, web_style: bool = False) -> dict:
-    grain = str((obj or {}).get("lesson_grain") or "period").strip()
+# 课型：决定蓝图要求、课序与题量。order 里的块名见 _assemble_lesson_from_blueprint
+_LESSON_PROFILES: dict[str, dict] = {
+    "new": {
+        "label": "新授课", "max_examples": 1, "max_exercises": 4,
+        "order": ["cover", "intro", "interactive", "knowledge", "comparison",
+                  "example", "summary", "exercise", "homework"],
+    },
+    "review": {
+        "label": "复习课", "max_examples": 1, "max_exercises": 6,
+        "order": ["cover", "intro", "review_map", "interactive", "knowledge", "comparison",
+                  "example", "exercise", "summary", "homework"],
+    },
+    "practice": {
+        "label": "习题课", "max_examples": 2, "max_exercises": 6,
+        "order": ["cover", "intro", "knowledge", "interactive", "example", "exercise",
+                  "comparison", "summary", "homework"],
+    },
+    "lab": {
+        "label": "实验课", "max_examples": 1, "max_exercises": 4,
+        "order": ["cover", "intro", "lab_setup", "interactive", "knowledge", "comparison",
+                  "example", "exercise", "summary", "homework"],
+    },
+}
+
+
+def _lesson_type(cw) -> str:
+    t = str(getattr(cw, "lesson_type", None) or "new")
+    return t if t in _LESSON_PROFILES else "new"
+
+
+def _normalize_lab(raw) -> dict | None:
+    if not isinstance(raw, dict):
+        return None
+    steps = []
+    for item in (raw.get("steps") or [])[:6]:
+        if isinstance(item, dict) and (item.get("title") or item.get("detail")):
+            steps.append({
+                "title": str(item.get("title") or "").strip(),
+                "detail": str(item.get("detail") or "").strip(),
+            })
+        elif isinstance(item, str) and item.strip():
+            steps.append({"title": "", "detail": item.strip()})
+    return {
+        "purpose": str(raw.get("purpose") or "").strip(),
+        "materials": _str_list(raw.get("materials"), 10),
+        "steps": steps,
+        "safety": _str_list(raw.get("safety"), 3),
+        "observations": _str_list(raw.get("observations"), 4),
+    }
+
+
+def _normalize_blueprint(obj: dict, *, web_style: bool = False, lesson_type: str = "new") -> dict:
+    obj = obj or {}
+    grain = str(obj.get("lesson_grain") or "period").strip()
     if grain not in ("period", "unit"):
         grain = "period"
+    if lesson_type == "review":
+        grain = "unit"
     max_points = 4 if grain == "unit" else 2
-    points = _normalize_knowledge_points((obj or {}).get("knowledge_points") or [], max_points)
+    points = _normalize_knowledge_points(obj.get("knowledge_points") or [], max_points)
+    profile = _LESSON_PROFILES[lesson_type]
+    examples = [e for e in (_normalize_example(x) for x in (obj.get("examples") or [])) if e]
+    if not examples:
+        single = _normalize_example(obj.get("example"))
+        examples = [single] if single else []
+    examples = examples[: profile["max_examples"]]
     return {
-        "topic": str((obj or {}).get("topic") or "").strip(),
+        "topic": str(obj.get("topic") or "").strip(),
         "lesson_grain": grain,
-        "cover_subtitle": str((obj or {}).get("cover_subtitle") or "").strip(),
-        "objectives": _str_list((obj or {}).get("objectives"), 4),
-        "intro": _normalize_intro((obj or {}).get("intro")),
+        "lesson_type": lesson_type,
+        "cover_subtitle": str(obj.get("cover_subtitle") or "").strip(),
+        "objectives": _str_list(obj.get("objectives"), 4),
+        "intro": _normalize_intro(obj.get("intro")),
         "knowledge_points": points,
-        "example": _normalize_example((obj or {}).get("example")),
-        "exercises": _normalize_exercises((obj or {}).get("exercises")),
-        "homework": _normalize_homework((obj or {}).get("homework")),
-        "summary": _str_list((obj or {}).get("summary"), 4),
+        "example": examples[0] if examples else None,
+        "examples": examples,
+        "lab": _normalize_lab(obj.get("lab")) if lesson_type == "lab" else None,
+        "exercises": _normalize_exercises(obj.get("exercises"))[: profile["max_exercises"]],
+        "homework": _normalize_homework(obj.get("homework")),
+        "summary": _str_list(obj.get("summary"), 4),
         "web_style": web_style,
     }
 
@@ -659,8 +897,14 @@ def _blueprint_gaps(bp: dict) -> list[str]:
         for i, p in enumerate(points, 1):
             for g in _point_gaps(p, web_style=web_style):
                 gaps.append(f"point{i}.{g}")
-    if len(bp.get("exercises") or []) < 2:
+    lesson_type = bp.get("lesson_type") or "new"
+    min_exercises = 4 if lesson_type in ("review", "practice") else 2
+    if len(bp.get("exercises") or []) < min_exercises:
         gaps.append("exercises")
+    if lesson_type == "practice" and len(bp.get("examples") or []) < 2:
+        gaps.append("examples")
+    if lesson_type == "lab" and len((bp.get("lab") or {}).get("steps") or []) < 2:
+        gaps.append("lab.steps")
     if not bp.get("homework"):
         gaps.append("homework")
     if len(bp.get("summary") or []) < 2:
@@ -708,6 +952,8 @@ def _fill_blueprint_gaps(bp: dict, cw) -> dict:
             "prompt": f"有同学说：“{mistake}”。这种说法对吗？请说明理由。",
             "solution": p0.get("plain_explanation") or f"对照「{p0['name']}」的核心要点判断。",
         }
+    if bp.get("example") and not bp.get("examples"):
+        bp["examples"] = [bp["example"]]
     if len(bp.get("exercises") or []) < 2:
         exercises = list(bp.get("exercises") or [])
         for p in points:
@@ -764,30 +1010,24 @@ def _interactive_teacher_intent_block(cw, point: dict) -> str:
 
 
 def _inject_teacher_intent(slides: list[dict], intent: str) -> None:
-    """先把教师想法写进封面、目标、练习、作业，保证课件里看得见。"""
+    """把教师想法写进封面、目标、练习、作业的 notes（只给教师看，学生页不出现）。"""
     if not intent:
         return
+    labels = {
+        "cover": "教师想法",
+        "objectives": "落实教师想法",
+        "exercise": "练习需对齐教师要求",
+        "homework": "作业需对齐教师要求",
+    }
     for slide in slides:
-        stype = slide.get("type")
-        if stype == "cover":
-            notes = (slide.get("notes") or "").strip()
-            line = f"教师想法：{intent}"
-            if line not in notes:
-                slide["notes"] = f"{line}\n{notes}".strip() if notes else line
-        elif stype == "objectives":
-            extra = f"落实教师想法：{intent}"
-            bullets = [str(b) for b in (slide.get("bullets") or [])]
-            if not any(intent[:24] in str(b) for b in bullets):
-                bullets.append(extra)
-            slide["bullets"] = bullets[:6]
-            content = (slide.get("content") or "").strip()
-            if "教师本课要求" not in content:
-                slide["content"] = (content + f"\n\n### 教师本课要求\n{intent}").strip()
-        elif stype in ("exercise", "homework"):
-            content = (slide.get("content") or "").strip()
-            if intent not in content:
-                label = "练习需对齐教师要求" if stype == "exercise" else "作业需对齐教师要求"
-                slide["content"] = f"{content}\n\n{label}：{intent}".strip()
+        label = labels.get(slide.get("type"))
+        if not label:
+            continue
+        notes = (slide.get("notes") or "").strip()
+        if intent in notes:
+            continue
+        line = f"{label}：{intent}"
+        slide["notes"] = f"{line}\n{notes}".strip() if notes else line
 
 
 def _merge_slide_patch(slide: dict, patch: dict) -> None:
@@ -797,11 +1037,25 @@ def _merge_slide_patch(slide: dict, patch: dict) -> None:
         val = patch.get(key)
         if isinstance(val, str) and val.strip():
             slide[key] = val.strip()
+    if slide.get("pairs") and isinstance(patch.get("pairs"), list):
+        pairs = _mistake_fixes(patch["pairs"], 10)
+        if pairs:
+            upd = {"pairs": pairs}
+            _keep_slide_pairs_aligned(upd, slide)
+            slide.update(upd)
     bullets = patch.get("bullets")
-    if isinstance(bullets, list):
+    if isinstance(bullets, list) and not slide.get("pairs"):
         cleaned = [str(x).strip() for x in bullets if str(x).strip()][:8]
         if cleaned:
+            old_bullets = slide.get("bullets") or []
             slide["bullets"] = cleaned
+            if slide.get("answers") is not None:
+                answers = patch.get("answers")
+                if isinstance(answers, list) and len(answers) == len(cleaned):
+                    slide["answers"] = [str(x or "").strip() for x in answers]
+                elif cleaned != old_bullets:
+                    # 题改了却没给对得上的答案：宁可不给学生页答案，也不能错配
+                    slide.pop("answers", None)
     steps = patch.get("steps")
     if isinstance(steps, list) and steps:
         cleaned_steps = []
@@ -837,11 +1091,13 @@ async def _apply_teacher_intent(cfg, cw, lesson: dict, intent: str) -> dict:
             "notes": slide.get("notes") or "",
             "prompt": slide.get("prompt") or "",
             "solution": slide.get("solution") or "",
+            **({"answers": slide["answers"]} if slide.get("answers") else {}),
+            **({"pairs": slide["pairs"]} if slide.get("pairs") else {}),
         })
     system = """你是一线教研员。按教师想法改写已有课件文案。
 硬性规则：
 1. 不增删页，不改 index/type，不要输出 html/images/skill。
-2. 只改 title/subtitle/bullets/content/notes/prompt/solution，必须落实教师想法。
+2. 只改 title/subtitle/bullets/content/notes/prompt/solution/answers/pairs，必须落实教师想法。练习页 answers 与 bullets 一一对应，改了题就同步改答案；易错对照页改 pairs（每条 wrong 配直接纠正它的 right），不要改它的 bullets。
 3. 学生页文案面向学生上课看，禁止说课口吻（「本节课我们将学习」「教学目标」「请同学们」）。教师要求写进 notes，不要出现在 title/bullets/content 上。
 4. 不得改写公式、方程式、实验现象、装置、单位、数据等学科事实；教师想法只改变讲解侧重与例题情境。
 5. 只输出 JSON：{"slides":[{...}]}，不要 markdown。"""
@@ -878,7 +1134,36 @@ async def _apply_teacher_intent(cfg, cw, lesson: dict, intent: str) -> dict:
     return lesson
 
 
-def _lesson_extract_prompts(cw, chapter_content: str, subject_name: str, subject_block: str, web_style: bool, missing: list[str] | None = None):
+_LESSON_TYPE_RULES = {
+    "review": (
+        "\n\n【课型：复习课——以下要求优先于上面第 1、3 条】"
+        "\n- lesson_grain=unit，抽 3～4 个本单元最核心、最易混的知识点，topic 写成「××复习」。"
+        "\n- intro 写成「回忆问题链」：steps 给 2～3 个由浅入深、学生凭记忆回答的问题，不做新现象探究。"
+        "\n- 每个知识点 plain_explanation 要点出它和其他点的联系；common_mistakes 每点至少 2 条。"
+        "\n- exercises 给 6 道覆盖各知识点的综合题，其中至少 1 道跨知识点。"
+    ),
+    "practice": (
+        "\n\n【课型：习题课——以下要求优先于上面第 1、3 条】"
+        "\n- 围绕 1～2 个核心解题方法：knowledge_points 的 name 写方法名，core_concepts 写方法步骤/适用条件，"
+        "common_mistakes 写典型错法，life_example 写这个方法常见的题型场景。"
+        "\n- intro 写成「引例」：一道能引出方法的题，steps 写「读题→找条件/想方法」。"
+        "\n- 用 examples 给 2 道例题（先基础后提高），solution 写完整过程并点明方法。"
+        "\n- exercises 给 6 道变式题，按「模仿→变式→拓展」排列。"
+    ),
+    "lab": (
+        "\n\n【课型：实验课——以下要求优先于上面第 3 条】"
+        "\n- 必须给 lab：purpose（实验要回答的问题）、materials（器材与试剂）、steps（3～6 步具体操作）、"
+        "safety（1～3 条安全注意）、observations（应观察到的现象，教师用）。实验必须是课本里的，不得另编。"
+        "\n- intro 写成「提出问题 + 猜想」，不要提前说出现象。"
+        "\n- knowledge_points 写实验得出的结论与原理，activity_goal 写学生在实验台上要完成的操作。"
+    ),
+}
+
+
+def _lesson_extract_prompts(
+    cw, chapter_content: str, subject_name: str, subject_block: str, web_style: bool,
+    missing: list[str] | None = None, image_catalog: str = "",
+):
     subject_hint = ""
     if subject_block:
         subject_hint = (
@@ -914,6 +1199,33 @@ def _lesson_extract_prompts(cw, chapter_content: str, subject_name: str, subject
             "\n8. 上次缺了这些字段，必须补全且写具体内容，禁止套话："
             + "、".join(missing[:12])
         )
+    image_rule = ""
+    intro_img_field = ""
+    point_img_field = ""
+    if image_catalog:
+        image_rule = (
+            "\n9. 用户消息末尾有【课本插图清单】，你看不到图本身，只能凭图注、页码和所在小节判断。"
+            "有图注的图以图注为准：图注讲的正是这个知识点的实验装置、现象或示意图（如「电解水实验」「水分子分解示意图」）时，"
+            "务必把图号（数字）写进该处 image_ids；没有图注的，只有所在小节正好讲这个知识点时才用。"
+            "每处最多 2 张，同一张图不要重复用；拿不准就留空数组。优先用「插图」，「整页截图」只在没有插图可用时才用。"
+        )
+        intro_img_field = ',\n    "image_ids": []'
+        point_img_field = ',\n      "image_ids": []'
+    lesson_type = _lesson_type(cw)
+    type_rule = _LESSON_TYPE_RULES.get(lesson_type, "")
+    example_field = '"example": {"prompt": "完整题干（含选项则写在同一段）", "solution": "判断依据"},'
+    lab_field = ""
+    if lesson_type == "practice":
+        example_field = (
+            '"examples": [{"prompt": "例题1（基础）", "solution": "完整解题过程与方法点拨"}, '
+            '{"prompt": "例题2（提高）", "solution": "完整解题过程与方法点拨"}],'
+        )
+    if lesson_type == "lab":
+        lab_field = (
+            '\n  "lab": {"purpose": "这个实验要回答的问题", "materials": ["器材或试剂"], '
+            '"steps": [{"title": "步骤名", "detail": "具体操作"}], "safety": ["安全注意"], '
+            '"observations": ["应观察到的现象（教师用，先不给学生看）"]},'
+        )
     from app.services.courseware_components import ACCURACY_RULES
 
     system_prompt = f"""你是一线特级教师。根据课题和课本，设计【一节可直接上的 45 分钟课】的教学蓝图，只输出 JSON。{subject_hint}
@@ -924,11 +1236,12 @@ def _lesson_extract_prompts(cw, chapter_content: str, subject_name: str, subject
 0. 下面「课本内容」是事实来源。知识点、公式、方程式、现象、装置、数据必须与之相符；对不上就不要写进蓝图。
 1. 先定课时：课题若是大单元名（如酸碱盐、力、电），默认 lesson_grain=period，只取本节最该先上的 1～2 个点，topic 写成具体课时名（如「溶液的酸碱性：指示剂与pH」），不要用单元名当课时名。仅当教师明确要求单元复习时用 unit，可抽 3～4 点。
 2. 目标必须可检测（能说出/会判断/会操作），禁止「理解某某标题」「掌握某某知识点」。目标给学生上课前不要念，写进 objectives 供教师备课。
-3. 导入必须是具体物品或现象，禁止「从熟悉的生活场景出发」这类空话。课序是先探究再命名：学生先看现象、动手，再出现规范说法。
-4. 每个知识点必须有：至少 2 条 core_concepts、至少 1 个真实 life_example、至少 1 条 common_mistakes。理科符号必须规范：化学式用 Unicode 下标（CO₂、H₂O、C₆H₁₂O₆），禁止 CO2/H2O/Co2；物理单位用上标（m/s²、cm²），初速度写 v₀ 不是 v0；数学公式用 $...$，禁止 a2、R2 当指数；三角函数名小写 sin/cos/tan。
+3. 导入必须是具体物品或现象，禁止「从熟悉的生活场景出发」这类空话。课序是先探究再命名：学生先看现象、动手，再出现规范说法。intro.steps 会直接投影给学生，用学生视角写（如「看：点燃纯净的氢气，罩上干燥烧杯」「问：烧杯壁上的液滴是哪来的？」），禁止出现「教师展示」「学生观察」「强调」等操作说明；教师怎么演示、安全提醒写进 intro.content。
+4. 每个知识点必须有：至少 2 条 core_concepts、至少 1 个真实 life_example、至少 1 条 common_mistakes（每条 wrong 都要配一句直接纠正它的 right，不要拿别的要点凑）。理科符号必须规范：化学式用 Unicode 下标（CO₂、H₂O、C₆H₁₂O₆），禁止 CO2/H2O/Co2；物理单位用上标（m/s²、cm²），初速度写 v₀ 不是 v0；数学公式用 $...$，禁止 a2、R2 当指数；三角函数名小写 sin/cos/tan。
 5. 例题、随堂练习、作业都要写具体题面；作业禁止「自拟题」，并包含一个小作品（如体检单、方案、口头报告）。练习要带简短判断依据（给学生看题，依据留给教师）。
-6. 小结写学生能复述的短句，不要重复知识点标题。
-7. 只输出 JSON，不要 markdown。{web_rule}{intent_rule}{lab_rule}{retry_rule}
+6. 小结写学生能复述的短句，不要重复知识点标题。小结、例题、练习、作业只考 knowledge_points 里讲过的概念；要考的概念（如单质/化合物/氧化物）必须先写进某个知识点的 core_concepts。
+6.1 实验结论写全课本给出的关键定量关系（如电解水正负极气体体积比约 1∶2），不要只写「较多/较少」。
+7. 只输出 JSON，不要 markdown。{web_rule}{intent_rule}{lab_rule}{retry_rule}{image_rule}{type_rule}
 
 JSON 格式：
 {{
@@ -939,20 +1252,20 @@ JSON 格式：
   "intro": {{
     "title": "具体情境标题",
     "subtitle": "",
-    "content": "为什么学生要从这个现象切入（教师备课，不投影）",
-    "steps": [{{"title": "看", "detail": "具体物品/现象"}}, {{"title": "问", "detail": "学生要回答的问题"}}]
+    "content": "为什么从这个现象切入、教师怎么演示、安全提醒（教师备课，不投影）",
+    "steps": [{{"title": "看", "detail": "学生要看的具体物品/现象（投影给学生）"}}, {{"title": "问", "detail": "学生要回答的问题"}}]{intro_img_field}
   }},
   "knowledge_points": [
     {{
       "name": "知识点名称",
       "plain_explanation": "用白话解释",
       "core_concepts": ["要点1", "要点2"],
-      "common_mistakes": ["易错1"],
+      "common_mistakes": [{{"wrong": "学生常见的错误说法", "right": "针对这条错误的正确说法（一句话，直接纠正它）"}}],
       "life_example": "真实物品或课本实例",
-      "activity_goal": "互动要达成的可观察目标"{deep_dive_field}{focus_field}
+      "activity_goal": "互动要达成的可观察目标"{deep_dive_field}{focus_field}{point_img_field}
     }}
-  ],
-  "example": {{"prompt": "完整题干（含选项则写在同一段）", "solution": "判断依据"}},
+  ],{lab_field}
+  {example_field}
   "exercises": [{{"question": "具体题", "answer": "依据"}}],
   "homework": [{{"task": "基础：……"}}, {{"task": "规范或挑战：……"}}],
   "summary": ["带走的短句1", "短句2"]
@@ -967,6 +1280,8 @@ JSON 格式：
             f"\n\n【教师想法——必须遵守；只改讲解侧重与例题情境，不得改写学科事实】\n{intent}\n"
             "请据此决定讲哪些点、讲到多深、用什么例子。"
         )
+    if image_catalog:
+        user_prompt += f"\n\n【课本插图清单】\n{image_catalog}"
     return system_prompt, user_prompt
 
 
@@ -977,11 +1292,16 @@ async def _extract_lesson_blueprint(
     subject_name: str = "",
     subject_block: str = "",
     web_style: bool = False,
+    progress=None,
+    image_catalog: str = "",
 ) -> dict:
     """抽出一节课的教学蓝图：课时名、目标、导入、知识点、例题、练习、作业。"""
+    progress = progress or _no_progress
+    await progress("blueprint", "抽取知识点、导入、例题、练习与作业")
     max_tok = max(cfg.max_tokens or 0, 7000 if web_style else 5000)
     system_prompt, user_prompt = _lesson_extract_prompts(
         cw, chapter_content, subject_name, subject_block, web_style,
+        image_catalog=image_catalog,
     )
     resp = await _call_llm(
         cfg,
@@ -989,12 +1309,15 @@ async def _extract_lesson_blueprint(
         max_tokens=max_tok,
     )
     obj = _parse_json_object(_resp_content(resp)) or {}
-    bp = _normalize_blueprint(obj, web_style=web_style)
+    lesson_type = _lesson_type(cw)
+    bp = _normalize_blueprint(obj, web_style=web_style, lesson_type=lesson_type)
     gaps = _blueprint_gaps(bp)
     if gaps:
         logger.info("课件 %s 蓝图缺字段，补抽一次：%s", getattr(cw, "id", "?"), "、".join(gaps[:8]))
+        await progress("blueprint", "首轮内容有缺项，正在补全")
         system2, user2 = _lesson_extract_prompts(
             cw, chapter_content, subject_name, subject_block, web_style, missing=gaps,
+            image_catalog=image_catalog,
         )
         resp2 = await _call_llm(
             cfg,
@@ -1002,7 +1325,7 @@ async def _extract_lesson_blueprint(
             max_tokens=max_tok,
         )
         obj2 = _parse_json_object(_resp_content(resp2)) or {}
-        bp2 = _normalize_blueprint(obj2, web_style=web_style)
+        bp2 = _normalize_blueprint(obj2, web_style=web_style, lesson_type=lesson_type)
         if not _blueprint_gaps(bp2) or len(_blueprint_gaps(bp2)) < len(gaps):
             bp = bp2
         else:
@@ -1015,8 +1338,11 @@ async def _extract_lesson_blueprint(
                 bp["intro"] = bp2["intro"]
             if bp2.get("knowledge_points"):
                 bp["knowledge_points"] = bp2["knowledge_points"]
-            if bp2.get("example"):
+            if bp2.get("examples") and len(bp2["examples"]) >= len(bp.get("examples") or []):
                 bp["example"] = bp2["example"]
+                bp["examples"] = bp2["examples"]
+            if (bp2.get("lab") or {}).get("steps"):
+                bp["lab"] = bp2["lab"]
             if bp2.get("exercises"):
                 bp["exercises"] = bp2["exercises"]
             if bp2.get("homework"):
@@ -1320,13 +1646,13 @@ _OPTIMIZE_HINTS = {
 }
 
 _SLIDE_TEXT_KEYS = (
-    "title", "subtitle", "bullets", "content", "notes",
+    "title", "subtitle", "bullets", "answers", "pairs", "content", "more", "notes",
     "prompt", "solution", "left_title", "right_title", "columns", "steps",
 )
 
 
 def _slide_prompt_payload(slide: dict) -> dict:
-    return {k: slide.get(k) for k in ("type", *_SLIDE_TEXT_KEYS)}
+    return {k: slide.get(k) for k in ("type", *_SLIDE_TEXT_KEYS) if k in slide or k == "type"}
 
 
 def _as_slide_text(value) -> str | None:
@@ -1407,7 +1733,7 @@ def _coerce_slide_updates(obj: dict, original: dict, mode: str) -> dict:
         return {"notes": notes} if notes else {}
 
     out: dict = {}
-    for k in ("title", "subtitle", "content", "notes", "prompt", "solution", "left_title", "right_title"):
+    for k in ("title", "subtitle", "content", "more", "notes", "prompt", "solution", "left_title", "right_title"):
         if k not in obj:
             continue
         text = _as_slide_text(obj.get(k))
@@ -1444,7 +1770,32 @@ def _coerce_slide_updates(obj: dict, original: dict, mode: str) -> dict:
                 cleaned.append(row)
         if cleaned:
             out[k] = cleaned
+    if isinstance(obj.get("answers"), list):
+        out["answers"] = [_as_slide_text(x) or "" for x in obj["answers"]]
+    if isinstance(obj.get("pairs"), list):
+        pairs = _mistake_fixes(obj["pairs"], 10)
+        if pairs:
+            out["pairs"] = pairs
+    _keep_slide_pairs_aligned(out, original)
     return out
+
+
+def _keep_slide_pairs_aligned(out: dict, original: dict) -> None:
+    """练习答案须与题目一一对应、易错配对须与两栏一致；对不上就清空，学生页回退旧样式而不是错配。"""
+    if "bullets" in out or "answers" in out:
+        bullets = out.get("bullets", original.get("bullets") or [])
+        answers = out.get("answers", original.get("answers"))
+        if answers is not None and len(answers) != len(bullets):
+            out["answers"] = []
+    if out.get("pairs"):
+        pairs = out["pairs"]
+        out["columns"] = [
+            {"title": original.get("left_title") or "常见误区", "items": [p["wrong"] for p in pairs]},
+            {"title": original.get("right_title") or "正确说法", "items": [p["right"] for p in pairs]},
+        ]
+        out["bullets"] = [p["wrong"] for p in pairs] + [p["right"] for p in pairs]
+    elif ("columns" in out or "bullets" in out) and original.get("pairs"):
+        out["pairs"] = []
 
 
 def _optimize_updates_unusable(updates: dict, mode: str) -> bool:
@@ -1623,6 +1974,13 @@ async def _rewrite_one_slide(
         if mode != "notes"
         else '{"notes":"教师讲稿全文"}'
     )
+    if mode != "notes":
+        if "answers" in slide:
+            schema_note += '；练习页另有 "answers":[""]，与 bullets 一一对应，改题必须同步改答案'
+        if slide.get("pairs"):
+            schema_note += '；易错对照页另有 "pairs":[{"wrong":"错误说法","right":"直接纠正它的正确说法"}]，以 pairs 为准'
+        if "more" in slide:
+            schema_note += '；知识页另有 "more":"深入理解（学生页折叠）"'
     prompt = f"""你是中小学课件编辑。这次只改「当前这一页」的文案，不是生成整节课。
 
 课件标题：{cw_title}
@@ -1668,6 +2026,8 @@ async def _rewrite_one_slide(
 async def _generate_lesson_content(
     cfg, cw, chapter_content: str, image_catalog: str,
     subject_name: str = "", subject_block: str = "", subject_interactive: str = "",
+    progress=None,
+    bank_scope: dict | None = None,
 ) -> dict:
     """两阶段课件生成：先抽教学蓝图，再按蓝图拼课。
 
@@ -1685,12 +2045,15 @@ async def _generate_lesson_content(
         interactive_hint = build_interactive_prompt(subject_interactive)
 
     # Stage 1: 抽出可上课的教学蓝图（课时名、目标、导入、例题、练习、作业）
+    progress = progress or _no_progress
     blueprint = await _extract_lesson_blueprint(
         cfg, cw, chapter_content, subject_name, subject_block, web_style=is_web,
+        progress=progress, image_catalog=image_catalog,
     )
     points = (blueprint or {}).get("knowledge_points") or []
     if not points:
         logger.warning("课件 %s 未提取到有效知识点，回退到旧版整课件生成", cw.id)
+        await progress("blueprint", "未抽到知识点，改为整课一次生成（较慢）")
         # 回退：沿用旧版单次生成，避免任务失败
         subject_hint = ""
         if subject_block:
@@ -1721,8 +2084,13 @@ async def _generate_lesson_content(
 6. 若用户给出了教师想法，落实在例题、练习与作业的题面和讲解侧重上，用学生能看懂的话写，不要写成教案或说课稿。
 {interactive_hint}
 """
+        lesson_type = _lesson_type(cw)
+        if lesson_type != "new":
+            system_prompt += _LESSON_TYPE_RULES[lesson_type].replace("上面第 1、3 条", "上面的课序").replace(
+                "上面第 3 条", "上面的课序",
+            )
         user_prompt = (
-            f"课件课题：{cw.title}\n\n"
+            f"课件课题：{cw.title}（{_LESSON_PROFILES[lesson_type]['label']}）\n\n"
             "【课本原文——学科事实必须以这里为准，禁止编造】\n"
             f"{chapter_content[:8000]}{image_hint}"
         )
@@ -1737,10 +2105,11 @@ async def _generate_lesson_content(
             [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
             max_tokens=max(cfg.max_tokens or 0, 8000),
         )
-        raw = resp.choices[0].message.content
+        raw = _resp_content(resp)
         data = _parse_lesson_json(raw)
         if data and data.get("slides"):
             if fallback_intent:
+                await progress("intent")
                 data = await _apply_teacher_intent(cfg, cw, data, fallback_intent)
             return normalize_lesson_chem(data)
         fallback = {
@@ -1748,23 +2117,131 @@ async def _generate_lesson_content(
             "slides": [{"index": 1, "type": "content", "title": cw.title, "content": raw, "bullets": [], "notes": ""}],
         }
         if fallback_intent:
+            await progress("intent")
             fallback = await _apply_teacher_intent(cfg, cw, fallback, fallback_intent)
         return normalize_lesson_chem(fallback)
 
+    if bank_scope:
+        await progress("bank")
+        profile = _LESSON_PROFILES[_lesson_type(cw)]
+        limit = profile["max_examples"] + profile["max_exercises"] - 1
+        bank = await _bank_questions_for_points(bank_scope, points, limit)
+        if bank:
+            _merge_bank_into_blueprint(blueprint, bank, profile)
+            await progress("bank", f"用上题库真题 {len(bank)} 道")
+
     return await _assemble_lesson_from_blueprint(
         cfg, cw, blueprint, points, subject_name, image_catalog, interactive_hint, is_web,
-        chapter_content=chapter_content,
+        chapter_content=chapter_content, progress=progress,
     )
+
+
+async def _bank_questions_for_points(bank_scope: dict, points: list[dict], limit: int = 4) -> list[dict]:
+    """按知识点名去全站题库找题；失败不影响生成。"""
+    from app.services.question_bank_service import pick_for_lesson
+
+    names = [p.get("name") or "" for p in points]
+    try:
+        async with AsyncSessionLocal() as db:
+            return await pick_for_lesson(
+                db,
+                subject_id=bank_scope["subject_id"],
+                grade_id=bank_scope["grade_id"],
+                kp_names=names,
+                limit=limit,
+            )
+    except Exception as e:  # noqa: BLE001
+        logger.warning("课件题库选题失败，全部用 AI 出题：%s", e)
+        return []
+
+
+def _merge_bank_into_blueprint(bp: dict, bank: list[dict], profile: dict | None = None) -> None:
+    """题库真题优先：有解析的做例题（按课型 1～2 道），其余排在练习最前，留至少 1 道 AI 题，AI 题补足题量。"""
+    profile = profile or _LESSON_PROFILES["new"]
+    max_examples, max_exercises = profile["max_examples"], profile["max_exercises"]
+    rest = list(bank)
+    bank_examples = []
+    for q in [q for q in rest if q.get("explanation")][:max_examples]:
+        rest.remove(q)
+        solution = f"答案：{q['answer']}。{q['explanation']}" if q.get("answer") else q["explanation"]
+        bank_examples.append({"prompt": q["text"], "solution": solution, "question_id": q["id"]})
+    if bank_examples:
+        ai_examples = [e for e in (bp.get("examples") or []) if not e.get("question_id")]
+        bp["examples"] = (bank_examples + ai_examples)[:max_examples]
+        bp["example"] = bp["examples"][0]
+    bank_ex = [
+        {
+            "question": q["text"],
+            "answer": "；".join(x for x in (q.get("answer"), q.get("explanation")) if x),
+            "question_id": q["id"],
+        }
+        for q in rest[: max_exercises - 1]
+    ]
+    ai_ex = [e for e in (bp.get("exercises") or []) if not e.get("question_id")]
+    bp["exercises"] = (bank_ex + ai_ex)[:max_exercises]
+
+
+_TYPE_COPY = {
+    "new": {
+        "intro_title": "先看这个现象", "intro_sub": "先观察，再下判断",
+        "intro_note": "停课点：学生说完自己的判断后再往下翻。这一页只观察、只表达，不公布规范说法。",
+        "cover_note": "开场抛出本节核心问题：{topic}。不要念教学目标。停课点：学生猜完再进情境。",
+        "kp_title": "{name}", "kp_sub": "把刚才看到的现象说成规范说法",
+        "kp_note": "停课点：先让学生用刚才的现象自己说，再揭开规范说法。讲解要短句、直白。",
+        "cmp_title": "易错对照", "cmp_sub": "把误区掰过来",
+        "ex_title": "随堂练习", "ex_sub": "当堂检验，先写依据再对答案",
+        "sum_title": "今天带走这几句话",
+    },
+    "review": {
+        "intro_title": "先回忆这几个问题", "intro_sub": "不看书，先说出来",
+        "intro_note": "停课点：学生先凭记忆回答，答不上的记在黑板上，梳理时重点讲。",
+        "cover_note": "本节复习：{topic}。先让学生说出本单元还记得的关键词。",
+        "kp_title": "{name}", "kp_sub": "要点回顾",
+        "kp_note": "停课点：先让学生补全要点，再对照；重点讲刚才答不上的点。",
+        "cmp_title": "易错对照", "cmp_sub": "复习最该纠正的说法",
+        "ex_title": "综合练习", "ex_sub": "覆盖各知识点，先写依据再对答案",
+        "sum_title": "这一单元带走这几句话",
+    },
+    "practice": {
+        "intro_title": "先看这道引例", "intro_sub": "想想用什么方法",
+        "intro_note": "停课点：先让学生说思路，不急着算；把想到的方法写在黑板上。",
+        "cover_note": "本节习题课：{topic}。先问学生做这类题时最卡在哪一步。",
+        "kp_title": "方法：{name}", "kp_sub": "方法要点",
+        "kp_note": "停课点：结合引例讲清每一步为什么这样做、什么条件下能用。",
+        "cmp_title": "典型错法", "cmp_sub": "错在哪一步，怎么改",
+        "ex_title": "变式训练", "ex_sub": "模仿 → 变式 → 拓展",
+        "sum_title": "方法小结",
+    },
+    "lab": {
+        "intro_title": "这个实验要回答什么问题", "intro_sub": "先猜结果，再动手验证",
+        "intro_note": "停课点：先让学生预测现象，写在黑板上，实验后对照。不要提前说出现象。",
+        "cover_note": "本节实验课：{topic}。先抛出要用实验回答的问题。",
+        "kp_title": "{name}", "kp_sub": "实验结论",
+        "kp_note": "停课点：先让学生根据看到的现象说结论，再给规范表述。",
+        "cmp_title": "易错对照", "cmp_sub": "实验和结论里容易错的地方",
+        "ex_title": "随堂练习", "ex_sub": "用实验结论解决问题",
+        "sum_title": "今天带走这几句话",
+    },
+}
 
 
 async def _assemble_lesson_from_blueprint(
     cfg, cw, blueprint: dict, points: list[dict],
     subject_name: str, image_catalog: str, interactive_hint: str, is_web: bool,
     chapter_content: str = "",
+    progress=None,
 ) -> dict:
-    """用蓝图拼课：先探究再命名；目标只进 meta，不给学生看。"""
+    """按课型把蓝图拼成课件：先拼各块，再按 _LESSON_PROFILES[课型]["order"] 排序编号。
+
+    目标只进 meta，不给学生看。
+    """
+    progress = progress or _no_progress
     from app.models.courseware import RenderStyle
     from app.services.animation_service import resolve_keys as _resolve_anim_keys
+
+    lesson_type = _lesson_type(cw)
+    profile = _LESSON_PROFILES[lesson_type]
+    copy_ = _TYPE_COPY[lesson_type]
 
     topic = blueprint.get("topic") or cw.title
     unit_note = f"单元：{cw.title}。" if topic != cw.title else ""
@@ -1772,64 +2249,123 @@ async def _assemble_lesson_from_blueprint(
         f"{subject_name} · {cw.title}" if subject_name else cw.title
     )
     intro = blueprint.get("intro") or _normalize_intro({})
-    example = blueprint.get("example")
-    exercises = blueprint.get("exercises") or []
+    examples = blueprint.get("examples") or (
+        [blueprint["example"]] if blueprint.get("example") else []
+    )
+    examples = examples[: profile["max_examples"]]
+    exercises = (blueprint.get("exercises") or [])[: profile["max_exercises"]]
     homework = blueprint.get("homework") or []
     summary = blueprint.get("summary") or []
     objectives = blueprint.get("objectives") or []
+    lab = blueprint.get("lab") or {}
 
+    # 只认候选清单里的图号，防止模型编号或引用别的课本的图；一张图只用一次
+    allowed_images = {int(x) for x in re.findall(r"图#(\d+)", image_catalog or "")}
+    used_images: set[int] = set()
+
+    def _pick_images(ids) -> list[int]:
+        picked = [i for i in (ids or []) if i in allowed_images and i not in used_images][:2]
+        used_images.update(picked)
+        return picked
+
+    # 互动预算：新授课默认共 2 个互动页，动画库自动匹配（至多 1 实验台 + 1 动画）优先，
+    # 剩余名额给概念互动；教师手选的动画全保留并另配 1 个概念互动。
+    # 复习/习题课只做 1 个概念互动、不自动塞动画；实验课优先动画库实验台。
     explicit_anim = bool(getattr(cw, "animation_keys", None))
-    anim_keys = _resolve_anim_keys(cw, points, topic, subject_name) if cw.is_interactive else []
-    if not explicit_anim:
-        anim_keys = anim_keys[:1]
+    anim_keys: list[str] = []
+    if cw.is_interactive:
+        if lesson_type in ("review", "practice") and not explicit_anim:
+            anim_keys = []
+        else:
+            anim_keys = _resolve_anim_keys(cw, points, topic, subject_name)
+            if not explicit_anim:
+                anim_keys = anim_keys[:2]
     point_ix_budget = 0
     if cw.is_interactive:
-        point_ix_budget = 1 if anim_keys else 2
+        if lesson_type == "new":
+            point_ix_budget = 1 if explicit_anim else max(0, 2 - len(anim_keys))
+        elif lesson_type == "lab":
+            point_ix_budget = 0 if anim_keys else 1
+        else:
+            point_ix_budget = 1
 
-    slides: list[dict] = []
-    idx = 1
-    slides.append({
-        "index": idx, "type": "cover", "title": topic, "subtitle": subtitle,
+    blocks: dict[str, list[dict]] = {}
+
+    blocks["cover"] = [{
+        "type": "cover", "title": topic, "subtitle": subtitle,
         "bullets": [], "content": "",
-        "notes": (
-            f"{unit_note}开场抛出本节核心问题：{topic}。"
-            "不要念教学目标。停课点：学生猜完再进情境。"
-        ).strip(),
-    })
-    idx += 1
-    slides.append({
-        "index": idx, "type": "process",
-        "title": intro.get("title") or "先看这个现象",
-        "subtitle": intro.get("subtitle") or "先观察，再下判断",
-        "bullets": [s["detail"] for s in intro.get("steps") or [] if s.get("detail")][:3],
-        "steps": intro.get("steps") or [],
-        "content": "",
-        "notes": (
-            (intro.get("content") + " " if intro.get("content") else "")
-            + "停课点：学生说完自己的判断后再往下翻。这一页只观察、只表达，不公布规范说法。"
-        ).strip(),
-    })
-    idx += 1
+        "notes": (unit_note + copy_["cover_note"].format(topic=topic)).strip(),
+    }]
 
-    interactive_jobs: list[tuple[int, int, dict]] = []
+    intro_steps, intro_moved = _student_voice_steps(intro.get("steps") or [])
+    intro_notes = " ".join(filter(None, [
+        intro.get("content"),
+        ("演示提醒：" + "".join(intro_moved)) if intro_moved else "",
+        copy_["intro_note"],
+    ]))
+    blocks["intro"] = [{
+        "type": "process",
+        "title": intro.get("title") or copy_["intro_title"],
+        "subtitle": intro.get("subtitle") or copy_["intro_sub"],
+        "bullets": [s["detail"] for s in intro_steps if s.get("detail")][:3],
+        "steps": intro_steps,
+        "images": _pick_images(intro.get("image_ids")),
+        "content": "",
+        "notes": intro_notes,
+    }]
+
+    if lesson_type == "review":
+        map_items = [
+            f"{p['name']}：{(p.get('plain_explanation') or '')[:48]}".rstrip("：")
+            for p in points
+        ]
+        blocks["review_map"] = [{
+            "type": "knowledge",
+            "title": "知识梳理",
+            "subtitle": "先理清这几块之间的联系",
+            "bullets": map_items,
+            "content": "",
+            "notes": "停课点：先让学生自己画知识结构图或说出联系，再对照这一页。",
+        }]
+
+    if lesson_type == "lab" and (lab.get("steps") or lab.get("materials")):
+        parts = []
+        if lab.get("materials"):
+            parts.append("### 器材与试剂\n" + "\n".join(f"- {m}" for m in lab["materials"]))
+        if lab.get("safety"):
+            parts.append("### 安全提示\n" + "\n".join(f"- {s}" for s in lab["safety"]))
+        notes = "停课点：先让学生复述步骤和安全要求，再动手。"
+        if lab.get("observations"):
+            notes += "\n应观察到的现象（先不告诉学生）：" + "；".join(lab["observations"])
+        blocks["lab_setup"] = [{
+            "type": "process",
+            "title": "实验目的与步骤",
+            "subtitle": lab.get("purpose") or "按步骤操作，边做边记录现象",
+            "bullets": [s["detail"] for s in lab.get("steps") or [] if s.get("detail")][:3],
+            "steps": lab.get("steps") or [],
+            "content": "\n\n".join(parts),
+            "notes": notes,
+        }]
+
+    concept_slides: list[dict] = []
+    interactive_jobs: list[tuple[dict, int, dict]] = []
     for point_i, p in enumerate(points, 1):
         if point_i > point_ix_budget:
             break
-        interactive_slide = {
-            "index": idx,
+        slide = {
             "type": "interactive",
-            "title": f"{p['name']} · 动手做",
+            "title": f"{_short_point_name(p['name'])} · 动手做",
             "subtitle": "先观察再下结论",
-            "bullets": [p.get("activity_goal") or "根据现象说出判断依据"],
-            "content": "先完成一个操作，再根据现象说出你的判断。系统会解释你看到的现象。",
+            "bullets": [],
+            "content": "",
             "notes": (
-                "停课点：操作后先问「你看到了什么？这说明什么？」不要立刻给标准答案。"
+                (f"互动目标：{p['activity_goal']}\n" if p.get("activity_goal") else "")
+                + "停课点：操作后先问「你看到了什么？这说明什么？」不要立刻给标准答案。"
                 "反馈要诠释现象，不要只报对错。"
             ),
         }
-        slides.append(interactive_slide)
-        interactive_jobs.append((len(slides) - 1, point_i, p))
-        idx += 1
+        concept_slides.append(slide)
+        interactive_jobs.append((slide, point_i, p))
 
     used_anim: set[str] = set()
     if interactive_jobs:
@@ -1869,22 +2405,35 @@ async def _assemble_lesson_from_blueprint(
                         html = _fallback_interactive_html(p, point_i)
                 return html or "", routed
 
-        htmls = await asyncio.gather(*[_gen_html(pi, p) for _, pi, p in interactive_jobs])
+        total_ix = len(interactive_jobs)
+        finished_ix = 0
+        await progress("interactive", f"0/{total_ix}")
+
+        async def _gen_html_tracked(point_i: int, p: dict) -> tuple[str, dict | None]:
+            nonlocal finished_ix
+            try:
+                return await _gen_html(point_i, p)
+            finally:
+                finished_ix += 1
+                await progress("interactive", f"{finished_ix}/{total_ix}")
+
+        htmls = await asyncio.gather(*[_gen_html_tracked(pi, p) for _, pi, p in interactive_jobs])
         from app.services.animation_service import KIND_SUBTITLE
-        for (slide_i, _, _), (html, routed) in zip(interactive_jobs, htmls):
+        for (slide, _, _), (html, routed) in zip(interactive_jobs, htmls):
             if html:
-                slides[slide_i]["html"] = html
+                slide["html"] = html
             if routed:
-                slides[slide_i]["skill"] = routed
+                slide["skill"] = routed
                 kind = routed.get("kind") or ""
                 if kind in KIND_SUBTITLE:
-                    slides[slide_i]["subtitle"] = KIND_SUBTITLE[kind]
+                    slide["subtitle"] = KIND_SUBTITLE[kind]
                 if routed.get("title"):
-                    slides[slide_i]["title"] = routed["title"]
+                    slide["title"] = routed["title"]
                 for k in (routed.get("asset_key"), routed.get("problem_type")):
                     if k:
                         used_anim.add(str(k))
 
+    anim_slides: list[dict] = []
     if anim_keys:
         from app.services.animation_service import payload_for_key, KIND_SUBTITLE
         for key in anim_keys:
@@ -1899,14 +2448,13 @@ async def _assemble_lesson_from_blueprint(
                 continue
             kind = routed.get("kind") or ""
             is_lab = kind in ("chem_lab", "physics_lab") or routed.get("skill") == "edu-chem-lab"
-            slides.append({
-                "index": idx,
+            anim_slides.append({
                 "type": "interactive",
                 "title": routed.get("title") or ("互动实验台" if is_lab else "互动动画"),
                 "subtitle": KIND_SUBTITLE.get(kind) or (
                     "实验台 · 可操作演示" if is_lab else "动画 · 可操作演示"
                 ),
-                "bullets": ["与本课核心点对齐的动画库实验，不重复生成"],
+                "bullets": [],
                 "content": "",
                 "notes": (
                     "停课点：让学生按步骤操作，看完现象先口述，再点名概念。"
@@ -1917,82 +2465,107 @@ async def _assemble_lesson_from_blueprint(
                 "html": html,
                 "skill": routed,
             })
-            idx += 1
+    # 实验课先上实验台，再做概念互动
+    blocks["interactive"] = (
+        anim_slides + concept_slides if lesson_type == "lab" else concept_slides + anim_slides
+    )
 
+    # 知识页投影给学生：只放要点、例子和图。白话讲法与深入讲解给教师，
+    # 网页样式的深入理解折叠在 more 里；误区统一放到后面的易错对照页。
+    knowledge_slides = []
     for point_i, p in enumerate(points, 1):
         bullets = p.get("core_concepts") or []
         if not bullets and p.get("plain_explanation"):
             bullets = [p["plain_explanation"]]
         content_parts = []
-        notes_bits = ["停课点：先让学生用刚才的现象自己说，再揭开规范说法。讲解要短句、直白。"]
-        if p.get("plain_explanation"):
-            content_parts.append(f"### 先用一句话说清楚\n{p['plain_explanation']}")
-        if is_web and p.get("deep_dive"):
-            content_parts.append(f"### 深入理解\n{p['deep_dive']}")
-        if p.get("common_mistakes"):
-            content_parts.append("### 常见误区\n" + "\n".join(f"- {x}" for x in p["common_mistakes"]))
+        notes_bits = [copy_["kp_note"]]
+        if p.get("plain_explanation") and p.get("core_concepts"):
+            notes_bits.append(f"白话讲法：{p['plain_explanation']}")
         if p.get("teacher_focus"):
             notes_bits.append(f"落实教师要求：{p['teacher_focus']}")
-        if p.get("life_example"):
-            content_parts.append(f"### 生活中的例子\n- {p['life_example']}")
-        slides.append({
-            "index": idx,
+        if p.get("deep_dive") and not is_web:
+            notes_bits.append(f"深入讲解：{p['deep_dive']}")
+        example = (p.get("life_example") or "").strip()
+        if example:
+            if lesson_type == "practice":
+                label = "常见题型"
+            elif example.startswith("课本"):
+                label = "课本里的例子"
+            else:
+                label = "生活中的例子"
+            content_parts.append(f"### {label}\n- {example}")
+        name = copy_["kp_title"].format(name=p["name"])
+        slide = {
             "type": "knowledge",
-            "title": p["name"] if len(points) == 1 else f"{point_i}. {p['name']}",
-            "subtitle": "把刚才看到的现象说成规范说法",
-            "bullets": bullets[:5],
+            "title": name if len(points) == 1 else f"{point_i}. {name}",
+            "subtitle": copy_["kp_sub"],
+            "bullets": bullets[:4],
+            "images": _pick_images(p.get("image_ids")),
             "content": "\n\n".join(content_parts),
-            "notes": " ".join(notes_bits),
-        })
-        idx += 1
+            "notes": "\n".join(notes_bits),
+        }
+        if is_web and p.get("deep_dive"):
+            slide["more"] = p["deep_dive"]
+        knowledge_slides.append(slide)
+    blocks["knowledge"] = knowledge_slides
 
-    mistakes = [m for p in points for m in (p.get("common_mistakes") or [])][:4]
-    if mistakes:
-        corrects = []
-        for p in points:
-            corrects.extend(p.get("core_concepts") or [])
-        if not corrects:
-            corrects = [p.get("plain_explanation") or p["name"] for p in points[:4]]
-        slides.append({
-            "index": idx,
+    # 易错对照：每条误区配它自己的纠正，各知识点轮流取，保证每个点都有代表
+    per_point = [
+        p.get("mistake_fixes") or [{"wrong": m, "right": ""} for m in p.get("common_mistakes") or []]
+        for p in points
+    ]
+    pairs: list[dict] = []
+    for round_i in range(max((len(x) for x in per_point), default=0)):
+        for fixes in per_point:
+            if round_i < len(fixes) and len(pairs) < 5:
+                pairs.append(fixes[round_i])
+    if pairs:
+        pairs = [{"wrong": f["wrong"], "right": f.get("right") or ""} for f in pairs]
+        lefts = [f["wrong"] for f in pairs]
+        rights = [f["right"] or "想一想：错在哪里？" for f in pairs]
+        blocks["comparison"] = [{
             "type": "comparison",
-            "title": "易错对照",
-            "subtitle": "把误区掰过来",
+            "title": copy_["cmp_title"],
+            "subtitle": copy_["cmp_sub"],
             "left_title": "常见误区",
-            "right_title": "正确理解",
+            "right_title": "正确说法",
+            "pairs": pairs,
             "columns": [
-                {"title": "常见误区", "items": mistakes},
-                {"title": "正确理解", "items": corrects[:4]},
+                {"title": "常见误区", "items": lefts},
+                {"title": "正确说法", "items": rights},
             ],
-            "bullets": mistakes + corrects[:4],
+            "bullets": lefts + rights,
             "content": "",
-            "notes": "停课点：先让学生指出错在哪里，再对照正确说法。",
-        })
-        idx += 1
+            "notes": "停课点：逐条先让学生指出错在哪里，再点开正确说法。",
+        }]
 
-    if example:
-        solution = example.get("solution") or ""
-        slides.append({
-            "index": idx,
+    example_slides = []
+    for i, ex in enumerate(examples, 1):
+        solution = ex.get("solution") or ""
+        title = "例题精讲" if len(examples) == 1 else f"例题 {i}"
+        slide = {
             "type": "example",
-            "title": "例题精讲",
+            "title": title,
             "subtitle": "先做，再对照依据",
-            "prompt": example["prompt"],
+            "prompt": ex["prompt"],
             "bullets": [],
             "content": "",
             "solution": solution,
             "notes": (
-                "停课点：先独立做，不要投影解析。\n"
+                ("本题来自题库。\n" if ex.get("question_id") else "")
+                + "停课点：先独立做，不要投影解析。\n"
                 f"解析：{solution}\n"
-                "追问：换一种试剂或条件，结论会怎么变？"
+                "追问：条件变一变，结论或方法还成立吗？"
             ),
-        })
-        idx += 1
+        }
+        if ex.get("question_id"):
+            slide["bank_question_ids"] = [ex["question_id"]]
+        example_slides.append(slide)
+    blocks["example"] = example_slides
 
-    slides.append({
-        "index": idx,
+    blocks["summary"] = [{
         "type": "summary",
-        "title": "今天带走这几句话",
+        "title": copy_["sum_title"],
         "subtitle": "用自己的话说一遍",
         "bullets": summary[:4],
         "content": "",
@@ -2000,33 +2573,43 @@ async def _assemble_lesson_from_blueprint(
             "抽三名学生各说一句。"
             + (f" 课末回扣：{'；'.join(objectives[:2])}。" if objectives else "")
         ),
-    })
-    idx += 1
+    }]
+
     answer_notes = "\n".join(
-        f"{i+1}. {ex.get('answer') or '看判断依据。'}" for i, ex in enumerate(exercises)
+        f"{i+1}. {'（题库）' if ex.get('question_id') else ''}{ex.get('answer') or '看判断依据。'}"
+        for i, ex in enumerate(exercises)
     )
-    slides.append({
-        "index": idx,
+    exercise_slide = {
         "type": "exercise",
-        "title": "随堂练习",
-        "subtitle": "当堂检验，先写依据再对答案",
-        "bullets": [ex["question"] for ex in exercises[:4]],
+        "title": copy_["ex_title"],
+        "subtitle": copy_["ex_sub"],
+        "bullets": [ex["question"] for ex in exercises],
+        "answers": [ex.get("answer") or "" for ex in exercises],
         "content": "先独立完成，能说出“因为……”再对答案。",
         "notes": (
             "停课点：先收判断依据，再对答案。\n"
             + (answer_notes or "巡视时关注卡在概念判断上的学生。")
         ),
-    })
-    idx += 1
-    slides.append({
-        "index": idx,
+    }
+    bank_ids = [ex["question_id"] for ex in exercises if ex.get("question_id")]
+    if bank_ids:
+        exercise_slide["bank_question_ids"] = bank_ids
+    blocks["exercise"] = [exercise_slide]
+
+    blocks["homework"] = [{
         "type": "homework",
         "title": "课后任务",
         "subtitle": "会说出理由，比只选对答案更重要",
         "bullets": [h["task"] for h in homework[:4]],
-        "content": "分层完成：基础巩固 + 生活迁移 + 小作品。",
+        "content": "",
         "notes": "停课点：下节课用 1 分钟交流作品。收作业时抽查“依据”一栏。",
-    })
+    }]
+
+    slides: list[dict] = []
+    for name in profile["order"]:
+        slides.extend(blocks.get(name) or [])
+    for i, s in enumerate(slides, 1):
+        s["index"] = i
 
     lesson = {
         "meta": {
@@ -2034,6 +2617,8 @@ async def _assemble_lesson_from_blueprint(
             "subject": subject_name or "",
             "render_style": RenderStyle.html.value if is_web else RenderStyle.ppt.value,
             "duration": "45分钟",
+            "lesson_type": lesson_type,
+            "lesson_type_label": profile["label"],
             "lesson_grain": blueprint.get("lesson_grain") or "period",
             "unit_title": cw.title,
             "objectives": objectives[:4],
@@ -2043,9 +2628,27 @@ async def _assemble_lesson_from_blueprint(
         },
         "slides": slides,
     }
+    if lab:
+        lesson["meta"]["lab"] = lab
+    bank_used = [qid for s in slides for qid in (s.get("bank_question_ids") or [])]
+    if bank_used:
+        lesson["meta"]["bank_question_ids"] = bank_used
     intent = _teacher_intent(cw)
     if intent:
+        await progress("intent")
+        # 题库真题不允许被改写：先记下题面，改写后放回
+        frozen = {
+            i: {k: copy.deepcopy(s.get(k)) for k in ("bullets", "answers", "prompt", "solution", "notes")}
+            for i, s in enumerate(slides) if s.get("bank_question_ids")
+        }
         lesson = await _apply_teacher_intent(cfg, cw, lesson, intent)
+        for i, saved in frozen.items():
+            target = lesson["slides"][i]
+            for k, v in saved.items():
+                if v is None:
+                    target.pop(k, None)
+                else:
+                    target[k] = v
     return normalize_lesson_chem(lesson)
 
 

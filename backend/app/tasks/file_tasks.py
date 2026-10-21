@@ -2,6 +2,7 @@
 from app.tasks.celery_app import celery_app
 from app.services.file_service import (
     parse_textbook_file,
+    refresh_textbook_images,
     parse_question_file,
     parse_analysis_file,
     import_grades_from_file,
@@ -27,6 +28,11 @@ def parse_textbook_task(self, textbook_id: int):
         _run(parse_textbook_file(textbook_id))
     except Exception as exc:
         raise self.retry(exc=exc, countdown=10)
+
+
+@celery_app.task(name="app.tasks.file_tasks.refresh_textbook_images_task")
+def refresh_textbook_images_task(textbook_id: int):
+    return _run(refresh_textbook_images(textbook_id))
 
 
 @celery_app.task(name="app.tasks.file_tasks.parse_question_file_task", bind=True, max_retries=3)

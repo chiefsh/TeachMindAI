@@ -211,6 +211,23 @@ html.cw-fs-lock,html.cw-fs-lock body{overflow:hidden!important;height:100%!impor
 .cw-compare-col.a{border-top:5px solid var(--c-primary)}
 .cw-compare-col.b{border-top:5px solid var(--c-accent)}
 .cw-compare-col h3{margin:0 0 8px}
+.cw-pairs{display:flex;flex-direction:column;gap:10px;margin-top:10px}
+.cw-pair-head,.cw-pair{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.cw-pair-head span{font-weight:700;padding:0 4px}
+.cw-pair-head span:first-child{color:#b42318}
+.cw-pair-head span:last-child{color:var(--c-primary)}
+.cw-pair-wrong,.cw-pair-right{background:var(--c-card);box-shadow:var(--shadow-soft);border-radius:14px;padding:12px 14px}
+.cw-pair-wrong{border-left:5px solid #f04438}
+.cw-pair-wrong::before{content:"✗ ";color:#d92d20;font-weight:800}
+.cw-pair-right{border-left:5px solid var(--c-primary)}
+.cw-pair-right summary{cursor:pointer;font-weight:700;color:var(--c-primary)}
+.cw-pair-right[open] summary{margin-bottom:6px}
+.cw-ex-body{flex:1;min-width:0}
+.cw-ex-ans{margin-top:6px}
+.cw-ex-ans summary{cursor:pointer;font-weight:600;color:var(--c-primary);font-size:.9em}
+.cw-ex-ans div{margin-top:4px;color:var(--c-muted)}
+.cw-hw-tag{display:inline-block;font-weight:700;color:var(--c-primary);margin-right:.4em}
+.cw-more{margin-top:12px}
 .cw-steps{display:flex;flex-direction:column;gap:0;margin-top:8px}
 .cw-step{display:grid;grid-template-columns:36px 1fr;gap:12px}
 .cw-step-rail{display:flex;flex-direction:column;align-items:center}
@@ -286,6 +303,19 @@ function columnsOf(slide: any): { title: string; items: string[] }[] {
     { title: slide.left_title || '对照 A', items: bs.slice(0, mid) },
     { title: slide.right_title || '对照 B', items: bs.slice(mid) },
   ]
+}
+
+function pairsOf(slide: any): { wrong: string; right: string }[] {
+  if (!Array.isArray(slide?.pairs)) return []
+  return slide.pairs
+    .map((p: any) => ({ wrong: String(p?.wrong || '').trim(), right: String(p?.right || '').trim() }))
+    .filter((p: { wrong: string }) => p.wrong)
+}
+
+/** 「基础：……」拆成层级标签和任务正文；标签过长说明不是层级名，不拆。 */
+function splitTaskTag(task: string): { tag: string; text: string } {
+  const m = /^([^：:]{1,8})[：:]\s*(.+)$/s.exec(task)
+  return m ? { tag: m[1].trim(), text: m[2].trim() } : { tag: '', text: task }
 }
 
 function kicker(label: string, index?: number): string {
@@ -368,9 +398,13 @@ function innerByKind(kind: PageKind, slide: any, media: SlideMedia, ctx: SlideCt
       ).join('')}</div>${md}${imgs}${notes}`
   }
   if (kind === 'knowledge') {
+    const moreText = String(slide.more || '').trim()
+    const more = moreText
+      ? `<details class="cw-reveal cw-more"><summary>展开：深入理解</summary><div class="body">${vis(moreText)}</div></details>`
+      : ''
     return `${kicker(label, ctx.index)}${heading(slide)}
       <div class="cw-knowledge"><div class="cw-knowledge-bar"></div>
-      <div>${pointsList(bs)}${md}${imgs}</div></div>${notes}`
+      <div>${pointsList(bs)}${md}${imgs}${more}</div></div>${notes}`
   }
   if (kind === 'example') {
     const prompt = slide.prompt || (bs.length ? bs.join('；') : (slide.title || '例题'))
@@ -387,6 +421,19 @@ function innerByKind(kind: PageKind, slide: any, media: SlideMedia, ctx: SlideCt
   }
   if (kind === 'interactive') {
     return `${kicker(label, ctx.index)}${heading(slide)}${pointsList(bs)}${md}${frame}${imgs}${notes}`
+  }
+  if (kind === 'comparison' && pairsOf(slide).length) {
+    const pairs = pairsOf(slide)
+    return `${kicker(label, ctx.index)}${heading(slide)}
+      <div class="cw-pairs">
+        <div class="cw-pair-head"><span>${vis(slide.left_title || '常见误区')}</span><span>${vis(slide.right_title || '正确说法')}</span></div>
+        ${pairs.map((p) => `<div class="cw-pair">
+          <div class="cw-pair-wrong">${vis(p.wrong)}</div>
+          ${p.right
+            ? `<details class="cw-pair-right"><summary>先说错在哪，再点开</summary><div>${vis(p.right)}</div></details>`
+            : '<div class="cw-pair-right" style="color:var(--c-muted)">想一想：错在哪里？</div>'}
+        </div>`).join('')}
+      </div>${md}${imgs}${notes}`
   }
   if (kind === 'comparison') {
     const cols = columnsOf(slide)
@@ -412,17 +459,25 @@ function innerByKind(kind: PageKind, slide: any, media: SlideMedia, ctx: SlideCt
   }
   if (kind === 'exercise') {
     const qs = bs.length ? bs : (slide.content ? [slide.content] : ['完成本页练习'])
+    const answers: string[] = Array.isArray(slide.answers) && slide.answers.length === bs.length
+      ? slide.answers.map((a: any) => String(a || '').trim())
+      : []
     return `${kicker(label, ctx.index)}${heading(slide)}
-      <div class="cw-exercise">${qs.map((q, i) =>
-        `<div class="cw-ex"><span class="cw-ex-n">${i + 1}</span><div>${vis(q)}</div></div>`
-      ).join('')}</div>${md}${imgs}${frame}${notes}`
+      <div class="cw-exercise">${qs.map((q, i) => {
+        const ans = answers[i]
+          ? `<details class="cw-ex-ans"><summary>看答案</summary><div>${vis(answers[i])}</div></details>`
+          : ''
+        return `<div class="cw-ex"><span class="cw-ex-n">${i + 1}</span><div class="cw-ex-body">${vis(q)}${ans}</div></div>`
+      }).join('')}</div>${md}${imgs}${frame}${notes}`
   }
   if (kind === 'homework') {
-    const tasks = bs.length ? bs : ['完成课后巩固练习']
+    const tasks = (bs.length ? bs : ['完成课后巩固练习']).map(splitTaskTag)
+    const tags = tasks.map((t) => t.tag).filter(Boolean)
+    const banner = tags.length >= 2 ? `分层任务：${tags.join(' · ')}` : '按顺序完成，写清依据'
     return `${kicker(label, ctx.index)}${heading(slide)}
-      <div class="cw-block-accent">分层任务：基础巩固 + 生活迁移 + 小作品</div>
+      <div class="cw-block-accent">${vis(banner)}</div>
       <div class="cw-hw">${tasks.map((t) =>
-        `<div class="cw-hw-item"><span class="cw-hw-box"></span><div>${vis(t)}</div></div>`
+        `<div class="cw-hw-item"><span class="cw-hw-box"></span><div>${t.tag ? `<span class="cw-hw-tag">${vis(t.tag)}</span>` : ''}${vis(t.text)}</div></div>`
       ).join('')}</div>${md}${imgs}${notes}`
   }
   return `${kicker(label, ctx.index)}${heading(slide)}${pointsList(bs)}${md}${imgs}${frame}${notes}`

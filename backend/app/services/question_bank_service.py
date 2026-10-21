@@ -309,6 +309,93 @@ async def upsert_payloads(
     return resolved, 0, reused
 
 
+_LESSON_QTYPES = (
+    QuestionType.single_choice, QuestionType.multi_choice, QuestionType.true_false,
+    QuestionType.fill_blank, QuestionType.short_answer, QuestionType.calculation,
+)
+_LESSON_TEXT_MAX = 400
+
+
+def _has_question_images(q: Question) -> bool:
+    imgs = q.images if isinstance(q.images, dict) else {}
+    return bool(imgs.get("stem")) or bool(imgs.get("options"))
+
+
+def lesson_question_text(q: Question) -> str:
+    """题干 + 选项拼成一行，供课件练习页展示。"""
+    stem = strip_stem_number(q.content)
+    opts = q.options if isinstance(q.options, dict) else None
+    if opts:
+        stem += "  " + "  ".join(f"{k}. {_option_text(v)}" for k, v in sorted(opts.items()))
+    return stem
+
+
+async def pick_for_lesson(
+    db: AsyncSession,
+    *,
+    subject_id: int,
+    grade_id: int,
+    kp_names: list[str],
+    limit: int = 4,
+) -> list[dict]:
+    """按本课知识点从全站题库挑课堂可用的题：标签命中优先，其次题干命中，错得多的靠前。
+
+    题图存在 MinIO 对象路径里，课件页渲染不了，带图的题跳过；没有答案的题也跳过。
+    """
+    names = [(n, _norm(n)) for n in kp_names if len(_norm(n)) >= 2]
+    if not names or limit <= 0:
+        return []
+    candidates = (await db.execute(
+        select(Question)
+        .where(
+            Question.subject_id == subject_id,
+            Question.grade_id == grade_id,
+            Question.question_type.in_(_LESSON_QTYPES),
+        )
+        .order_by(Question.wrong_count.desc(), Question.created_at.desc())
+        .limit(300)
+    )).scalars().all()
+
+    scored: list[tuple[float, Question]] = []
+    seen_hash: set[str] = set()
+    for q in candidates:
+        if _has_question_images(q) or not (q.answer or "").strip():
+            continue
+        text = lesson_question_text(q)
+        if len(text) > _LESSON_TEXT_MAX:
+            continue
+        digest = q.content_hash or _norm(text)
+        if digest in seen_hash:
+            continue
+        blob = _norm(q.content)
+        tags = [_norm(t) for t in (q.tags or []) if t]
+        tag_hits = sum(
+            1 for _, n in names
+            if any(n == t or (len(t) >= 2 and (n in t or t in n)) for t in tags)
+        )
+        text_hits = sum(1 for _, n in names if n in blob)
+        if not tag_hits and not text_hits:
+            continue
+        seen_hash.add(digest)
+        rank = 5 * tag_hits + 2 * text_hits + 0.5 * min(q.wrong_count or 0, 10)
+        if (q.explanation or "").strip():
+            rank += 1
+        scored.append((rank, q))
+
+    scored.sort(key=lambda x: -x[0])
+    return [
+        {
+            "id": q.id,
+            "text": lesson_question_text(q),
+            "answer": (q.answer or "").strip(),
+            "explanation": (q.explanation or "").strip(),
+            "question_type": _enum_val(q.question_type),
+            "wrong_count": q.wrong_count or 0,
+        }
+        for _, q in scored[:limit]
+    ]
+
+
 def bank_has_analysis(q: Question | None) -> bool:
     ac = getattr(q, "analysis_content", None) if q else None
     return isinstance(ac, dict) and bool(ac)

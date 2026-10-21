@@ -52,6 +52,19 @@
               >重新解析</el-button>
             </template>
           </el-popconfirm>
+          <el-tooltip
+            v-if="auth.can('textbook.manage') && tb.file_type === 'pdf' && tb.parse_status === 'done'"
+            content="补提插图和图注（含矢量图、拼图），不动章节、不删旧图，已生成的课件不受影响"
+            placement="top"
+          >
+            <el-button
+              size="small"
+              link
+              :icon="Picture"
+              :loading="refreshingImagesId === tb.id"
+              @click="refreshImages(tb)"
+            >补提插图</el-button>
+          </el-tooltip>
           <div class="flex-1" />
           <el-button v-if="auth.can('textbook.manage')" size="small" link type="danger" :icon="Delete" @click="confirmDeleteBook(tb)">删除</el-button>
         </div>
@@ -193,7 +206,7 @@ import { textbookApi } from '@/api/modules'
 import { useEducationStore } from '@/stores/education'
 import { useAuthStore } from '@/stores/auth'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Upload, View, List, Delete, Refresh, Loading } from '@element-plus/icons-vue'
+import { Upload, View, List, Delete, Refresh, Loading, Picture } from '@element-plus/icons-vue'
 import type { Textbook, Chapter } from '@/types'
 import { isBusyStatus, useBusyPoll } from '@/utils/busyPoll'
 
@@ -427,6 +440,18 @@ async function deleteBook(id: number) {
   await textbookApi.delete(id)
   ElMessage.success('已删除')
   await load()
+}
+
+const refreshingImagesId = ref<number | null>(null)
+
+async function refreshImages(tb: Textbook) {
+  refreshingImagesId.value = tb.id
+  try {
+    await textbookApi.refreshImages(tb.id)
+    ElMessage.success('已开始补提插图，整本书约需 1 分钟，完成后新生成的课件即可引用')
+  } finally {
+    refreshingImagesId.value = null
+  }
 }
 
 async function reparseBook(tb: Textbook) {

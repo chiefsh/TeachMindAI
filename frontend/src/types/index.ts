@@ -99,9 +99,15 @@ export interface QuestionImport {
 }
 
 export type RenderStyle = 'ppt' | 'html'
+export type LessonType = 'new' | 'review' | 'practice' | 'lab'
+export const LESSON_TYPE_LABELS: Record<LessonType, string> = {
+  new: '新授课', review: '复习课', practice: '习题课', lab: '实验课',
+}
 
 export interface Courseware {
   id: number; title: string; courseware_type: string; gen_status: ParseStatus
+  gen_error?: string | null
+  lesson_type?: LessonType
   render_style?: RenderStyle; theme?: string
   is_interactive: boolean
   want_virtual_lab?: boolean

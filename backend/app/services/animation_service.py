@@ -27,7 +27,7 @@ _LAB_TAGS: dict[str, list[str]] = {
     "prep_hydrogen": ["制取氢气", "氢气"],
     "prep_co2": ["制取二氧化碳"],
     "co2_candles": ["灭火原理", "倾倒二氧化碳", "二氧化碳密度"],
-    "electrolysis": ["电解水"],
+    "electrolysis": ["电解水", "水的组成"],
     "neutralization": ["中和反应", "酸碱中和"],
     "metal_acid": ["金属活动性", "金属与酸", "金属与稀盐酸"],
     "nh4hco3_decomp": ["碳酸氢铵分解", "碳酸氢铵受热分解", "铵盐"],
@@ -202,7 +202,7 @@ _EXTRA_ASSETS: list[dict] = [
         "group": "分子反应",
         "kind": "chem_reaction",
         "keywords": ["电解水分子", "水分子分解", "微观电解"],
-        "knowledge_tags": ["水分子分解"],
+        "knowledge_tags": ["水分子分解", "电解水", "水的组成"],
         "skill": "edu-chem-reaction",
         "problem_type": "electrolysis_water",
         "spec": {},
@@ -622,12 +622,23 @@ def _subject_compatible(subject_name: str, row: dict) -> bool:
 
 
 def _term_in_text(term: str, text: str) -> bool:
-    """中文标签匹配：至少两字才允许子串，避免「圆」打中「椭圆」。"""
+    """中文标签匹配：至少两字才允许子串，避免「圆」打中「椭圆」。
+
+    三字及以上的标签允许「X的Y」句式对应标签「XY」或「YX」，
+    如「甲烷的燃烧」命中「甲烷燃烧」、「水的电解」命中「电解水」。
+    """
     if not term or not text:
         return False
     if len(term) < 2:
         return text == term
-    return term in text
+    if term in text:
+        return True
+    if len(term) >= 3 and "的" in text:
+        return any(
+            f"{term[:k]}的{term[k:]}" in text or f"{term[k:]}的{term[:k]}" in text
+            for k in range(1, len(term))
+        )
+    return False
 
 
 def _term_in_names(term: str, names: list[str]) -> bool:
@@ -640,11 +651,17 @@ def _term_in_names(term: str, names: list[str]) -> bool:
             return True
         if len(term) >= 2 and (term in n or (len(n) >= 2 and n in term)):
             return True
+        if _term_in_text(term, n):
+            return True
     return False
 
 
 def pick_catalog_keys(points: list[dict], title: str, subject_name: str, limit: int = 2) -> list[str]:
-    """按知识点给本章挑实验台或动画。宏观课不贴分子动画，微观课不贴实验台。"""
+    """按知识点给本章挑实验台与动画：宏观实验台、微观/探究动画各至多 1 个，各自都要强命中。
+
+    宏观/微观倾向只决定先后（偏宏观的课实验台在前），不再整类排除，
+    这样「电解水」课可以同时带实验台和分子 3D。
+    """
     from app.services.skill_service import demo_preference
 
     point_names = [str(p.get("name") or "") for p in (points or [])]
@@ -661,14 +678,13 @@ def pick_catalog_keys(points: list[dict], title: str, subject_name: str, limit: 
         "bio_explore", "physics_explore",
     }
 
-    scored: list[tuple[int, int, str]] = []
+    scored: list[tuple[int, int, str, str]] = []
     for i, row in enumerate(system_catalog()):
         if not _subject_compatible(subject_name, row):
             continue
         kind = row.get("kind") or ""
-        if pref == "lab" and kind in anim_kinds:
-            continue
-        if pref == "anim" and kind in lab_kinds:
+        group = "lab" if kind in lab_kinds else ("anim" if kind in anim_kinds else "")
+        if not group:
             continue
         score = 0
         for t in row.get("knowledge_tags") or []:
@@ -682,15 +698,25 @@ def pick_catalog_keys(points: list[dict], title: str, subject_name: str, limit: 
             elif _term_in_text(w, explain_blob):
                 score += 1
         if score >= 5:
-            scored.append((score, -i, row["key"]))
+            scored.append((score, -i, row["key"], group))
     scored.sort(reverse=True)
-    keys: list[str] = []
-    for _, _, key in scored:
-        if key not in keys:
-            keys.append(key)
-        if len(keys) >= limit:
-            break
-    return keys
+    best: dict[str, tuple[int, str]] = {}
+    for score, _, key, group in scored:
+        if group not in best:
+            best[group] = (score, key)
+    if "lab" in best:
+        # 同分时优先展示同一实验的微观过程（与实验台共享知识标签）
+        rows = {r["key"]: r for r in system_catalog()}
+        lab_tags = set(rows[best["lab"][1]].get("knowledge_tags") or [])
+        anim_scored = [
+            (s + (2 if lab_tags & set(rows[k].get("knowledge_tags") or []) else 0), neg_i, k)
+            for s, neg_i, k, g in scored if g == "anim"
+        ]
+        if anim_scored:
+            anim_scored.sort(reverse=True)
+            best["anim"] = (anim_scored[0][0], anim_scored[0][2])
+    order = ["anim", "lab"] if pref == "anim" else ["lab", "anim"]
+    return [best[g][1] for g in order if g in best][:limit]
 
 
 def resolve_keys(cw, points: list[dict], title: str, subject_name: str) -> list[str]:
@@ -704,7 +730,7 @@ def resolve_keys(cw, points: list[dict], title: str, subject_name: str) -> list[
         return [explicit]
     if not getattr(cw, "want_virtual_lab", False):
         return []
-    matched = pick_catalog_keys(points, title, subject_name, limit=1)
+    matched = pick_catalog_keys(points, title, subject_name, limit=2)
     if matched:
         return matched
     # 自动匹配宁可不贴实验台，也不要用制氧等默认实验硬塞进不相关课时

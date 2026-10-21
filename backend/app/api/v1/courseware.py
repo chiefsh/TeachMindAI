@@ -6,15 +6,21 @@ from sqlalchemy.orm import defer, selectinload
 from sqlalchemy.orm.attributes import flag_modified
 from typing import Optional
 from urllib.parse import quote, urlparse
+from datetime import datetime
 import asyncio
 import copy
 import io
+import json
 
 from app.core.database import get_db
 from app.core.config import settings
 from app.core.minio_client import get_file_bytes
 from app.models.teacher import Teacher
-from app.models.courseware import Courseware, CoursewareVersion, RenderStyle, save_courseware_version
+from app.models.courseware import (
+    Courseware, CoursewareVersion, RenderStyle, save_courseware_version,
+    is_generation_stale, reap_stale_generation, courseware_progress_key,
+)
+from app.core.redis_client import get_redis
 from app.models.homework import HomeworkPaper
 from app.models.interaction import CoursewareSession, InteractionRecord
 from app.models.textbook import ParseStatus, TextbookImage, Textbook
@@ -75,6 +81,18 @@ async def list_coursewares(
             )
         )
     ).scalars().all()
+    stale_ids = [cw.id for cw in rows if is_generation_stale(cw)]
+    if stale_ids:
+        full = (
+            await db.execute(
+                select(Courseware)
+                .where(Courseware.id.in_(stale_ids))
+                .execution_options(populate_existing=True)
+            )
+        ).scalars().all()
+        for cw in full:
+            reap_stale_generation(cw)
+        await db.commit()
     by_id = {cw.id: cw for cw in rows}
     rows = [by_id[i] for i in ids if i in by_id]
     await stamp_access_many(db, teacher, rows, "courseware")
@@ -114,11 +132,13 @@ async def create_courseware(
         render_style=data.render_style,
         theme=data.theme,
         custom_prompt=data.custom_prompt,
+        lesson_type=data.lesson_type.value,
         is_interactive=data.is_interactive,
         want_virtual_lab=bool(data.want_virtual_lab) and bool(data.is_interactive),
         virtual_lab_key=data.virtual_lab_key if data.is_interactive else None,
         animation_keys=(data.animation_keys if data.is_interactive else None),
         gen_status=ParseStatus.pending,
+        gen_started_at=datetime.now(),
     )
     db.add(cw)
     await db.flush()
@@ -153,7 +173,28 @@ async def get_courseware_status(
     db: AsyncSession = Depends(get_db),
 ):
     cw = await _get_or_404(cw_id, teacher, db)
-    return {"id": cw.id, "gen_status": cw.gen_status, "task_id": cw.task_id}
+    progress = None
+    if cw.gen_status in (ParseStatus.pending, ParseStatus.processing):
+        progress = await _read_progress(cw.id)
+    return {
+        "id": cw.id, "gen_status": cw.gen_status, "task_id": cw.task_id, "gen_error": cw.gen_error,
+        "progress": progress,
+    }
+
+
+async def _read_progress(cw_id: int) -> dict | None:
+    try:
+        raw = await (await get_redis()).get(courseware_progress_key(cw_id))
+        return json.loads(raw) if raw else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+async def _clear_progress(cw_id: int) -> None:
+    try:
+        await (await get_redis()).delete(courseware_progress_key(cw_id))
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _version_out(ver: CoursewareVersion, creator_name: str | None, *, with_content: bool = False):
@@ -267,6 +308,7 @@ async def apply_courseware_version(
     if ver.theme:
         cw.theme = ver.theme
     cw.gen_status = ParseStatus.done
+    cw.gen_error = None
     await db.commit()
     await db.refresh(cw)
     await stamp_access_many(db, teacher, [cw], "courseware")
@@ -280,7 +322,7 @@ async def regenerate_courseware(
     teacher: Teacher = Depends(require_perm("courseware.edit")),
     db: AsyncSession = Depends(get_db),
 ):
-    """按新配置重新生成：覆盖旧内容。"""
+    """按新配置重新生成。旧内容保留到新内容生成成功为止，失败则继续用旧内容。"""
     cw = await _get_or_404(cw_id, teacher, db, edit=True)
     if cw.gen_status in (ParseStatus.pending, ParseStatus.processing):
         raise HTTPException(status_code=400, detail="正在生成中，请稍后再试")
@@ -293,6 +335,7 @@ async def regenerate_courseware(
     cw.render_style = data.render_style
     cw.theme = data.theme
     cw.custom_prompt = data.custom_prompt
+    cw.lesson_type = data.lesson_type.value
     cw.is_interactive = data.is_interactive
     cw.want_virtual_lab = bool(data.want_virtual_lab) and bool(data.is_interactive)
     cw.virtual_lab_key = data.virtual_lab_key if data.is_interactive else None
@@ -300,10 +343,12 @@ async def regenerate_courseware(
     flag_modified(cw, "animation_keys")
     flag_modified(cw, "chapter_range")
     flag_modified(cw, "page_range")
-    cw.content = None
     cw.gen_status = ParseStatus.pending
+    cw.gen_error = None
+    cw.gen_started_at = datetime.now()
     cw.task_id = None
     await db.commit()
+    await _clear_progress(cw.id)
 
     from app.tasks.ai_tasks import generate_courseware_task
     task = generate_courseware_task.delay(cw.id)
@@ -388,8 +433,11 @@ async def copy_courseware(
     title = data.title or await _next_copy_title(src.title, teacher.id, db)
     content = _apply_title(src.content, src.title, title) if src.content else None
     gen_status = src.gen_status
-    if gen_status == ParseStatus.processing:
-        gen_status = ParseStatus.done if content else ParseStatus.pending
+    gen_error = src.gen_error
+    if gen_status in (ParseStatus.pending, ParseStatus.processing):
+        # 副本不带生成任务，只能复制源课件当前已有的内容
+        gen_status = ParseStatus.done if content else ParseStatus.failed
+        gen_error = None if content else "复制时源课件尚未生成完成，请重新生成"
     clone = Courseware(
         teacher_id=teacher.id,
         textbook_id=src.textbook_id,
@@ -400,8 +448,10 @@ async def copy_courseware(
         render_style=src.render_style,
         theme=src.theme,
         custom_prompt=src.custom_prompt,
+        lesson_type=src.lesson_type,
         content=content,
         gen_status=gen_status,
+        gen_error=gen_error,
         is_interactive=src.is_interactive,
         want_virtual_lab=bool(src.want_virtual_lab),
         virtual_lab_key=src.virtual_lab_key,
@@ -417,7 +467,7 @@ async def copy_courseware(
 # ─── 按页编辑 ─────────────────────────────────────────────────────────
 
 _EDITABLE = (
-    "type", "title", "subtitle", "bullets", "content", "notes",
+    "type", "title", "subtitle", "bullets", "answers", "pairs", "content", "more", "notes",
     "prompt", "solution", "left_title", "right_title",
 )
 
@@ -564,6 +614,13 @@ async def patch_slide(
     for k, v in payload.items():
         if k in _EDITABLE:
             slide[k] = v
+    if "pairs" in payload and payload["pairs"] is not None:
+        # 导出（Word/PPT）仍按 columns 两栏画，保存配对时同步
+        pairs = payload["pairs"]
+        slide["columns"] = [
+            {"title": slide.get("left_title") or "常见误区", "items": [p["wrong"] for p in pairs]},
+            {"title": slide.get("right_title") or "正确说法", "items": [p["right"] for p in pairs]},
+        ]
     flag_modified(cw, "content")
     await db.commit()
     return {"index": index, "slide": slide}
@@ -772,6 +829,9 @@ async def _get_or_404(
 ) -> Courseware:
     result = await db.execute(select(Courseware).where(Courseware.id == cw_id))
     cw = result.scalar_one_or_none()
-    return await require_resource(
+    cw = await require_resource(
         db, teacher, cw, "courseware", edit=edit, delete=delete, detail="课件不存在",
     )
+    if reap_stale_generation(cw):
+        await db.commit()
+    return cw

@@ -79,6 +79,7 @@ tasks/<队列>.py      → Celery 包装（薄，真正逻辑在 service）
 
 - 后端：`api/v1/textbook.py`、`schemas/textbook.py`、`models/textbook.py`、`services/file_service.py`（`parse_textbook_file`）、`tasks/file_tasks.py`、`services/liteparse_service.py`
 - 前端：`views/textbook/TextbookView.vue`
+- PDF 插图（`file_service.sync_pdf_images`）：内嵌位图（≥120px，不设总数上限）+ 有图注但由小贴图/矢量线条拼成的插图（`_figure_region` 按区域渲染，存 `images/{tb}/fig_*`）；图注按「图x-y」且字号小于正文识别，写入 `TextbookImage.caption`。可重复执行：按位图哈希 / 页码+图注去重，只补不删。老课本用 `POST /textbooks/{id}/refresh-images`（页面「补提插图」）升级，不动章节、不改已有图片 id；「重新解析」会清空章节与图片。
 
 ### 班级 / 学生
 
@@ -106,7 +107,7 @@ tasks/<队列>.py      → Celery 包装（薄，真正逻辑在 service）
 - 前端：`views/animation/AnimationsView.vue`；侧栏「AI 生成 → 互动动画」
 - 系统预置来自 `animation_service.system_catalog`（化学 `LAB_CATALOG` + 数学探究台 + 分子 3D + 生物 `BIO_CATALOG` + 物理 `PHYSICS_CATALOG`；启动 `ensure_system_labs` 补缺失行并同步系统元数据，不覆盖标题/HTML）；教师可从模板另存。
 - 统一外壳（NOBOOK 式）：`backend/skills/_shell/nb-shell.{css,js}`，由 `animation_service.decorate_html` / `served_html` 在出 HTML 时注入（库内存的是原始 HTML）。教师预览与分享带顶栏（简介 / 画笔 / 重置 / 全屏），课件引用 `chrome=False` 只保留协议。协议：宿主 postMessage `{nb:'call', id, method}`（`config` / `getData` / `setData` / `reset` / `info`），页面回 `{nb:'reply'}` 与事件 `{nb:'event', type:'onload'|'onChange'}`；页面引擎用 `NB.register({...})` 接入。
-- 可搭建类型（`SCENE_KINDS`，目前 `physics_lab` 物理实验台：电学、光学）：预览里「保存搭建」写 `spec.scene`（`PATCH /animations/{id}` 带 `scene`，系统行须先另存），「另存为我的（含搭建）」走 `POST /animations` 带 `scene`。出课勾选后写 `animation_keys`，生成时引用库 HTML，不要每次重跑 CLI。自动匹配须标签打中知识点或关键词足够强；对不上本课核心点不要塞实验台，化学不再兜底制氧。
+- 可搭建类型（`SCENE_KINDS`，目前 `physics_lab` 物理实验台：电学、光学）：预览里「保存搭建」写 `spec.scene`（`PATCH /animations/{id}` 带 `scene`，系统行须先另存），「另存为我的（含搭建）」走 `POST /animations` 带 `scene`。出课勾选后写 `animation_keys`，生成时引用库 HTML，不要每次重跑 CLI。自动匹配须标签打中知识点或关键词足够强，至多 1 个实验台 + 1 个动画；对不上本课核心点不要塞实验台，化学不再兜底制氧。
 
 ### 作业 / 试卷
 

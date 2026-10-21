@@ -1,4 +1,5 @@
 """文件解析服务：课本 / 题库 / 成绩表"""
+import hashlib
 import io
 import re
 import logging
@@ -72,7 +73,7 @@ async def parse_textbook_file(textbook_id: int):
             if tb.file_type == "pdf":
                 pages_with_images: set[int] = set()
                 try:
-                    pages_with_images = _extract_and_store_pdf_images(db, tb, file_bytes)
+                    pages_with_images = set((await sync_pdf_images(db, tb, file_bytes))["pages"])
                 except Exception as e:
                     logger.warning("课本 %s 图片提取失败：%s", tb.id, e)
                 # 对扫描/图多文字少且无内嵌图的页面，渲染整页截图入库
@@ -492,46 +493,269 @@ async def _parse_scanned_toc(data: bytes, page_texts: list[str], tb: Textbook) -
     return _build_chapters_from_toc(entries, page_texts, toc_indices, tb)
 
 
-def _extract_and_store_pdf_images(db, tb: Textbook, data: bytes, max_images: int = 80) -> set[int]:
-    """提取 PDF 内嵌图片，上传 MinIO 并写入 textbook_images 表。返回已配图的页码集合。"""
+_CAPTION_RE = re.compile(r"^图\s*\d+\s*[-－–—]\s*\d+")
+
+
+class _PageLayout:
+    """一页的文字行、图块与矢量绘图，只解析一次供图注识别与拼图区域共用。"""
+
+    def __init__(self, page):
+        import fitz
+        from collections import Counter
+        self.page = page
+        self.rect = page.rect
+        self.lines: list[tuple] = []  # (rect, 文本, 最大字号)
+        self.image_blocks: list = []
+        sizes: Counter = Counter()
+        for block in page.get_text("dict").get("blocks") or []:
+            if block.get("type") == 1:
+                self.image_blocks.append(fitz.Rect(block["bbox"]))
+                continue
+            for line in block.get("lines") or []:
+                spans = line.get("spans") or []
+                text = " ".join("".join(s.get("text") or "" for s in spans).split())
+                if not text:
+                    continue
+                size = max((s.get("size") or 0) for s in spans)
+                self.lines.append((fitz.Rect(line["bbox"]), text, size))
+                for s in spans:
+                    sizes[round(s.get("size") or 0, 1)] += len(s.get("text") or "")
+        self.body = sizes.most_common(1)[0][0] if sum(sizes.values()) >= 80 else None
+        self._drawings = None
+
+    @property
+    def drawings(self) -> list:
+        if self._drawings is None:
+            self._drawings = self.page.get_drawings()
+        return self._drawings
+
+    def is_body(self, size: float) -> bool:
+        return bool(self.body) and size > self.body - 1
+
+
+def _page_captions(layout: _PageLayout) -> list[tuple]:
+    """本页「图4-17 电解水实验」式图注行：[(rect, 规范化文本)]。
+
+    图注字号比正文小；正文里恰好换行到行首的「图4-19 给出了……」按字号排除。
+    """
+    out = []
+    for rect, text, size in layout.lines:
+        if not _CAPTION_RE.match(text) or len(text) > 60 or layout.is_body(size):
+            continue
+        text = re.sub(r"^图\s*(\d+)\s*[-－–—]\s*(\d+)\s*", r"图\1-\2 ", text).strip()
+        out.append((rect, text))
+    return out
+
+
+def _caption_near(rect, captions: list[tuple], used: set[int]) -> int | None:
+    """图正下方（或正上方）最近的图注下标；横向须与图重叠。"""
+    best, best_gap = None, None
+    for i, (cr, _) in enumerate(captions):
+        if i in used or cr.x1 < rect.x0 - 20 or cr.x0 > rect.x1 + 20:
+            continue
+        if cr.y0 >= rect.y1 - 6:
+            gap = cr.y0 - rect.y1
+            limit = 45
+        elif cr.y1 <= rect.y0 + 6:
+            gap = rect.y0 - cr.y1
+            limit = 25
+        else:
+            continue
+        if gap <= limit and (best_gap is None or gap < best_gap):
+            best, best_gap = i, gap
+    return best
+
+
+def _figure_region(layout: _PageLayout, cap_rect, taken: list):
+    """图注上方由小贴图 + 矢量线条拼成的插图区域；找不到像样的图形返回 None。"""
+    import fitz
+    pr = layout.rect
+    elems: list[tuple] = [(r, True) for r in layout.image_blocks]  # (rect, 是否图形)
+    body_lines = []
+    for rect, text, size in layout.lines:
+        if layout.is_body(size) and len(text) > 12:
+            body_lines.append(rect)  # 正文长句
+        elif len(text) <= 16 and not _CAPTION_RE.match(text):
+            # 图内标签（「水（H₂O）」「表示1个水分子。」）让图形与图注连成一片
+            elems.append((rect, False))
+    for d in layout.drawings:
+        r = d["rect"]
+        if r.y1 < pr.height * 0.06 or r.y0 > pr.height * 0.94:
+            continue  # 页眉页脚
+        if r.width * r.height > pr.width * pr.height * 0.35:
+            continue  # 整页底纹
+        if r.width > pr.width * 0.5 and (r.height < 4 or d.get("fill") is None):
+            continue  # 分隔线、栏目边框
+        grown = r + (-3, -3, 3, 3)
+        if any(grown.intersects(bl) for bl in body_lines):
+            continue  # 正文的下划线、底框、栏目图标
+        elems.append((r, True))
+    cands = sorted(
+        (e for e in elems if e[0].y1 <= cap_rect.y0 + 2 and not e[0].is_empty),
+        key=lambda e: -e[0].y1,
+    )
+    # 从图注所在横向范围起步往上长，只吸收与当前区域横向相邻的元素，旁边一栏的正文/边栏不进来
+    x0, x1 = cap_rect.x0 - 30, cap_rect.x1 + 30
+    picked: list[tuple] = []
+    top = cap_rect.y0
+    for r, is_graphic in cands:
+        if r.y1 < top - 30:
+            break
+        if r.x1 < x0 - 20 or r.x0 > x1 + 20:
+            continue
+        picked.append((r, is_graphic))
+        x0, x1 = min(x0, r.x0), max(x1, r.x1)
+        top = min(top, r.y0)
+    graphics = [r for r, g in picked if g]
+    if len(graphics) < 2:
+        return None
+    # 以图形为核心；文字只留落在图形范围内、或夹在图形与图注之间的标签
+    region = fitz.Rect(graphics[0])
+    for r in graphics[1:]:
+        region |= r
+    core = fitz.Rect(region)
+    for r, g in picked:
+        if not g and r.x0 >= core.x0 - 12 and r.x1 <= core.x1 + 12 and r.y0 >= core.y0 - 12:
+            region |= r
+    # 仍罩住正文长句：按正文在图形核心的哪一侧收窄
+    for bl in body_lines:
+        if (region & bl).get_area() <= bl.get_area() * 0.2:
+            continue
+        if bl.x0 >= core.x1 - 10:
+            region.x1 = min(region.x1, bl.x0 - 2)
+        elif bl.x1 <= core.x0 + 10:
+            region.x0 = max(region.x0, bl.x1 + 2)
+        elif bl.y1 <= core.y0 + 10:
+            region.y0 = max(region.y0, bl.y1 + 2)
+    region.y1 = cap_rect.y0 - 1  # 图与图注之间的标签（如「水（H₂O）」）一并截入
+    region = (region + (-4, -4, 4, 0)) & pr
+    if region.width < 60 or region.height < 40 or region.height > pr.height * 0.6:
+        return None
+    if any((region & t).get_area() > region.get_area() * 0.3 for t in taken):
+        return None  # 已被内嵌图覆盖
+    return region
+
+
+def _scan_pdf_figures(data: bytes) -> list[dict]:
+    """扫描 PDF 插图：内嵌位图（≥120px）+ 有图注但由小贴图/矢量拼成的插图（按区域渲染）。
+
+    每项 {page, kind: embed|figure, bytes, ext, caption, sha1}；同一位图在多页复用只取第一次。
+    """
     import fitz
     doc = fitz.open(stream=data, filetype="pdf")
-    seen: set[int] = set()
-    pages_with_images: set[int] = set()
-    count = 0
+    out: list[dict] = []
+    seen_xref: set[int] = set()
     for pno in range(len(doc)):
-        for img in doc[pno].get_images(full=True):
-            if count >= max_images:
-                break
+        page = doc[pno]
+        layout = _PageLayout(page)
+        captions = _page_captions(layout)
+        used_caps: set[int] = set()
+        taken: list = []
+        for img in page.get_images(full=True):
             xref = img[0]
-            if xref in seen:
+            rects = []
+            try:
+                rects = page.get_image_rects(xref)
+            except Exception:
+                pass
+            taken.extend(rects)
+            if xref in seen_xref:
                 continue
-            seen.add(xref)
+            seen_xref.add(xref)
             try:
                 base = doc.extract_image(xref)
             except Exception:
                 continue
-            w, h = base.get("width", 0), base.get("height", 0)
-            # 过滤过小的装饰性图片（图标/线条）
-            if w < 120 or h < 120:
+            if base.get("width", 0) < 120 or base.get("height", 0) < 120:
+                continue  # 图标、线条等装饰
+            caption = None
+            for r in rects:
+                ci = _caption_near(r, captions, used_caps)
+                if ci is not None:
+                    used_caps.add(ci)
+                    caption = captions[ci][1]
+                    break
+            out.append({
+                "page": pno + 1, "kind": "embed", "bytes": base["image"],
+                "ext": base.get("ext", "png"), "caption": caption,
+                "sha1": hashlib.sha1(base["image"]).hexdigest(),
+            })
+        for ci, (cr, text) in enumerate(captions):
+            if ci in used_caps:
                 continue
-            ext = base.get("ext", "png")
-            image_bytes = base["image"]
-            object_name = f"images/{tb.id}/{uuid.uuid4()}.{ext}"
-            upload_file(
-                settings.MINIO_BUCKET_TEXTBOOKS, object_name, image_bytes, f"image/{ext}"
-            )
-            db.add(TextbookImage(
-                textbook_id=tb.id,
-                page_number=pno + 1,
-                object_name=object_name,
-                content_type=f"image/{ext}",
-                sort_order=count,
-            ))
-            pages_with_images.add(pno + 1)
-            count += 1
-    logger.info("课本 %s 提取内嵌图片 %d 张", tb.id, count)
-    return pages_with_images
+            region = _figure_region(layout, cr, taken)
+            if region is None:
+                continue
+            png = page.get_pixmap(clip=region, dpi=160).tobytes("png")
+            taken.append(region)
+            out.append({
+                "page": pno + 1, "kind": "figure", "bytes": png, "ext": "png",
+                "caption": text, "sha1": None,
+            })
+    return out
+
+
+async def refresh_textbook_images(textbook_id: int) -> dict:
+    """已解析课本补提插图与图注（不动章节、不删旧图），供老课本升级用。"""
+    async with AsyncSessionLocal() as db:
+        tb = await db.get(Textbook, textbook_id)
+        if not tb or tb.file_type != "pdf":
+            return {"added": 0, "captioned": 0}
+        data = get_file_bytes(settings.MINIO_BUCKET_TEXTBOOKS, tb.file_path)
+        stats = await sync_pdf_images(db, tb, data)
+        await db.commit()
+        return {"added": stats["added"], "captioned": stats["captioned"]}
+
+
+async def sync_pdf_images(db, tb: Textbook, data: bytes) -> dict:
+    """把扫描到的插图写进 textbook_images，可重复执行：
+
+    已有行（按位图内容哈希 / 拼图按页码+图注）只补图注、不重传；新图追加在后面。
+    不删除任何旧行，已被课件引用的图片 id 保持有效。
+    """
+    figures = _scan_pdf_figures(data)
+    rows = (await db.execute(
+        select(TextbookImage).where(TextbookImage.textbook_id == tb.id)
+    )).scalars().all()
+    by_hash: dict[str, TextbookImage] = {}
+    for row in rows:
+        if "/page_" in row.object_name or "/fig_" in row.object_name:
+            continue
+        try:
+            by_hash[hashlib.sha1(get_file_bytes(settings.MINIO_BUCKET_TEXTBOOKS, row.object_name)).hexdigest()] = row
+        except Exception as e:
+            logger.warning("课本 %s 图片 %s 读取失败，按新图处理：%s", tb.id, row.id, e)
+    fig_keys = {(row.page_number, row.caption) for row in rows if "/fig_" in row.object_name}
+    next_sort = max((r.sort_order or 0 for r in rows if (r.sort_order or 0) < 1000), default=-1) + 1
+
+    stats = {"added": 0, "captioned": 0}
+    for f in figures:
+        if f["kind"] == "embed":
+            row = by_hash.get(f["sha1"])
+            if row is not None:
+                if f["caption"] and not row.caption:
+                    row.caption = f["caption"][:200]
+                    stats["captioned"] += 1
+                continue
+            object_name = f"images/{tb.id}/{uuid.uuid4()}.{f['ext']}"
+        else:
+            if (f["page"], f["caption"]) in fig_keys:
+                continue
+            object_name = f"images/{tb.id}/fig_{f['page']}_{uuid.uuid4()}.png"
+        upload_file(settings.MINIO_BUCKET_TEXTBOOKS, object_name, f["bytes"], f"image/{f['ext']}")
+        db.add(TextbookImage(
+            textbook_id=tb.id,
+            page_number=f["page"],
+            object_name=object_name,
+            content_type=f"image/{f['ext']}",
+            sort_order=next_sort,
+            caption=(f["caption"] or None) and f["caption"][:200],
+        ))
+        next_sort += 1
+        stats["added"] += 1
+    stats["pages"] = sorted({f["page"] for f in figures})
+    logger.info("课本 %s 插图同步：新增 %d 张，补图注 %d 张", tb.id, stats["added"], stats["captioned"])
+    return stats
 
 
 def _store_pdf_page_screenshots(

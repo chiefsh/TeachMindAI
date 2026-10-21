@@ -32,10 +32,11 @@
               <el-tag v-if="cw.subject_id" size="small" type="success">{{ edu.subjectName(cw.subject_id) }}</el-tag>
             </div>
             <div class="flex items-center flex-wrap gap-2 mt-1.5">
-              <span :class="`badge badge-${cw.gen_status}`">{{ statusLabel(cw.gen_status) }}</span>
+              <span :class="`badge badge-${cw.gen_status}`" :title="cw.gen_error || ''">{{ statusLabel(cw.gen_status) }}</span>
               <el-tag size="small" :type="cw.render_style === 'html' ? 'primary' : 'info'">
                 {{ cw.render_style === 'html' ? '网页样式' : 'PPT 样式' }}
               </el-tag>
+              <el-tag v-if="cw.lesson_type && cw.lesson_type !== 'new'" size="small">{{ LESSON_TYPE_LABELS[cw.lesson_type] }}</el-tag>
               <el-tag v-if="cw.is_interactive" size="small" type="warning">互动</el-tag>
               <el-tag v-if="cw.want_virtual_lab" size="small" type="success">实验</el-tag>
               <span class="text-xs text-slate-400">{{ formatDate(cw.created_at) }}</span>
@@ -122,6 +123,14 @@
             <el-input-number v-model="form.page_start" :min="1" placeholder="起始页" style="width:120px" />
             <span class="text-slate-400">至</span>
             <el-input-number v-model="form.page_end" :min="1" placeholder="结束页" style="width:120px" />
+          </div>
+        </el-form-item>
+        <el-form-item label="课型">
+          <div>
+            <el-radio-group v-model="form.lesson_type">
+              <el-radio v-for="t in LESSON_TYPES" :key="t.value" :value="t.value">{{ t.label }}</el-radio>
+            </el-radio-group>
+            <p class="text-xs text-slate-400 mt-1 leading-relaxed">{{ lessonTypeHint }}</p>
           </div>
         </el-form-item>
         <el-form-item label="呈现样式">
@@ -243,7 +252,8 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { MagicStick, View, Delete, VideoPlay, RefreshRight, CopyDocument, EditPen, Share, MoreFilled, User } from '@element-plus/icons-vue'
 import ShareDialog from '@/components/ShareDialog.vue'
 import CollaboratorsDialog from '@/components/CollaboratorsDialog.vue'
-import type { Courseware, Textbook, Chapter, RenderStyle, LabExperiment } from '@/types'
+import type { Courseware, Textbook, Chapter, RenderStyle, LabExperiment, LessonType } from '@/types'
+import { LESSON_TYPE_LABELS } from '@/types'
 import { THEMES, DEFAULT_THEME, getTheme } from '@/utils/coursewareTheme'
 import { isBusyStatus, useBusyPoll } from '@/utils/busyPoll'
 import dayjs from 'dayjs'
@@ -285,10 +295,18 @@ const form = reactive({
   gen_mode: 'chapter' as 'chapter' | 'page',
   chapter_ids: [] as number[],
   page_start: null as number | null, page_end: null as number | null,
-  custom_prompt: '', want_virtual_lab: false, virtual_lab_key: '' as string,
+  custom_prompt: '', want_virtual_lab: true, virtual_lab_key: '' as string,
   animation_keys: [] as string[],
   is_interactive: false,
+  lesson_type: 'new' as LessonType,
 })
+const LESSON_TYPES: { value: LessonType; label: string; hint: string }[] = [
+  { value: 'new', label: '新授课', hint: '先探究再命名：导入现象 → 互动 → 新知 → 易错 → 例题 → 小结 → 练习 → 作业。' },
+  { value: 'review', label: '复习课', hint: '回忆问题链 → 知识梳理 → 要点回顾 → 易错 → 例题 → 综合练习（6 道）→ 小结 → 作业。' },
+  { value: 'practice', label: '习题课', hint: '引例 → 方法要点 → 例题 2 道 → 变式训练（6 道，模仿→变式→拓展）→ 典型错法 → 方法小结 → 作业。' },
+  { value: 'lab', label: '实验课', hint: '提出问题 → 目的/器材/步骤/安全 → 实验台操作 → 实验结论 → 易错 → 练习 → 作业。勾选互动课件时优先引入动画库实验台。' },
+]
+const lessonTypeHint = computed(() => LESSON_TYPES.find(t => t.value === form.lesson_type)?.hint || '')
 const rules = { title: [{ required: true, message: '请填写课件标题' }] }
 const labExperiments = ref<LabExperiment[]>([])
 const labGroups = computed(() => {
@@ -393,10 +411,11 @@ function resetForm() {
   form.page_start = null
   form.page_end = null
   form.custom_prompt = ''
-  form.want_virtual_lab = false
+  form.want_virtual_lab = true
   form.virtual_lab_key = ''
   form.animation_keys = []
   form.is_interactive = false
+  form.lesson_type = 'new'
   chapterOptions.value = []
 }
 
@@ -434,6 +453,7 @@ async function fillFormFromCw(cw: Courseware) {
   form.virtual_lab_key = cw.virtual_lab_key || ''
   form.animation_keys = [...(cw.animation_keys || (cw.virtual_lab_key ? [cw.virtual_lab_key] : []))]
   form.is_interactive = !!cw.is_interactive
+  form.lesson_type = (cw.lesson_type || 'new') as LessonType
   const chapterIds = extractChapterIds(cw.chapter_range)
   const pageStart = cw.page_range?.start ?? null
   const pageEnd = cw.page_range?.end ?? null
@@ -505,6 +525,7 @@ async function handleCreate() {
       render_style: form.render_style,
       theme: form.theme,
       custom_prompt: form.custom_prompt,
+      lesson_type: form.lesson_type,
       is_interactive: form.courseware_type === 'interactive',
       want_virtual_lab: form.courseware_type === 'interactive' && form.want_virtual_lab,
       virtual_lab_key: form.courseware_type === 'interactive' && form.want_virtual_lab

@@ -40,6 +40,10 @@ _INDEX_SQL = [
 # create_all 也不会给已有表补列，启动时按需补齐后加的字段
 _COLUMN_SQL = [
     (
+        "textbook_images", "caption",
+        "ALTER TABLE textbook_images ADD COLUMN caption VARCHAR(200) NULL",
+    ),
+    (
         "coursewares", "render_style",
         "ALTER TABLE coursewares ADD COLUMN render_style VARCHAR(16) NOT NULL DEFAULT 'ppt'",
     ),
@@ -58,6 +62,18 @@ _COLUMN_SQL = [
     (
         "coursewares", "animation_keys",
         "ALTER TABLE coursewares ADD COLUMN animation_keys JSON NULL",
+    ),
+    (
+        "coursewares", "lesson_type",
+        "ALTER TABLE coursewares ADD COLUMN lesson_type VARCHAR(16) NOT NULL DEFAULT 'new'",
+    ),
+    (
+        "coursewares", "gen_error",
+        "ALTER TABLE coursewares ADD COLUMN gen_error VARCHAR(500) NULL",
+    ),
+    (
+        "coursewares", "gen_started_at",
+        "ALTER TABLE coursewares ADD COLUMN gen_started_at DATETIME NULL",
     ),
     (
         "questions", "images",

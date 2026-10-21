@@ -66,5 +66,6 @@ class TextbookImage(Base):
     object_name: Mapped[str] = mapped_column(String(512), nullable=False)  # MinIO 路径
     content_type: Mapped[str] = mapped_column(String(32), default="image/png")
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    caption: Mapped[str | None] = mapped_column(String(200), nullable=True)  # 如「图4-17 电解水实验」
 
     textbook = relationship("Textbook", back_populates="images")

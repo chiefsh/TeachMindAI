@@ -26,7 +26,7 @@ def _run(coro):
 @celery_app.task(name="app.tasks.ai_tasks.generate_courseware_task", bind=True, max_retries=2)
 def generate_courseware_task(self, courseware_id: int):
     try:
-        _run(do_generate_courseware(courseware_id))
+        _run(do_generate_courseware(courseware_id, self.request.id))
     except Exception as exc:
         raise self.retry(exc=exc, countdown=30)
 

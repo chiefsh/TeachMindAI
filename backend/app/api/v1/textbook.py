@@ -189,6 +189,23 @@ async def reparse_textbook(
     return tb
 
 
+@router.post("/{textbook_id}/refresh-images")
+async def refresh_images(
+    textbook_id: int,
+    teacher: Teacher = Depends(require_perm("textbook.manage")),
+    db: AsyncSession = Depends(get_db),
+):
+    """补提插图与图注：不清章节、不删旧图，已被课件引用的图片保持有效。仅 PDF。"""
+    tb = await _get_or_404(textbook_id, teacher, db)
+    if tb.file_type != "pdf":
+        raise HTTPException(status_code=400, detail="仅 PDF 课本支持补提插图")
+    if tb.parse_status != ParseStatus.done:
+        raise HTTPException(status_code=409, detail="课本解析完成后才能补提插图")
+    from app.tasks.file_tasks import refresh_textbook_images_task
+    task = refresh_textbook_images_task.delay(tb.id)
+    return {"task_id": task.id}
+
+
 @router.get("/{textbook_id}/related-counts", response_model=TextbookRelatedCounts)
 async def get_related_counts(
     textbook_id: int,
@@ -295,6 +312,7 @@ async def list_textbook_images(
         {
             "id": img.id,
             "page_number": img.page_number,
+            "caption": img.caption,
             "url": get_presigned_url(settings.MINIO_BUCKET_TEXTBOOKS, img.object_name, expires_hours=6),
         }
         for img in images

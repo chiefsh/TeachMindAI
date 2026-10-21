@@ -28,6 +28,7 @@
           <el-tag size="small" :type="isWebStyle ? 'primary' : 'info'">
             {{ isWebStyle ? '网页样式' : 'PPT 样式' }}
           </el-tag>
+          <el-tag v-if="cw?.lesson_type && cw.lesson_type !== 'new'" size="small">{{ LESSON_TYPE_LABELS[cw.lesson_type] }}</el-tag>
           <el-tag v-if="cw?.is_interactive" size="small" type="warning">互动课件</el-tag>
           <el-tag v-if="cw?.want_virtual_lab" size="small" type="success">虚拟实验</el-tag>
           <span class="inline-flex items-center gap-1.5 text-xs text-slate-500">
@@ -62,20 +63,52 @@
     </div>
 
     <!-- 生成中状态 -->
-    <div v-if="cw?.gen_status === 'processing' || cw?.gen_status === 'pending'" class="card text-center py-16">
+    <div v-if="isGenerating && !slides.length" class="card text-center py-16">
       <el-icon class="text-5xl text-primary-500 animate-spin mb-4"><Loading /></el-icon>
       <p class="text-slate-600 font-medium">AI 正在生成完整课件，请稍候...</p>
       <p class="text-sm text-slate-400 mt-1">生成一节完整教学内容通常需要 1 ~ 3 分钟</p>
+      <ol v-if="progressSteps.length" class="inline-flex flex-col items-start gap-2 mt-6 text-sm text-left">
+        <li v-for="s in progressSteps" :key="s.key" class="flex items-center gap-2">
+          <span
+            class="w-5 h-5 rounded-full flex items-center justify-center text-xs shrink-0"
+            :class="{
+              'bg-emerald-500 text-white': s.state === 'done',
+              'bg-primary-500 text-white animate-pulse': s.state === 'active',
+              'bg-slate-200 text-slate-400': s.state === 'todo',
+            }"
+          >{{ s.state === 'done' ? '✓' : s.index }}</span>
+          <span :class="s.state === 'todo' ? 'text-slate-400' : 'text-slate-700'">{{ s.label }}</span>
+          <span v-if="s.state === 'active' && s.detail" class="text-xs text-slate-400">{{ s.detail }}</span>
+        </li>
+      </ol>
+      <p v-else class="text-sm text-slate-400 mt-6">{{ progressText }}</p>
     </div>
 
     <!-- 生成失败 -->
     <div v-else-if="cw?.gen_status === 'failed'" class="card text-center py-16">
       <el-icon class="text-5xl text-red-400 mb-4"><CircleClose /></el-icon>
       <p class="text-slate-600 font-medium">课件生成失败，请调整配置后重新生成</p>
+      <p v-if="cw.gen_error" class="text-sm text-red-500 mt-2">{{ cw.gen_error }}</p>
       <el-button v-if="canEdit" class="mt-4" type="primary" :icon="RefreshRight" @click="goRegenerate">重新生成</el-button>
     </div>
 
     <template v-else-if="slides.length">
+      <el-alert
+        v-if="isGenerating"
+        class="mb-4"
+        type="info"
+        :closable="false"
+        show-icon
+        :title="`正在按新配置重新生成（${progressText}），完成后自动替换；下面是上一版内容，生成期间不能编辑`"
+      />
+      <el-alert
+        v-else-if="cw?.gen_error"
+        class="mb-4"
+        type="warning"
+        :closable="false"
+        show-icon
+        :title="cw.gen_error"
+      />
       <!-- 备课备忘（仅教师端） -->
       <div v-if="hasMeta" class="card mb-4 grid grid-cols-1 md:grid-cols-3 gap-4">
         <div v-if="meta.objectives?.length">
@@ -158,13 +191,25 @@
                 <el-input v-model="draft.subtitle" size="small" placeholder="副标题（可选）" @input="markDirty" />
               </div>
               <el-input v-model="draft.title" placeholder="页面标题" @input="markDirty" />
-              <div>
-                <p class="text-xs text-slate-500 mb-1">要点（每行一条）</p>
-                <el-input v-model="draft.bulletsText" type="textarea" :rows="4" placeholder="每行一条要点" @input="markDirty" />
+              <div v-if="draft.type === 'comparison'">
+                <p class="text-xs text-slate-500 mb-1">易错对照（每行一条：错误说法 ｜ 正确说法）</p>
+                <el-input v-model="draft.pairsText" type="textarea" :rows="5" placeholder="把正负极气体说反 ｜ 正氧负氢，负极气体约是正极的 2 倍" @input="markDirty" />
+              </div>
+              <div v-else>
+                <p class="text-xs text-slate-500 mb-1">{{ draft.type === 'exercise' ? '题目（每行一题）' : '要点（每行一条）' }}</p>
+                <el-input v-model="draft.bulletsText" type="textarea" :rows="4" placeholder="每行一条" @input="markDirty" />
+              </div>
+              <div v-if="draft.type === 'exercise'">
+                <p class="text-xs text-slate-500 mb-1">答案（每行对应一题，学生页折叠显示「看答案」）</p>
+                <el-input v-model="draft.answersText" type="textarea" :rows="4" @input="markDirty" />
               </div>
               <div>
                 <p class="text-xs text-slate-500 mb-1">正文（支持 Markdown）</p>
                 <el-input v-model="draft.content" type="textarea" :rows="8" @input="markDirty" />
+              </div>
+              <div v-if="draft.type === 'knowledge'">
+                <p class="text-xs text-slate-500 mb-1">深入理解（学生页折叠，点开才显示）</p>
+                <el-input v-model="draft.more" type="textarea" :rows="4" @input="markDirty" />
               </div>
               <div v-if="showExampleFields" class="grid grid-cols-1 gap-3">
                 <el-input v-model="draft.prompt" type="textarea" :rows="2" placeholder="题干 / 情境" @input="markDirty" />
@@ -558,6 +603,7 @@ import { normalizeChemText } from '@/utils/chemText'
 import { copyToClipboard } from '@/utils/clipboard'
 import ShareDialog from '@/components/ShareDialog.vue'
 import type { Courseware, CoursewareSession, CoursewareVersion, SessionBoard } from '@/types'
+import { LESSON_TYPE_LABELS } from '@/types'
 
 const route = useRoute()
 const router = useRouter()
@@ -595,7 +641,10 @@ const draft = ref({
   title: '',
   subtitle: '',
   bulletsText: '',
+  answersText: '',
+  pairsText: '',
   content: '',
+  more: '',
   notes: '',
   prompt: '',
   solution: '',
@@ -995,6 +1044,30 @@ const normalizedContent = computed<any>(() => {
   return c
 })
 const slides = computed<any[]>(() => normalizedContent.value?.slides || [])
+const isGenerating = computed(() => cw.value?.gen_status === 'processing' || cw.value?.gen_status === 'pending')
+
+interface GenProgress {
+  stage: string
+  detail?: string
+  steps: { key: string; label: string }[]
+}
+const genProgress = ref<GenProgress | null>(null)
+const progressSteps = computed(() => {
+  const p = genProgress.value
+  if (!p?.steps?.length) return []
+  const cur = p.steps.findIndex(s => s.key === p.stage)
+  return p.steps.map((s, i) => ({
+    ...s,
+    index: i + 1,
+    state: i < cur ? 'done' : i === cur ? 'active' : 'todo',
+    detail: i === cur ? p.detail : '',
+  }))
+})
+const progressText = computed(() => {
+  const active = progressSteps.value.find(s => s.state === 'active')
+  if (active) return [active.label, active.detail].filter(Boolean).join(' · ')
+  return cw.value?.gen_status === 'pending' ? '排队中，等待后台空闲' : '准备中'
+})
 const meta = computed<any>(() => normalizedContent.value?.meta || {})
 const hasMeta = computed(() => !!(meta.value.objectives?.length || meta.value.key_points?.length || meta.value.difficulties?.length))
 const currentSlide = computed(() => slides.value[activeSlide.value] || null)
@@ -1009,13 +1082,33 @@ const structureLocked = computed(() =>
 
 function markDirty() { dirty.value = true }
 
+/** 易错对照的配对；旧课件只有两栏 columns 时按行拼成配对，交给老师校正。 */
+function slidePairs(s: any): { wrong: string; right: string }[] {
+  if (Array.isArray(s?.pairs) && s.pairs.length) {
+    return s.pairs.map((p: any) => ({ wrong: String(p?.wrong || ''), right: String(p?.right || '') }))
+  }
+  if (normalizePageKind(s?.type) !== 'comparison') return []
+  const [left, right] = (s?.columns || []).map((c: any) => c?.items || [])
+  return (left || []).map((w: any, i: number) => ({ wrong: String(w || ''), right: String(right?.[i] || '') }))
+}
+
+function parsePairs(text: string): { wrong: string; right: string }[] {
+  return text.split('\n').map(line => {
+    const [wrong, ...rest] = line.split(/[｜|]/)
+    return { wrong: (wrong || '').trim(), right: rest.join('｜').trim() }
+  }).filter(p => p.wrong)
+}
+
 function syncDraft(s: any) {
   draft.value = {
     type: normalizePageKind(s?.type),
     title: s?.title || '',
     subtitle: s?.subtitle || '',
     bulletsText: (s?.bullets || []).join('\n'),
+    answersText: (s?.answers || []).join('\n'),
+    pairsText: slidePairs(s).map(p => `${p.wrong} ｜ ${p.right}`).join('\n'),
     content: s?.content || '',
+    more: s?.more || '',
     notes: s?.notes || '',
     prompt: s?.prompt || '',
     solution: s?.solution || '',
@@ -1074,7 +1167,7 @@ async function saveSlide() {
   if (!cw.value || !currentSlide.value) return
   saving.value = true
   try {
-    const payload = {
+    const payload: Record<string, any> = {
       type: draft.value.type,
       title: draft.value.title,
       subtitle: draft.value.subtitle,
@@ -1084,6 +1177,17 @@ async function saveSlide() {
       prompt: draft.value.prompt,
       solution: draft.value.solution,
     }
+    if (draft.value.type === 'exercise') {
+      // 答案按行对应题目；行数对不上时学生页不显示答案
+      const lines = draft.value.answersText.split('\n').map(t => t.trim())
+      payload.answers = payload.bullets.map((_: string, i: number) => lines[i] || '')
+    }
+    if (draft.value.type === 'comparison') {
+      const pairs = parsePairs(draft.value.pairsText)
+      payload.pairs = pairs
+      payload.bullets = [...pairs.map(p => p.wrong), ...pairs.map(p => p.right)]
+    }
+    if (draft.value.type === 'knowledge') payload.more = draft.value.more
     const res = await coursewareApi.patchSlide(cw.value.id, activeSlide.value, payload)
     applySlide(res.index, res.slide)
     dirty.value = false
@@ -1321,8 +1425,11 @@ async function doExport(fmt: 'pptx' | 'docx' | 'pdf') {
 
 async function load() {
   cw.value = (await coursewareApi.get(Number(route.params.id))) as any
-  if (cw.value?.gen_status === 'processing' || cw.value?.gen_status === 'pending') {
+  if (isGenerating.value) {
+    const firstPoll = !pollTimer
     startStatusPoll()
+    if (firstPoll) refreshStatus()
+    if (slides.value.length) resolveImages()
   } else {
     stopStatusPoll()
     if (cw.value?.gen_status === 'done') {
@@ -1409,17 +1516,20 @@ async function confirmCopy() {
 /** 生成中只轮询轻量 status，完成后再拉一次完整详情，避免反复传输 slides/html */
 function startStatusPoll() {
   if (pollTimer) return
-  pollTimer = setInterval(async () => {
-    try {
-      const st = await coursewareApi.getStatus(Number(route.params.id)) as any
-      if (st.gen_status === 'done' || st.gen_status === 'failed') {
-        stopStatusPoll()
-        await load()
-      } else if (cw.value) {
-        cw.value.gen_status = st.gen_status
-      }
-    } catch { /* 下次再试 */ }
-  }, 4000)
+  pollTimer = setInterval(refreshStatus, 4000)
+}
+async function refreshStatus() {
+  try {
+    const st = await coursewareApi.getStatus(Number(route.params.id)) as any
+    if (st.gen_status === 'done' || st.gen_status === 'failed') {
+      stopStatusPoll()
+      genProgress.value = null
+      await load()
+    } else if (cw.value) {
+      cw.value.gen_status = st.gen_status
+      genProgress.value = st.progress || null
+    }
+  } catch { /* 下次再试 */ }
 }
 function stopStatusPoll() {
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null }

@@ -92,7 +92,7 @@
     <!-- 生成 / 重新生成弹窗 -->
     <el-dialog v-model="showCreate" :title="regenId ? '重新生成课件' : '生成课件'" width="560px" :close-on-click-modal="false">
       <p v-if="regenId" class="text-xs text-amber-600 mb-3 -mt-1">
-        将按下方配置重新生成，并覆盖当前课件内容。
+        将按下方配置重新生成。上一版会保留到新内容生成完成，期间可以看到生成进度。
       </p>
       <el-form :model="form" :rules="rules" ref="formRef" label-width="90px">
         <el-form-item label="课件标题" prop="title">
@@ -544,15 +544,19 @@ async function handleCreate() {
         payload.page_range = { start: form.page_start, end: form.page_end }
       }
     }
-    if (regenId.value) {
-      await coursewareApi.regenerate(regenId.value, payload)
+    const editingId = regenId.value
+    let targetId = editingId
+    if (editingId) {
+      await coursewareApi.regenerate(editingId, payload)
       ElMessage.success('已提交重新生成')
     } else {
-      await coursewareApi.create(payload)
+      const created = await coursewareApi.create(payload)
+      targetId = created.id
       ElMessage.success('课件生成任务已提交')
     }
     showCreate.value = false
-    await load()
+    if (targetId) router.push(`/courseware/${targetId}`)
+    else await load()
   } finally { creating.value = false }
 }
 

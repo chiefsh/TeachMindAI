@@ -62,8 +62,8 @@
       </div>
     </div>
 
-    <!-- 生成中状态 -->
-    <div v-if="isGenerating && !slides.length" class="card text-center py-16">
+    <!-- 生成中：进度是主画面。重新生成时旧页还在，默认先不铺开，避免看起来像没在生成 -->
+    <div v-if="isGenerating" class="card text-center py-16">
       <el-icon class="text-5xl text-primary-500 animate-spin mb-4"><Loading /></el-icon>
       <p class="text-slate-600 font-medium">AI 正在生成完整课件，请稍候...</p>
       <p class="text-sm text-slate-400 mt-1">生成一节完整教学内容通常需要 1 ~ 3 分钟</p>
@@ -82,6 +82,12 @@
         </li>
       </ol>
       <p v-else class="text-sm text-slate-400 mt-6">{{ progressText }}</p>
+      <template v-if="slides.length">
+        <p class="text-sm text-slate-500 mt-6">上一版内容已保留，生成完成后自动替换</p>
+        <el-button class="mt-2" link type="primary" @click="showPrevious = !showPrevious">
+          {{ showPrevious ? '收起上一版' : '查看上一版内容' }}
+        </el-button>
+      </template>
     </div>
 
     <!-- 生成失败 -->
@@ -92,14 +98,14 @@
       <el-button v-if="canEdit" class="mt-4" type="primary" :icon="RefreshRight" @click="goRegenerate">重新生成</el-button>
     </div>
 
-    <template v-else-if="slides.length">
+    <template v-if="slides.length && (!isGenerating || showPrevious)">
       <el-alert
         v-if="isGenerating"
-        class="mb-4"
+        class="mb-4 mt-4"
         type="info"
         :closable="false"
         show-icon
-        :title="`正在按新配置重新生成（${progressText}），完成后自动替换；下面是上一版内容，生成期间不能编辑`"
+        title="这是上一版内容，生成期间不能编辑，完成后会被新课件替换"
       />
       <el-alert
         v-else-if="cw?.gen_error"
@@ -174,8 +180,8 @@
                 <p v-if="currentSlide.subtitle" class="text-sm text-slate-500 truncate">{{ currentSlide.subtitle }}</p>
               </div>
               <div v-if="canEdit" class="flex items-center gap-1 flex-shrink-0">
-                <el-button size="small" :type="panelMode === 'edit' ? 'primary' : ''" :icon="EditPen" @click="toggleEdit">编辑</el-button>
-                <el-button size="small" :type="panelMode === 'ai' ? 'primary' : ''" :icon="MagicStick" @click="toggleAi">AI 优化</el-button>
+                <el-button size="small" :type="panelMode === 'edit' ? 'primary' : ''" :icon="EditPen" :disabled="isGenerating" @click="toggleEdit">编辑</el-button>
+                <el-button size="small" :type="panelMode === 'ai' ? 'primary' : ''" :icon="MagicStick" :disabled="isGenerating" @click="toggleAi">AI 优化</el-button>
                 <el-button size="small" :icon="ArrowUp" :disabled="structureLocked || activeSlide === 0" title="上移" @click="moveSlide(-1)" />
                 <el-button size="small" :icon="ArrowDown" :disabled="structureLocked || activeSlide === slides.length - 1" title="下移" @click="moveSlide(1)" />
                 <el-button size="small" :icon="Delete" :disabled="structureLocked || slides.length <= 1" title="删除本页" @click="removeSlide" />
@@ -1045,6 +1051,7 @@ const normalizedContent = computed<any>(() => {
 })
 const slides = computed<any[]>(() => normalizedContent.value?.slides || [])
 const isGenerating = computed(() => cw.value?.gen_status === 'processing' || cw.value?.gen_status === 'pending')
+const showPrevious = ref(false)
 
 interface GenProgress {
   stage: string
@@ -1077,7 +1084,9 @@ const showExampleFields = computed(() => {
   return t === 'example' || t === 'exercise' || t === 'homework'
 })
 const structureLocked = computed(() =>
-  sessions.value.some(s => s.is_open) || slides.value.some((s: any) => s.edit_status === 'processing'),
+  isGenerating.value
+  || sessions.value.some(s => s.is_open)
+  || slides.value.some((s: any) => s.edit_status === 'processing'),
 )
 
 function markDirty() { dirty.value = true }
